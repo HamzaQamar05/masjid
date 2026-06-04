@@ -1,0 +1,89 @@
+generator client { provider = "prisma-client-js" }
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  USER
+  MASJID
+  MSA
+  IMAM
+  STUDENT_OF_KNOWLEDGE
+  BUSINESS
+  ADMIN
+}
+
+model User {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  accountType  AccountType @default(USER)
+  bio          String?
+  city         String?
+  createdAt    DateTime    @default(now())
+
+  eventsCreated Event[] @relation("EventCreator")
+  registrations EventRegistration[]
+  messagesSent Message[] @relation("SentMessages")
+  messagesReceived Message[] @relation("ReceivedMessages")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  type        String
+  city        String?
+  address     String?
+  website     String?
+  email       String?
+  phone       String?
+  description String?
+  facilities  String?
+  claimed     Boolean  @default(false)
+  verified    Boolean  @default(false)
+  ownerId     String?
+  createdAt   DateTime @default(now())
+  events      Event[]
+}
+
+model Event {
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  location       String?
+  startTime      DateTime
+  endTime        DateTime?
+  createdById    String
+  organizationId String?
+  createdAt      DateTime @default(now())
+
+  createdBy      User          @relation("EventCreator", fields: [createdById], references: [id])
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  registrations  EventRegistration[]
+}
+
+model EventRegistration {
+  id        String   @id @default(cuid())
+  userId    String
+  eventId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@unique([userId, eventId])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String
+  createdAt  DateTime @default(now())
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id])
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
+}
