@@ -3,7 +3,7 @@ import { Bell, Bookmark, Briefcase, Building2, CalendarDays, Home, LogOut, MapPi
 import AuthScreen from './components/AuthScreen.jsx';
 import { prayers, seedEvents, seedOrganizations, seedPeople } from './data/seedData.js';
 
-const API = import.meta.env.VITE_API_URL;
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const tabs = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'events', label: 'Events', icon: CalendarDays },
