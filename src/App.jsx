@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Bookmark, BriefcaseBusiness, Building2, CalendarDays, Home, LogOut, MapPin, MessageCircle, Plus, Search, Send, User, UserRoundCheck, Users } from 'lucide-react';
+import { Bell, Bookmark, Briefcase, Building2, CalendarDays, Home, LogOut, MapPin, MessageCircle, Plus, Search, Send, User, UserCheck, Users } from 'lucide-react';
 import AuthScreen from './components/AuthScreen.jsx';
 import { prayers, seedEvents, seedOrganizations, seedPeople } from './data/seedData.js';
 
@@ -40,7 +40,7 @@ function HomeScreen({ user, setTab, events, registerEvent }) {
       <header className="topbar"><AvatarButton user={user} setTab={setTab}/><div><p className="eyebrow">Assalamu alaikum</p><h1>What’s happening near you?</h1></div><button className="round-btn"><Bell size={20}/></button></header>
       <section className="search-box"><Search size={18}/><span>Search events, masjids, MSAs, imams, people</span></section>
       <section className="prayer-card"><div className="section-head no-margin"><div><p className="eyebrow">Nearby masjid</p><h2>Prayer times today</h2></div><button onClick={() => setTab('events')}>View</button></div><div className="prayer-grid">{prayers.map(([name, time]) => <div key={name}><strong>{time}</strong><span>{name}</span></div>)}</div></section>
-      <section className="quick-actions">{canPost(user) && <button onClick={() => setTab('post')}><Plus size={18}/> Post event</button>}<button onClick={() => setTab('connect')}><UserRoundCheck size={18}/> Find people</button></section>
+      <section className="quick-actions">{canPost(user) && <button onClick={() => setTab('post')}><Plus size={18}/> Post event</button>}<button onClick={() => setTab('connect')}><UserCheck size={18}/> Find people</button></section>
       <section><div className="section-head"><h2>For you</h2><button onClick={() => setTab('events')}>See all</button></div>{events.slice(0, 2).map(event => <EventCard key={event.id} event={event} onRegister={registerEvent}/>)}</section>
     </main>
   );
@@ -55,7 +55,7 @@ function NetworkScreen({ setTab }) {
 }
 
 function ConnectScreen({ setTab }) {
-  return <main className="screen"><header className="plain-header"><h1>Connect</h1><p>Find imams, students of knowledge, speakers, volunteers, founders, and regular community members.</p></header>{seedPeople.map(person => <article className="speaker-card" key={person.id}><div className="speaker-avatar">{person.name.split(' ').map(x => x[0]).slice(0,2).join('')}</div><div className="speaker-info"><h3>{person.name}</h3><p>{person.role}</p><div className="tag-row compact">{person.areas.map(area => <span key={area}>{area}</span>)}</div><small>{person.city} • {person.available}</small></div><button className="message-btn" onClick={() => setTab('messages')}><MessageCircle size={17}/></button></article>)}<section className="business-card"><BriefcaseBusiness size={24}/><h2>Community marketplace later</h2><p>Muslim founders, mentors, businesses, job posts, volunteers, and partnerships.</p></section></main>;
+  return <main className="screen"><header className="plain-header"><h1>Connect</h1><p>Find imams, students of knowledge, speakers, volunteers, founders, and regular community members.</p></header>{seedPeople.map(person => <article className="speaker-card" key={person.id}><div className="speaker-avatar">{person.name.split(' ').map(x => x[0]).slice(0,2).join('')}</div><div className="speaker-info"><h3>{person.name}</h3><p>{person.role}</p><div className="tag-row compact">{person.areas.map(area => <span key={area}>{area}</span>)}</div><small>{person.city} • {person.available}</small></div><button className="message-btn" onClick={() => setTab('messages')}><MessageCircle size={17}/></button></article>)}<section className="business-card"><Briefcase size={24}/><h2>Community marketplace later</h2><p>Muslim founders, mentors, businesses, job posts, volunteers, and partnerships.</p></section></main>;
 }
 
 function PostEventScreen({ setTab, refreshEvents }) {
