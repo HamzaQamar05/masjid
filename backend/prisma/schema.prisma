@@ -1,4 +1,6 @@
-generator client { provider = "prisma-client-js" }
+generator client {
+  provider = "prisma-client-js"
+}
 
 datasource db {
   provider = "postgresql"
@@ -25,10 +27,10 @@ model User {
   city         String?
   createdAt    DateTime    @default(now())
 
-  eventsCreated Event[] @relation("EventCreator")
-  registrations EventRegistration[]
-  messagesSent Message[] @relation("SentMessages")
-  messagesReceived Message[] @relation("ReceivedMessages")
+  eventsCreated    Event[]             @relation("EventCreator")
+  registrations    EventRegistration[]
+  messagesSent     Message[]           @relation("SentMessages")
+  messagesReceived Message[]           @relation("ReceivedMessages")
 }
 
 model Organization {
@@ -50,7 +52,7 @@ model Organization {
 }
 
 model Event {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   title          String
   description    String?
   location       String?
@@ -58,11 +60,11 @@ model Event {
   endTime        DateTime?
   createdById    String
   organizationId String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
-  createdBy      User          @relation("EventCreator", fields: [createdById], references: [id])
-  organization   Organization? @relation(fields: [organizationId], references: [id])
-  registrations  EventRegistration[]
+  createdBy     User                @relation("EventCreator", fields: [createdById], references: [id])
+  organization  Organization?       @relation(fields: [organizationId], references: [id])
+  registrations EventRegistration[]
 }
 
 model EventRegistration {
