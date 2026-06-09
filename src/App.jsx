@@ -3,7 +3,7 @@ import {
   BarChart3,
   Bell,
   Bookmark,
-  Briefcase,
+  Briefcase, 
   Building2,
   CalendarDays,
   CheckCircle2,
