@@ -5,10 +5,10 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "prisma migrate deploy && prisma generate && node server.js",
+    "start": "node node_modules/prisma/build/index.js migrate deploy && node node_modules/prisma/build/index.js generate && node server.js",
     "serve": "node server.js",
-    "generate": "prisma generate",
-    "migrate:deploy": "prisma migrate deploy",
+    "generate": "node node_modules/prisma/build/index.js generate",
+    "migrate:deploy": "node node_modules/prisma/build/index.js migrate deploy",
     "prisma": "prisma"
   },
   "dependencies": {
