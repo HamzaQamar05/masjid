@@ -1,16 +1,15 @@
-export const prayers = [
-  ['Fajr', '4:12'],
-  ['Dhuhr', '1:18'],
-  ['Asr', '5:24'],
-  ['Maghrib', '9:01'],
-  ['Isha', '10:32']
-];
+export const defaultLocation = {
+  label: 'Milton, ON',
+  latitude: 43.5183,
+  longitude: -79.8774
+};
 
-export const platformStats = [
-  { label: 'Organizations', value: '128' },
-  { label: 'Events this month', value: '46' },
-  { label: 'Volunteer roles', value: '214' },
-  { label: 'Donations raised', value: '$82k' }
+export const prayers = [
+  { name: 'Fajr', adhan: '4:12', iqamah: '5:00' },
+  { name: 'Dhuhr', adhan: '1:18', iqamah: '1:45' },
+  { name: 'Asr', adhan: '5:24', iqamah: '6:00' },
+  { name: 'Maghrib', adhan: '9:01', iqamah: '9:06' },
+  { name: 'Isha', adhan: '10:32', iqamah: '10:50' }
 ];
 
 export const seedOrganizations = [
@@ -20,14 +19,18 @@ export const seedOrganizations = [
     type: 'Masjid',
     city: 'Milton',
     address: 'Unit 7 and 8, 50 Steeles Avenue East, Milton, ON',
+    latitude: 43.5239,
+    longitude: -79.8891,
     website: 'http://ahlehadithcanada.org/toronto/',
     email: 'toronto@ahlehadithcanada.org',
     phone: '+1-647-549-7909',
     verified: true,
-    followers: '3.8k',
+    followers: 3840,
     cover: 'https://images.unsplash.com/photo-1564769625905-50e93615e769?auto=format&fit=crop&w=1200&q=80',
     tags: ['Prayer', 'Education', 'Lectures', 'Family'],
     facilities: ['Jummah', 'Classes', 'Community programs'],
+    iqamah: { Fajr: '5:00', Dhuhr: '1:45', Asr: '6:00', Maghrib: '9:06', Isha: '10:50' },
+    campaign: { name: 'Classroom expansion', goal: 50000, raised: 31200 },
     description: 'A community centre focused on Islamic education, prayer services, programs, and access to qualified scholars.'
   },
   {
@@ -36,13 +39,17 @@ export const seedOrganizations = [
     type: 'Masjid',
     city: 'Milton / Oakville',
     address: '4269 Regional Road 25, Oakville, ON',
+    latitude: 43.4818,
+    longitude: -79.8141,
     website: 'https://miltonmasjid.com/',
     email: 'info@miltonmasjid.com',
     verified: true,
-    followers: '5.1k',
+    followers: 5120,
     cover: 'https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?auto=format&fit=crop&w=1200&q=80',
     tags: ['Quran Classes', 'Hifz', 'Food Bank', 'Youth'],
     facilities: ['Parking', 'Quran classes', 'Hifz', 'Food bank'],
+    iqamah: { Fajr: '5:15', Dhuhr: '1:40', Asr: '6:15', Maghrib: '9:08', Isha: '10:45' },
+    campaign: { name: 'Food bank operations', goal: 30000, raised: 18420 },
     description: 'Serving Milton, Oakville, Burlington, and surrounding communities through prayer, Quran programs, food bank, and youth work.'
   },
   {
@@ -51,13 +58,17 @@ export const seedOrganizations = [
     type: 'MSA',
     city: 'Toronto',
     address: 'Downtown Toronto',
+    latitude: 43.6577,
+    longitude: -79.3788,
     website: '#',
     email: 'msa@example.com',
     verified: false,
-    followers: '1.9k',
+    followers: 1900,
     cover: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=1200&q=80',
     tags: ['Students', 'Halaqah', 'Volunteers', 'Mentorship'],
     facilities: ['Student events', 'Speaker invites', 'Volunteer teams'],
+    iqamah: { Fajr: 'Campus rooms vary', Dhuhr: '1:30', Asr: '5:45', Maghrib: 'At adhan', Isha: '10:30' },
+    campaign: { name: 'Campus iftar fund', goal: 12000, raised: 8300 },
     description: 'Student-led Muslim community for events, halaqahs, networking, and campus support.'
   },
   {
@@ -66,56 +77,63 @@ export const seedOrganizations = [
     type: 'Islamic Charity',
     city: 'Greater Toronto Area',
     address: 'Mobile teams across the GTA',
+    latitude: 43.589,
+    longitude: -79.6441,
     website: '#',
     email: 'volunteer@example.com',
     verified: true,
-    followers: '8.4k',
+    followers: 8400,
     cover: 'https://images.unsplash.com/photo-1593113598332-cd288d649433?auto=format&fit=crop&w=1200&q=80',
     tags: ['Charity', 'Food Bank', 'Refugee Support', 'Volunteers'],
     facilities: ['Food packing', 'Distribution teams', 'Donation campaigns'],
+    campaign: { name: 'Winter relief kits', goal: 45000, raised: 28750 },
     description: 'Volunteer-led relief programs connecting donors and volunteers with local families who need support.'
   }
 ];
 
 export const seedPeople = [
   {
-    id: '1',
+    id: 'imam-omar',
     name: 'Sh. Omar Rahman',
     accountType: 'IMAM',
     role: 'Imam / Khateeb',
     city: 'GTA',
     areas: ['Seerah', 'Identity', 'Family'],
-    available: 'Available weekends',
+    skills: ['Khutbah', 'Youth', 'Counselling'],
+    availability: 'Available weekends',
     headline: 'Helping youth build confident Muslim identity in public life.'
   },
   {
-    id: '2',
+    id: 'mariam-ali',
     name: 'Ust. Mariam Ali',
     accountType: 'STUDENT_OF_KNOWLEDGE',
     role: 'Quran teacher',
     city: 'Mississauga',
     areas: ['Tafsir', 'Sisters Programs', 'MSA Talks'],
-    available: 'Open to MSA invites',
+    skills: ['Teaching', 'Tafsir', 'Arabic'],
+    availability: 'Open to MSA invites',
     headline: 'Weekend tafsir, sisters circles, and student mentorship.'
   },
   {
-    id: '3',
+    id: 'yusuf-khan',
     name: 'Br. Yusuf Khan',
     accountType: 'BUSINESS',
     role: 'Startup founder',
     city: 'Toronto',
     areas: ['Career', 'Business', 'Mentorship'],
-    available: 'Coffee chats',
+    skills: ['Cloud', 'Cybersecurity', 'Startups'],
+    availability: 'Coffee chats',
     headline: 'Cloud engineering mentor for students entering tech.'
   },
   {
-    id: '4',
+    id: 'aisha-ahmed',
     name: 'Aisha Ahmed',
     accountType: 'USER',
     role: 'Volunteer coordinator',
     city: 'Milton',
     areas: ['Youth', 'Volunteering', 'Events'],
-    available: 'Open to help',
+    skills: ['Operations', 'Registration', 'Youth'],
+    availability: 'Open to help',
     headline: 'Coordinating youth nights, registration desks, and food drives.'
   }
 ];
@@ -126,11 +144,16 @@ export const seedEvents = [
     type: 'Lecture',
     title: 'Friday Night Reminder',
     host: 'Imam Bukhari Centre',
+    organizationId: 'imam-bukhari-centre',
     time: 'Friday, 8:30 PM',
     place: '50 Steeles Ave E, Milton',
-    distance: 'Nearby',
+    latitude: 43.5239,
+    longitude: -79.8891,
     tags: ['Lecture', 'Family', 'Community'],
-    going: 142,
+    capacity: 250,
+    going: 242,
+    checkedIn: 168,
+    waitlist: 0,
     saved: false,
     description: 'A weekly reminder for families with short reflections, Quran recitation, and refreshments.'
   },
@@ -139,12 +162,18 @@ export const seedEvents = [
     type: 'Youth',
     title: 'Youth Halaqah and Basketball',
     host: 'HICC Masjid',
+    organizationId: 'hicc',
     time: 'Saturday, 7:00 PM',
     place: '4269 Regional Road 25, Oakville',
-    distance: '15 min away',
+    latitude: 43.4818,
+    longitude: -79.8141,
     tags: ['Youth', 'Halaqah', 'Sports'],
-    going: 86,
+    capacity: 120,
+    going: 118,
+    checkedIn: 94,
+    waitlist: 9,
     saved: true,
+    sponsor: 'Sponsored by Crescent Dental',
     description: 'A structured youth night with halaqah, food, and gym time for high school and university students.'
   },
   {
@@ -152,11 +181,16 @@ export const seedEvents = [
     type: 'MSA',
     title: 'Campus Iftar Planning',
     host: 'TMU MSA',
+    organizationId: 'tmu-msa',
     time: 'Tuesday, 6:00 PM',
     place: 'Downtown Toronto',
-    distance: 'Campus',
+    latitude: 43.6577,
+    longitude: -79.3788,
     tags: ['MSA', 'Volunteers', 'Students'],
+    capacity: 80,
     going: 34,
+    checkedIn: 21,
+    waitlist: 0,
     saved: false,
     description: 'Planning session for Ramadan iftar logistics, sponsor outreach, and volunteer teams.'
   },
@@ -165,11 +199,16 @@ export const seedEvents = [
     type: 'Fundraiser',
     title: 'Winter Relief Packing Night',
     host: 'Mercy Relief GTA',
+    organizationId: 'mercy-relief',
     time: 'Sunday, 2:00 PM',
     place: 'Mississauga Warehouse',
-    distance: '24 min away',
+    latitude: 43.589,
+    longitude: -79.6441,
     tags: ['Charity', 'Family', 'Volunteers'],
+    capacity: 300,
     going: 210,
+    checkedIn: 132,
+    waitlist: 0,
     saved: false,
     description: 'Pack food and hygiene kits for families across the GTA. Student hours can be verified.'
   }
@@ -215,27 +254,91 @@ export const feedPosts = [
 ];
 
 export const volunteerRoles = [
-  { title: 'Food bank intake lead', org: 'HICC Masjid', hours: '4 hrs', applicants: 18, skill: 'Operations' },
-  { title: 'Youth night setup crew', org: 'Imam Bukhari Centre', hours: '3 hrs', applicants: 11, skill: 'Events' },
-  { title: 'Social media editor', org: 'TMU MSA', hours: 'Remote', applicants: 7, skill: 'Design' },
-  { title: 'Donation desk support', org: 'Mercy Relief GTA', hours: '2 hrs', applicants: 23, skill: 'Fundraising' }
+  {
+    id: 'vol-1',
+    title: 'Food bank intake lead',
+    org: 'HICC Masjid',
+    organizationId: 'hicc',
+    shift: 'Saturday, 10:00 AM',
+    hours: 4,
+    applicants: 18,
+    approved: 12,
+    skill: 'Operations',
+    status: 'Approved',
+    checkIn: '10:00 AM',
+    checkOut: '2:00 PM',
+    verifiedHours: 4
+  },
+  {
+    id: 'vol-2',
+    title: 'Youth night setup crew',
+    org: 'Imam Bukhari Centre',
+    organizationId: 'imam-bukhari-centre',
+    shift: 'Friday, 7:00 PM',
+    hours: 3,
+    applicants: 11,
+    approved: 8,
+    skill: 'Events',
+    status: 'Pending approval',
+    checkIn: null,
+    checkOut: null,
+    verifiedHours: 0
+  },
+  {
+    id: 'vol-3',
+    title: 'Social media editor',
+    org: 'TMU MSA',
+    organizationId: 'tmu-msa',
+    shift: 'Remote',
+    hours: 2,
+    applicants: 7,
+    approved: 3,
+    skill: 'Design',
+    status: 'Open',
+    checkIn: null,
+    checkOut: null,
+    verifiedHours: 0
+  },
+  {
+    id: 'vol-4',
+    title: 'Donation desk support',
+    org: 'Mercy Relief GTA',
+    organizationId: 'mercy-relief',
+    shift: 'Sunday, 1:30 PM',
+    hours: 2,
+    applicants: 23,
+    approved: 16,
+    skill: 'Fundraising',
+    status: 'Approved',
+    checkIn: '1:30 PM',
+    checkOut: '3:30 PM',
+    verifiedHours: 2
+  }
 ];
 
 export const lectures = [
-  { title: 'Tafsir of Surah Al-Kahf', speaker: 'Ust. Mariam Ali', format: 'Audio + notes', category: 'Tafsir' },
-  { title: 'The Seerah for High School Students', speaker: 'Sh. Omar Rahman', format: 'Video', category: 'Seerah' },
-  { title: 'Muslim Identity at Work', speaker: 'Br. Yusuf Khan', format: 'Article', category: 'Career' }
+  { id: 'lec-1', title: 'Tafsir of Surah Al-Kahf', speaker: 'Ust. Mariam Ali', format: 'Audio + notes', category: 'Tafsir', saved: true },
+  { id: 'lec-2', title: 'The Seerah for High School Students', speaker: 'Sh. Omar Rahman', format: 'Video', category: 'Seerah', saved: false },
+  { id: 'lec-3', title: 'Muslim Identity at Work', speaker: 'Br. Yusuf Khan', format: 'Article', category: 'Career', saved: false }
 ];
 
 export const businesses = [
-  { name: 'Crescent Dental', category: 'Dentist', city: 'Milton', rating: '4.9' },
-  { name: 'Halal Homes Realty', category: 'Realtor', city: 'GTA', rating: '4.8' },
-  { name: 'Noor Tutors', category: 'Tutoring', city: 'Online', rating: '5.0' }
+  { id: 'biz-1', name: 'Crescent Dental', category: 'Dentist', city: 'Milton', rating: '4.9', sponsor: 'Youth Basketball Night' },
+  { id: 'biz-2', name: 'Halal Homes Realty', category: 'Realtor', city: 'GTA', rating: '4.8', sponsor: 'Family Halaqah' },
+  { id: 'biz-3', name: 'Noor Tutors', category: 'Tutoring', city: 'Online', rating: '5.0', sponsor: 'Quran Competition' }
+];
+
+export const conversations = [
+  { id: 'msg-1', name: 'Sh. Omar Rahman', role: 'Imam', preview: 'Wa alaikum assalam, send me the details.', unread: 1, read: true },
+  { id: 'msg-2', name: 'HICC Volunteer Team', role: 'Organization', preview: 'Can you help this Saturday from 2pm to 5pm?', unread: 0, read: true },
+  { id: 'msg-3', name: 'TMU MSA', role: 'MSA', preview: 'We still need two check-in volunteers.', unread: 3, read: false }
 ];
 
 export const dashboardMetrics = [
   { label: 'Event registrations', value: '1,248', change: '+18%' },
   { label: 'Volunteer hours', value: '642', change: '+31%' },
   { label: 'Campaign donations', value: '$24.6k', change: '+12%' },
-  { label: 'Follower growth', value: '3.2k', change: '+9%' }
+  { label: 'Follower growth', value: '3.2k', change: '+9%' },
+  { label: 'Unread messages', value: '14', change: '+6' },
+  { label: 'QR check-ins', value: '415', change: '+22%' }
 ];

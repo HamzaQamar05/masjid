@@ -137,6 +137,56 @@ a {
   color: #17221d;
 }
 
+.search-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 45;
+  background: #fff;
+  border: 1px solid #d8e2df;
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(20, 36, 31, 0.18);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.search-results button {
+  border: 0;
+  background: #f8fbfa;
+  color: #17221d;
+  text-align: left;
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 2px;
+}
+
+.search-results span {
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.search-results small,
+.helper-text {
+  color: #5d716b;
+  line-height: 1.4;
+}
+
+.search-results p {
+  margin: 0;
+  padding: 8px;
+  color: #5d716b;
+}
+
 .top-actions {
   display: flex;
   align-items: center;
@@ -229,7 +279,8 @@ a {
 .role-card,
 .library-card,
 .business-card,
-.metric-card {
+.metric-card,
+.nearby-card {
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid #dce6e3;
   border-radius: 8px;
@@ -312,7 +363,8 @@ a {
 
 .profile-meta,
 .role-meta,
-.org-detail-row {
+.org-detail-row,
+.check-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -320,7 +372,9 @@ a {
 
 .profile-meta span,
 .role-meta span,
-.org-detail-row span {
+.org-detail-row span,
+.check-row span,
+.check-row strong {
   border: 1px solid #d8e2df;
   border-radius: 999px;
   padding: 5px 9px;
@@ -585,6 +639,52 @@ a {
   font-size: 11px;
 }
 
+.prayer-grid.detailed div {
+  display: grid;
+  gap: 3px;
+}
+
+.prayer-grid.detailed em {
+  color: #a8c5bd;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.nearby-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.nearby-list {
+  display: grid;
+  gap: 10px;
+}
+
+.nearby-card {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.nearby-card h3 {
+  margin: 0 0 4px;
+}
+
+.nearby-card p {
+  color: #5d716b;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.nearby-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .compact-card {
   border: 1px solid #e0e8e6;
   border-radius: 8px;
@@ -748,6 +848,65 @@ a {
   margin: 8px 0 12px;
 }
 
+.sponsor-strip {
+  display: inline-flex;
+  width: fit-content;
+  color: #6f4d11;
+  background: #fff7e8;
+  border: 1px solid #f1d9ad;
+  border-radius: 999px;
+  padding: 6px 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.capacity-block,
+.donation-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  background: #f8fbfa;
+  border: 1px solid #e0e8e6;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.capacity-block div:first-child,
+.donation-card {
+  color: #50665f;
+  font-size: 13px;
+}
+
+.capacity-block strong,
+.donation-card strong {
+  display: block;
+  color: #17221d;
+}
+
+.qr-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.qr-row p {
+  margin: 2px 0 0;
+}
+
+.qr-box {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #edf7f4;
+  border: 1px solid #d0e6e1;
+  color: #0f766e;
+  flex-shrink: 0;
+}
+
 .meta-line {
   display: flex;
   align-items: flex-start;
@@ -811,6 +970,160 @@ a {
 
 .business-card svg {
   color: #6f4d11;
+}
+
+.filter-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid #d8e2df;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.filter-panel button {
+  border: 1px solid #d8e2df;
+  background: #f8fbfa;
+  color: #50665f;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  white-space: nowrap;
+  font-weight: 850;
+}
+
+.filter-panel button.active {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+}
+
+.hours-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hours-summary h2 {
+  font-size: 24px;
+  margin: 0 0 6px;
+}
+
+.hours-summary p {
+  color: #5d716b;
+  margin: 0;
+}
+
+.check-row {
+  margin-top: 12px;
+}
+
+.messaging-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.inbox-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.inbox-list button {
+  border: 1px solid #d8e2df;
+  background: #f8fbfa;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+  position: relative;
+}
+
+.inbox-list button.active {
+  border-color: #0f766e;
+  box-shadow: inset 3px 0 0 #0f766e;
+}
+
+.inbox-list span {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.inbox-list p {
+  color: #5d716b;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.inbox-list em {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  min-width: 22px;
+  min-height: 22px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #0f766e;
+  border-radius: 999px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.message-thread {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.thread-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e4ece9;
+}
+
+.thread-head h2,
+.thread-head p {
+  margin: 0;
+}
+
+.thread-head p {
+  color: #5d716b;
+}
+
+.chat-bubble {
+  max-width: 78%;
+  border-radius: 8px;
+  padding: 12px;
+  line-height: 1.45;
+}
+
+.chat-bubble.received {
+  background: #f1f5f4;
+  color: #23322d;
+}
+
+.chat-bubble.sent {
+  justify-self: end;
+  background: #0f766e;
+  color: #fff;
+}
+
+.message-thread textarea {
+  min-height: 112px;
+  resize: vertical;
+  border: 1px solid #d8e2df;
+  border-radius: 8px;
+  padding: 12px;
 }
 
 .metric-card {
@@ -977,6 +1290,7 @@ a {
   }
 
   .global-search,
+  .search-wrap,
   .profile-chip strong,
   .left-rail {
     display: none;
@@ -1072,8 +1386,23 @@ a {
   .organization-grid,
   .metric-grid,
   .admin-grid,
-  .right-rail {
+  .right-rail,
+  .messaging-layout {
     grid-template-columns: 1fr;
+  }
+
+  .nearby-card,
+  .hours-summary {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .nearby-actions {
+    justify-content: stretch;
+  }
+
+  .nearby-actions > * {
+    flex: 1;
   }
 }
 
