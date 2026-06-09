@@ -25,12 +25,22 @@ model User {
   accountType  AccountType @default(USER)
   bio          String?
   city         String?
+  location     String?
+  education    String?
+  experience   String?
+  skills       String[]    @default([])
+  interests    String[]    @default([])
+  languages    String[]    @default([])
+  hobbies      String[]    @default([])
+  availability String?
   createdAt    DateTime    @default(now())
 
   eventsCreated    Event[]             @relation("EventCreator")
   registrations    EventRegistration[]
   messagesSent     Message[]           @relation("SentMessages")
   messagesReceived Message[]           @relation("ReceivedMessages")
+  connectionsSent  Connection[]        @relation("ConnectionRequester")
+  connectionsGot   Connection[]        @relation("ConnectionReceiver")
 }
 
 model Organization {
@@ -67,6 +77,20 @@ model Event {
   registrations EventRegistration[]
 }
 
+model Connection {
+  id          String   @id @default(cuid())
+  requesterId String
+  receiverId  String
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requester User @relation("ConnectionRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("ConnectionReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId])
+}
+
 model EventRegistration {
   id        String   @id @default(cuid())
   userId    String
@@ -84,8 +108,9 @@ model Message {
   senderId   String
   receiverId String
   content    String
+  readAt     DateTime?
   createdAt  DateTime @default(now())
 
-  sender   User @relation("SentMessages", fields: [senderId], references: [id])
-  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  sender   User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
 }

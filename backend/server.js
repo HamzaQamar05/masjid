@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 
 dotenv.config();
+
 const app = express();
 const prisma = new PrismaClient();
 const allowedOrigins = [
@@ -14,27 +15,137 @@ const allowedOrigins = [
   'https://ummah-connect-psi.vercel.app'
 ].filter(Boolean);
 
+const fallbackMasjids = [
+  {
+    id: 'fallback-milton-islamic-centre',
+    name: 'Milton Islamic Centre',
+    type: 'Masjid',
+    city: 'Milton',
+    address: '8069 Esquesing Line, Milton, ON L9T 9C8',
+    latitude: 43.5403,
+    longitude: -79.8427,
+    website: 'https://miltonislamiccentre.com/',
+    verified: true
+  },
+  {
+    id: 'fallback-hicc',
+    name: 'HICC Masjid',
+    type: 'Masjid',
+    city: 'Oakville',
+    address: '4269 Regional Road 25, Oakville, ON L6M 4E9',
+    latitude: 43.4818,
+    longitude: -79.8141,
+    website: 'https://miltonmasjid.com/',
+    verified: true
+  },
+  {
+    id: 'fallback-imam-bukhari-centre',
+    name: 'Imam Bukhari Centre',
+    type: 'Masjid',
+    city: 'Milton',
+    address: '50 Steeles Avenue East, Unit 7 and 8, Milton, ON L9T 4W9',
+    latitude: 43.5239,
+    longitude: -79.8891,
+    website: 'http://ahlehadithcanada.org/toronto/',
+    verified: true
+  }
+];
+
 app.use(cors({
-  origin: allowedOrigins,
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+function normalizeList(value) {
+  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return [];
+}
 
 function publicUser(user) {
-  return { id: user.id, name: user.name, email: user.email, accountType: user.accountType, city: user.city, bio: user.bio };
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    accountType: user.accountType,
+    bio: user.bio,
+    city: user.city,
+    location: user.location,
+    education: user.education,
+    experience: user.experience,
+    skills: user.skills || [],
+    interests: user.interests || [],
+    languages: user.languages || [],
+    hobbies: user.hobbies || [],
+    availability: user.availability,
+    createdAt: user.createdAt
+  };
 }
+
 function createToken(user) {
   return jwt.sign({ id: user.id, accountType: user.accountType }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '7d' });
 }
+
 function auth(req, res, next) {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ error: 'No token provided' });
-  try { req.user = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret'); next(); }
-  catch { return res.status(401).json({ error: 'Invalid token' }); }
+  try {
+    req.user = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret');
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 }
+
+function requireAdmin(req, res, next) {
+  if (req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Admin account required' });
+  next();
+}
+
 function canPostEvent(req, res, next) {
   if (!['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Only masjid, MSA, or admin accounts can post events right now' });
   next();
+}
+
+function distanceKm(from, to) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const radius = 6371;
+  const dLat = toRad(to.latitude - from.latitude);
+  const dLng = toRad(to.longitude - from.longitude);
+  const lat1 = toRad(from.latitude);
+  const lat2 = toRad(to.latitude);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function withDistance(items, latitude, longitude) {
+  const origin = { latitude: Number(latitude), longitude: Number(longitude) };
+  return items
+    .map((item) => {
+      const km = item.latitude && item.longitude ? distanceKm(origin, item) : null;
+      return {
+        ...item,
+        distanceKm: km == null ? null : Number(km.toFixed(2)),
+        walkingMinutes: km == null ? null : Math.max(1, Math.round((km / 5) * 60)),
+        drivingMinutes: km == null ? null : Math.max(1, Math.round((km / 35) * 60 + 3))
+      };
+    })
+    .sort((a, b) => (a.distanceKm ?? 99999) - (b.distanceKm ?? 99999));
+}
+
+function osmAddress(tags = {}) {
+  const parts = [
+    [tags['addr:housenumber'], tags['addr:street']].filter(Boolean).join(' '),
+    tags['addr:city'],
+    tags['addr:province'] || tags['addr:state'],
+    tags['addr:postcode']
+  ].filter(Boolean);
+  return parts.join(', ');
 }
 
 app.get('/', (_, res) => res.json({ message: 'Ummah Connect API running' }));
@@ -44,11 +155,28 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password, accountType, city, bio } = req.body;
     if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' });
-    const allowed = ['USER','MASJID','MSA','IMAM','STUDENT_OF_KNOWLEDGE','BUSINESS','ADMIN'];
+
+    const allowed = ['USER', 'MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'BUSINESS', 'ADMIN'];
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({ data: { name, email: email.toLowerCase(), passwordHash, accountType: allowed.includes(accountType) ? accountType : 'USER', city, bio } });
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email: email.toLowerCase(),
+        passwordHash,
+        accountType: allowed.includes(accountType) ? accountType : 'USER',
+        city,
+        bio,
+        skills: normalizeList(req.body.skills),
+        interests: normalizeList(req.body.interests),
+        languages: normalizeList(req.body.languages),
+        hobbies: normalizeList(req.body.hobbies)
+      }
+    });
     res.json({ token: createToken(user), user: publicUser(user) });
-  } catch (err) { console.error(err); res.status(400).json({ error: err.code === 'P2002' ? 'Email already exists' : err.message }); }
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.code === 'P2002' ? 'Email already exists' : err.message });
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -60,52 +188,273 @@ app.post('/api/auth/login', async (req, res) => {
   res.json({ token: createToken(user), user: publicUser(user) });
 });
 
-app.get('/api/users', auth, async (_, res) => {
-  const users = await prisma.user.findMany({ select: { id: true, name: true, email: true, accountType: true, city: true, bio: true, createdAt: true }, orderBy: { createdAt: 'desc' } });
-  res.json(users);
+app.get('/api/me', auth, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  res.json(publicUser(user));
+});
+
+app.put('/api/me', auth, async (req, res) => {
+  const data = {
+    name: req.body.name,
+    bio: req.body.bio,
+    city: req.body.city,
+    location: req.body.location,
+    education: req.body.education,
+    experience: req.body.experience,
+    availability: req.body.availability,
+    skills: normalizeList(req.body.skills),
+    interests: normalizeList(req.body.interests),
+    languages: normalizeList(req.body.languages),
+    hobbies: normalizeList(req.body.hobbies)
+  };
+  Object.keys(data).forEach((key) => data[key] === undefined && delete data[key]);
+  const user = await prisma.user.update({ where: { id: req.user.id }, data });
+  res.json(publicUser(user));
+});
+
+app.get('/api/users', auth, async (req, res) => {
+  const users = await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+  const connections = await prisma.connection.findMany({
+    where: { OR: [{ requesterId: req.user.id }, { receiverId: req.user.id }] }
+  });
+  const connectionMap = new Map();
+  connections.forEach((connection) => {
+    const otherId = connection.requesterId === req.user.id ? connection.receiverId : connection.requesterId;
+    connectionMap.set(otherId, connection.status);
+  });
+  res.json(users.map((user) => ({ ...publicUser(user), connectionStatus: user.id === req.user.id ? 'SELF' : connectionMap.get(user.id) || 'NONE' })));
+});
+
+app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Admins cannot delete their own active session account' });
+  await prisma.eventRegistration.deleteMany({ where: { userId: req.params.id } });
+  await prisma.message.deleteMany({ where: { OR: [{ senderId: req.params.id }, { receiverId: req.params.id }] } });
+  await prisma.connection.deleteMany({ where: { OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] } });
+  await prisma.event.deleteMany({ where: { createdById: req.params.id } });
+  await prisma.user.delete({ where: { id: req.params.id } });
+  res.json({ message: 'User deleted' });
+});
+
+app.post('/api/connections/:userId', auth, async (req, res) => {
+  if (req.params.userId === req.user.id) return res.status(400).json({ error: 'Cannot connect with yourself' });
+  const existing = await prisma.connection.findFirst({
+    where: {
+      OR: [
+        { requesterId: req.user.id, receiverId: req.params.userId },
+        { requesterId: req.params.userId, receiverId: req.user.id }
+      ]
+    }
+  });
+  if (existing) return res.json(existing);
+  const connection = await prisma.connection.create({ data: { requesterId: req.user.id, receiverId: req.params.userId } });
+  res.json(connection);
+});
+
+app.put('/api/connections/:connectionId', auth, async (req, res) => {
+  const connection = await prisma.connection.findUnique({ where: { id: req.params.connectionId } });
+  if (!connection || connection.receiverId !== req.user.id) return res.status(404).json({ error: 'Connection request not found' });
+  const updated = await prisma.connection.update({ where: { id: connection.id }, data: { status: req.body.status === 'DECLINED' ? 'DECLINED' : 'ACCEPTED' } });
+  res.json(updated);
+});
+
+app.get('/api/connections', auth, async (req, res) => {
+  const connections = await prisma.connection.findMany({
+    where: { OR: [{ requesterId: req.user.id }, { receiverId: req.user.id }] },
+    include: { requester: true, receiver: true },
+    orderBy: { updatedAt: 'desc' }
+  });
+  res.json(connections.map((connection) => ({
+    ...connection,
+    requester: publicUser(connection.requester),
+    receiver: publicUser(connection.receiver)
+  })));
 });
 
 app.get('/api/organizations', async (_, res) => {
   const organizations = await prisma.organization.findMany({ include: { events: true }, orderBy: { createdAt: 'desc' } });
   res.json(organizations);
 });
+
 app.post('/api/organizations', auth, async (req, res) => {
   const { name, type, city, address, website, email, phone, description, facilities } = req.body;
-  const org = await prisma.organization.create({ data: { name, type, city, address, website, email, phone, description, facilities, ownerId: req.user.id, claimed: true, verified: req.user.accountType === 'ADMIN' } });
+  const org = await prisma.organization.create({
+    data: {
+      name,
+      type,
+      city,
+      address,
+      website,
+      email,
+      phone,
+      description,
+      facilities: Array.isArray(facilities) ? facilities.join(', ') : facilities,
+      ownerId: req.user.id,
+      claimed: true,
+      verified: req.user.accountType === 'ADMIN'
+    }
+  });
   res.json(org);
 });
 
 app.get('/api/events', async (_, res) => {
-  const events = await prisma.event.findMany({ include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: true }, orderBy: { startTime: 'asc' } });
+  const events = await prisma.event.findMany({
+    include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: true },
+    orderBy: { startTime: 'asc' }
+  });
   res.json(events);
 });
+
 app.post('/api/events', auth, canPostEvent, async (req, res) => {
   const { title, description, location, startTime, endTime, organizationId } = req.body;
   if (!title || !startTime) return res.status(400).json({ error: 'Title and start time are required' });
-  const event = await prisma.event.create({ data: { title, description, location, startTime: new Date(startTime), endTime: endTime ? new Date(endTime) : null, organizationId, createdById: req.user.id } });
+  const event = await prisma.event.create({
+    data: {
+      title,
+      description,
+      location,
+      startTime: new Date(startTime),
+      endTime: endTime ? new Date(endTime) : null,
+      organizationId,
+      createdById: req.user.id
+    }
+  });
   res.json(event);
 });
+
+app.delete('/api/events/:eventId', auth, async (req, res) => {
+  const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (event.createdById !== req.user.id && req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Only the event creator or an admin can delete this event' });
+  await prisma.eventRegistration.deleteMany({ where: { eventId: event.id } });
+  await prisma.event.delete({ where: { id: event.id } });
+  res.json({ message: 'Event deleted' });
+});
+
 app.post('/api/events/:eventId/register', auth, async (req, res) => {
   try {
     const registration = await prisma.eventRegistration.create({ data: { userId: req.user.id, eventId: req.params.eventId } });
     res.json(registration);
-  } catch (err) { res.status(400).json({ error: 'Already registered or event not found' }); }
+  } catch {
+    res.status(400).json({ error: 'Already registered or event not found' });
+  }
 });
+
 app.delete('/api/events/:eventId/register', auth, async (req, res) => {
   await prisma.eventRegistration.deleteMany({ where: { userId: req.user.id, eventId: req.params.eventId } });
   res.json({ message: 'Registration removed' });
 });
 
-app.post('/api/messages', auth, async (req, res) => {
-  const { receiverId, content } = req.body;
-  if (!receiverId || !content) return res.status(400).json({ error: 'Receiver and content are required' });
-  const message = await prisma.message.create({ data: { senderId: req.user.id, receiverId, content } });
-  res.json(message);
+app.get('/api/messages/threads', auth, async (req, res) => {
+  const messages = await prisma.message.findMany({
+    where: { OR: [{ senderId: req.user.id }, { receiverId: req.user.id }] },
+    include: { sender: true, receiver: true },
+    orderBy: { createdAt: 'desc' }
+  });
+  const threads = new Map();
+  messages.forEach((message) => {
+    const other = message.senderId === req.user.id ? message.receiver : message.sender;
+    if (!threads.has(other.id)) {
+      threads.set(other.id, {
+        user: publicUser(other),
+        lastMessage: message.content,
+        lastMessageAt: message.createdAt,
+        unread: message.receiverId === req.user.id && !message.readAt ? 1 : 0
+      });
+    } else if (message.receiverId === req.user.id && !message.readAt) {
+      const thread = threads.get(other.id);
+      thread.unread += 1;
+    }
+  });
+  res.json([...threads.values()]);
 });
+
 app.get('/api/messages/:userId', auth, async (req, res) => {
   const otherUserId = req.params.userId;
-  const messages = await prisma.message.findMany({ where: { OR: [{ senderId: req.user.id, receiverId: otherUserId }, { senderId: otherUserId, receiverId: req.user.id }] }, orderBy: { createdAt: 'asc' } });
-  res.json(messages);
+  await prisma.message.updateMany({ where: { senderId: otherUserId, receiverId: req.user.id, readAt: null }, data: { readAt: new Date() } });
+  const messages = await prisma.message.findMany({
+    where: { OR: [{ senderId: req.user.id, receiverId: otherUserId }, { senderId: otherUserId, receiverId: req.user.id }] },
+    include: { sender: true, receiver: true },
+    orderBy: { createdAt: 'asc' }
+  });
+  res.json(messages.map((message) => ({ ...message, sender: publicUser(message.sender), receiver: publicUser(message.receiver) })));
+});
+
+app.post('/api/messages', auth, async (req, res) => {
+  const { receiverId, content } = req.body;
+  if (!receiverId || !content?.trim()) return res.status(400).json({ error: 'Receiver and content are required' });
+  if (receiverId === req.user.id) return res.status(400).json({ error: 'Cannot message yourself' });
+  const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
+  if (!receiver) return res.status(404).json({ error: 'Receiver not found' });
+  const message = await prisma.message.create({
+    data: { senderId: req.user.id, receiverId, content: content.trim() },
+    include: { sender: true, receiver: true }
+  });
+  res.json({ ...message, sender: publicUser(message.sender), receiver: publicUser(message.receiver) });
+});
+
+app.get('/api/location/masjids', async (req, res) => {
+  const latitude = Number(req.query.lat);
+  const longitude = Number(req.query.lng);
+  const radius = Math.min(Number(req.query.radius || 25000), 50000);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ error: 'lat and lng query parameters are required' });
+
+  try {
+    const query = `
+      [out:json][timeout:12];
+      (
+        node["amenity"="place_of_worship"]["religion"="muslim"](around:${radius},${latitude},${longitude});
+        way["amenity"="place_of_worship"]["religion"="muslim"](around:${radius},${latitude},${longitude});
+        relation["amenity"="place_of_worship"]["religion"="muslim"](around:${radius},${latitude},${longitude});
+      );
+      out center tags 25;
+    `;
+    const response = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ data: query })
+    });
+    if (!response.ok) throw new Error('Overpass failed');
+    const data = await response.json();
+    const masjids = (data.elements || []).map((item) => {
+      const tags = item.tags || {};
+      return {
+        id: `osm-${item.type}-${item.id}`,
+        name: tags.name || tags['name:en'] || 'Unnamed masjid',
+        type: 'Masjid',
+        city: tags['addr:city'] || tags.city || '',
+        address: osmAddress(tags) || tags['addr:full'] || tags.description || '',
+        latitude: item.lat || item.center?.lat,
+        longitude: item.lon || item.center?.lon,
+        phone: tags.phone || tags['contact:phone'] || '',
+        website: tags.website || tags['contact:website'] || '',
+        verified: false,
+        source: 'OpenStreetMap'
+      };
+    }).filter((item) => item.latitude && item.longitude && item.name !== 'Unnamed masjid');
+    const finalMasjids = masjids.length ? masjids : fallbackMasjids;
+    res.json(withDistance(finalMasjids, latitude, longitude));
+  } catch (err) {
+    console.error(err);
+    res.json(withDistance(fallbackMasjids, latitude, longitude));
+  }
+});
+
+app.get('/api/prayer-times', async (req, res) => {
+  const latitude = Number(req.query.lat);
+  const longitude = Number(req.query.lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ error: 'lat and lng query parameters are required' });
+  const method = req.query.method || 2;
+  const date = req.query.date || Math.floor(Date.now() / 1000);
+  try {
+    const url = `https://api.aladhan.com/v1/timings/${date}?latitude=${latitude}&longitude=${longitude}&method=${method}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Prayer time API failed');
+    const data = await response.json();
+    res.json(data.data);
+  } catch (err) {
+    console.error(err);
+    res.status(502).json({ error: 'Could not fetch prayer times right now' });
+  }
 });
 
 const port = process.env.PORT || 5000;

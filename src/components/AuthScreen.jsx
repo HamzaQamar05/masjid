@@ -17,8 +17,10 @@ export default function AuthScreen({ onLogin }) {
       });
       const data = await res.json();
       if (!res.ok) return alert(data.error || 'Something went wrong');
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      sessionStorage.setItem('token', data.token);
+      sessionStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       onLogin(data.user);
     } catch (err) {
       console.error(err);
@@ -51,7 +53,7 @@ export default function AuthScreen({ onLogin }) {
         )}
         <input required placeholder="Email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
         <input required placeholder="Password" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-        <button className="primary-btn">{mode === 'login' ? 'Login' : 'Create account'}</button>
+        <button className="primary-button">{mode === 'login' ? 'Login' : 'Create account'}</button>
       </form>
 
       <button className="text-btn" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>

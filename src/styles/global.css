@@ -45,6 +45,12 @@ a {
   z-index: 1;
 }
 
+.app.auth-only {
+  grid-template-columns: minmax(0, 520px);
+  place-content: center;
+  padding: 24px;
+}
+
 .app-glow {
   position: fixed;
   inset: 0;
@@ -227,6 +233,12 @@ a {
 .secondary-button {
   color: #0f766e;
   font-weight: 800;
+}
+
+.secondary-button.danger {
+  color: #9f1239;
+  border-color: #fecdd3;
+  background: #fff1f2;
 }
 
 .profile-chip {
@@ -1124,6 +1136,76 @@ a {
   border: 1px solid #d8e2df;
   border-radius: 8px;
   padding: 12px;
+}
+
+.message-list {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-actions {
+  flex-wrap: wrap;
+}
+
+.profile-detail {
+  display: grid;
+  gap: 18px;
+}
+
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e4ece9;
+}
+
+.profile-hero .profile-avatar {
+  margin: 0;
+}
+
+.profile-hero h2,
+.profile-hero p {
+  margin: 0;
+}
+
+.profile-form {
+  display: grid;
+  gap: 12px;
+}
+
+.profile-form input,
+.profile-form textarea {
+  width: 100%;
+  border: 1px solid #d8e2df;
+  background: #fff;
+  color: #17221d;
+  border-radius: 8px;
+  padding: 13px 14px;
+  min-height: 48px;
+}
+
+.profile-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.profile-read {
+  display: grid;
+  gap: 14px;
+}
+
+.info-block {
+  border: 1px solid #e0e8e6;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fbfa;
+}
+
+.info-block p {
+  margin: 5px 0 0;
+  color: #5d716b;
+  line-height: 1.45;
 }
 
 .metric-card {
