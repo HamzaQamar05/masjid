@@ -24,7 +24,7 @@ import {
   X
 } from 'lucide-react';
 import AuthScreen from './components/AuthScreen.jsx';
-import { defaultLocation, prayers, seedEvents, seedOrganizations } from './data/seedData.js';
+import { defaultLocation, prayers, seedEvents, seedOrganizations, volunteerRoles } from './data/seedData.js';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -33,10 +33,13 @@ const navItems = [
   { key: 'events', label: 'Events', icon: CalendarDays },
   { key: 'organizations', label: 'Masjids', icon: Building2 },
   { key: 'network', label: 'Network', icon: Users },
+  { key: 'volunteers', label: 'Volunteer', icon: HeartHandshake },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'profile', label: 'Profile', icon: UserCheck },
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
 ];
+
+const mobileNavKeys = ['home', 'organizations', 'network', 'volunteers', 'messages', 'profile'];
 
 function token() {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -114,7 +117,12 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
       </header>
       <div className={navOpen ? 'mobile-drawer open' : 'mobile-drawer'}>
         <div className="drawer-head"><strong>Menu</strong><button className="icon-button" onClick={() => setNavOpen(false)}><X size={20} /></button></div>
+        <div className="drawer-profile">
+          <button className="profile-avatar" onClick={() => navigate('profile')}>{initials(user.name)}</button>
+          <div><strong>{user.name}</strong><span>{user.accountType}</span></div>
+        </div>
         <NavigationList tab={tab} setTab={navigate} user={user} />
+        <button className="mobile-logout" onClick={onLogout}><LogOut size={18} />Logout</button>
       </div>
       <aside className="rail left-rail">
         <ProfileSummary user={user} onLogout={onLogout} setTab={navigate} />
@@ -314,6 +322,27 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
 
 function MessagesScreen({ users, selectedUser, setSelectedUser, messages, loadMessages, loadThreads }) {
   const [draft, setDraft] = useState('');
+  useEffect(() => {
+    if (!selectedUser?.id) return undefined;
+    let active = true;
+    async function refreshThread() {
+      try {
+        if (active) {
+          await loadMessages(selectedUser.id);
+          await loadThreads();
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    refreshThread();
+    const timer = setInterval(refreshThread, 2500);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [selectedUser?.id]);
+
   async function chooseUser(person) {
     setSelectedUser(person);
     await loadMessages(person.id);
@@ -343,6 +372,47 @@ function MessagesScreen({ users, selectedUser, setSelectedUser, messages, loadMe
             </>
           ) : <p className="helper-text">Choose a person to start messaging.</p>}
         </section>
+      </div>
+    </Page>
+  );
+}
+
+function VolunteersScreen({ roles, updateVolunteerRole }) {
+  const verifiedTotal = roles.reduce((sum, role) => sum + (Number(role.verifiedHours) || 0), 0);
+  const approvedCount = roles.filter((role) => role.status === 'Approved').length;
+  return (
+    <Page title="Volunteer Marketplace" subtitle="Find shifts, manage approvals, and keep verified service hours organized.">
+      <section className="hours-summary panel">
+        <div>
+          <span>Verified Hours</span>
+          <h2>{verifiedTotal}</h2>
+          <p>{approvedCount} approved role{approvedCount === 1 ? '' : 's'} ready for check-in tracking.</p>
+        </div>
+        <button className="secondary-button">Download PDF</button>
+      </section>
+      <div className="card-grid two">
+        {roles.map((role) => (
+          <article className="role-card" key={role.id}>
+            <div className="role-icon"><HeartHandshake size={24} /></div>
+            <div>
+              <h3>{role.title}</h3>
+              <p>{role.org}</p>
+              <TagRow tags={[role.shift, `${role.hours} hours`, role.skill]} />
+            </div>
+            <div className="check-row"><span>Applicants</span><strong>{role.applicants}</strong></div>
+            <div className="check-row"><span>Approved</span><strong>{role.approved}</strong></div>
+            <div className="check-row"><span>Status</span><strong>{role.status}</strong></div>
+            <div className="check-row"><span>Check-in</span><strong>{role.checkIn || 'Not checked in'}</strong></div>
+            <div className="check-row"><span>Check-out</span><strong>{role.checkOut || 'Not checked out'}</strong></div>
+            <div className="card-footer">
+              {role.status === 'Open' && <button className="primary-button" onClick={() => updateVolunteerRole(role.id, 'apply')}>Apply</button>}
+              {role.status === 'Pending approval' && <button className="secondary-button" onClick={() => updateVolunteerRole(role.id, 'approve')}>Approve</button>}
+              {role.status === 'Approved' && !role.checkIn && <button className="primary-button" onClick={() => updateVolunteerRole(role.id, 'check-in')}>Check in</button>}
+              {role.status === 'Approved' && role.checkIn && !role.checkOut && <button className="primary-button" onClick={() => updateVolunteerRole(role.id, 'check-out')}>Check out</button>}
+              {role.checkOut && <span>{role.verifiedHours} verified hours</span>}
+            </div>
+          </article>
+        ))}
       </div>
     </Page>
   );
@@ -391,7 +461,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave }) {
   }
 
   return (
-    <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="LinkedIn-style profile with education, experience, skills, languages, interests, and hobbies.">
+    <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="Community profile with education, experience, skills, languages, interests, and hobbies.">
       {!editingSelf && <button className="secondary-button" onClick={onCloseViewed}>Back to your profile</button>}
       <section className="panel profile-detail">
         <div className="profile-hero"><div className="profile-avatar">{initials(profile.name)}</div><div><h2>{profile.name}</h2><p>{profile.accountType} - {profile.city || 'No city yet'}</p></div></div>
@@ -475,6 +545,7 @@ export default function App() {
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
   const [masjids, setMasjids] = useState([]);
   const [prayerTimes, setPrayerTimes] = useState(prayers);
+  const [volunteerShifts, setVolunteerShifts] = useState(volunteerRoles);
 
   async function bootstrap() {
     if (!token()) return;
@@ -504,6 +575,18 @@ export default function App() {
 
   async function loadThreads() {
     await api('/api/messages/threads').catch(() => []);
+  }
+
+  function updateVolunteerRole(roleId, action) {
+    const now = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    setVolunteerShifts((roles) => roles.map((role) => {
+      if (role.id !== roleId) return role;
+      if (action === 'apply') return { ...role, status: 'Pending approval', applicants: role.applicants + 1 };
+      if (action === 'approve') return { ...role, status: 'Approved', approved: role.approved + 1 };
+      if (action === 'check-in') return { ...role, checkIn: now, checkOut: null, verifiedHours: 0 };
+      if (action === 'check-out') return { ...role, checkOut: now, verifiedHours: role.hours };
+      return role;
+    }));
   }
 
   async function loadLocationData(nextLocation) {
@@ -602,6 +685,7 @@ export default function App() {
     post: <PostEventScreen setTab={setTab} loadEvents={loadEvents} />,
     organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
+    volunteers: <VolunteersScreen roles={volunteerShifts} updateVolunteerRole={updateVolunteerRole} />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} loadMessages={loadMessages} loadThreads={loadThreads} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => setViewedUser(null)} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} />,
     dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} />
@@ -613,7 +697,7 @@ export default function App() {
         {screens[tab] || screens.home}
       </Shell>
       <section className="mobile-bottom-nav">
-        {navItems.slice(0, 5).map((item) => {
+        {navItems.filter((item) => mobileNavKeys.includes(item.key)).map((item) => {
           const Icon = item.icon;
           return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span></button>;
         })}

@@ -1412,6 +1412,52 @@ a {
     margin-bottom: 16px;
   }
 
+  .drawer-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid #d8e2df;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .drawer-profile .profile-avatar {
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    border: 0;
+    flex: 0 0 auto;
+  }
+
+  .drawer-profile strong,
+  .drawer-profile span {
+    display: block;
+  }
+
+  .drawer-profile span {
+    color: #667973;
+    font-size: 12px;
+    font-weight: 800;
+    margin-top: 2px;
+  }
+
+  .mobile-logout {
+    width: 100%;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid #d8e2df;
+    border-radius: 8px;
+    background: #fff;
+    color: #7f1d1d;
+    font-weight: 900;
+    margin-top: 12px;
+  }
+
   .mobile-bottom-nav {
     position: fixed;
     left: 10px;
@@ -1419,7 +1465,7 @@ a {
     bottom: 10px;
     z-index: 35;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 4px;
     background: rgba(255, 255, 255, 0.94);
     border: 1px solid #d8e2df;
