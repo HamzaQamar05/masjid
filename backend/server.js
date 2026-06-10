@@ -753,6 +753,12 @@ app.delete('/api/organizations/:id/follow', auth, async (req, res) => {
   res.json({ message: 'Unfollowed' });
 });
 
+app.delete('/api/organizations/:id/followers/:userId', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can manage followers' });
+  await prisma.organizationFollow.deleteMany({ where: { organizationId: req.params.id, userId: req.params.userId } });
+  res.json({ message: 'Follower removed' });
+});
+
 app.post('/api/organizations/:id/people', auth, async (req, res) => {
   if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can manage team members' });
   const userId = String(req.body.userId || '');

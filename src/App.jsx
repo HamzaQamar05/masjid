@@ -834,18 +834,25 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, createPost, createEvent, deletePost, deleteEvent, updateApplication, updateRegistration, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, openProfile, startMessage }) {
-  const [orgForm, setOrgForm] = useState({ name: '', type: 'MASJID', city: '', address: '', website: '', ownerEmail: '', description: '', latitude: '', longitude: '' });
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, createPost, createEvent, deletePost, deleteEvent, updateApplication, updateRegistration, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
+  const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
+  const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
   const [eventForm, setEventForm] = useState({ organizationId: '', title: '', description: '', location: '', startTime: '', capacity: '', requiresApproval: false });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
   const [peopleForm, setPeopleForm] = useState({ organizationId: '', userId: '', roleLabel: 'Imam' });
+  const [peopleQuery, setPeopleQuery] = useState('');
   const [editingOrgId, setEditingOrgId] = useState('');
   const [editOrgForm, setEditOrgForm] = useState({});
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [dashboardQuery, setDashboardQuery] = useState('');
   const [activeSection, setActiveSection] = useState('all');
   const query = dashboardQuery.trim().toLowerCase();
+  const peopleSearch = peopleQuery.trim().toLowerCase();
+  const teamCandidates = users
+    .filter((person) => person.id !== user.id)
+    .filter((person) => !peopleSearch || `${person.name} ${person.email} ${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`.toLowerCase().includes(peopleSearch))
+    .slice(0, 40);
   const dashboardSections = [
     ['all', 'All'],
     ['posts', 'Posts'],
@@ -899,7 +906,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     event.preventDefault();
     const created = await createOrganization(orgForm);
     if (created?.temporaryPassword) alert(`Masjid login created for ${orgForm.ownerEmail}. Temporary password: ${created.temporaryPassword}`);
-    setOrgForm({ name: '', type: 'MASJID', city: '', address: '', website: '', ownerEmail: '', description: '', latitude: '', longitude: '' });
+    setOrgForm(emptyOrgForm);
   }
   async function submitOpp(event) {
     event.preventDefault();
@@ -929,6 +936,13 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     if (!organizationId || !peopleForm.userId) return alert('Select a masjid and person first.');
     await addOrganizationPerson(organizationId, { userId: peopleForm.userId, roleLabel: peopleForm.roleLabel });
     setPeopleForm({ organizationId, userId: '', roleLabel: 'Imam' });
+  }
+  async function quickAddTeam(organizationId, person, roleLabel = 'Team member') {
+    if (!person?.id) return;
+    const nextRole = prompt('Team role?', roleLabel);
+    if (!nextRole) return;
+    await addOrganizationPerson(organizationId, { userId: person.id, roleLabel: nextRole });
+    setActiveSection('team');
   }
   async function approveApplication(opportunityId, applicationId) {
     const approvedHours = Number(prompt('Approved volunteer hours?', '0') || 0);
@@ -1017,6 +1031,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                       {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
                       {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
                       {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
+                      {application.applicant && <button onClick={() => quickAddTeam(org.id, application.applicant, 'Volunteer Coordinator')}>Add to team</button>}
                     </div>
                   </article>
                 ))}
@@ -1046,11 +1061,19 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                 <input placeholder="City" value={orgForm.city} onChange={(event) => setOrgForm({ ...orgForm, city: event.target.value })} />
                 <input placeholder="Address" value={orgForm.address} onChange={(event) => setOrgForm({ ...orgForm, address: event.target.value })} />
                 <input placeholder="Website" value={orgForm.website} onChange={(event) => setOrgForm({ ...orgForm, website: event.target.value })} />
+                <input placeholder="Public email" value={orgForm.email} onChange={(event) => setOrgForm({ ...orgForm, email: event.target.value })} />
+                <input placeholder="Phone" value={orgForm.phone} onChange={(event) => setOrgForm({ ...orgForm, phone: event.target.value })} />
                 <input placeholder="Masjid admin login email" value={orgForm.ownerEmail} onChange={(event) => setOrgForm({ ...orgForm, ownerEmail: event.target.value })} />
+                <input placeholder="Logo image URL" value={orgForm.imageUrl} onChange={(event) => setOrgForm({ ...orgForm, imageUrl: event.target.value })} />
+                <input placeholder="Hero image URL" value={orgForm.heroImageUrl} onChange={(event) => setOrgForm({ ...orgForm, heroImageUrl: event.target.value })} />
+                <input placeholder="Donation URL" value={orgForm.donationUrl} onChange={(event) => setOrgForm({ ...orgForm, donationUrl: event.target.value })} />
+                <input placeholder="Instagram URL" value={orgForm.instagramUrl} onChange={(event) => setOrgForm({ ...orgForm, instagramUrl: event.target.value })} />
+                <input placeholder="Facebook URL" value={orgForm.facebookUrl} onChange={(event) => setOrgForm({ ...orgForm, facebookUrl: event.target.value })} />
                 <input placeholder="Latitude" value={orgForm.latitude} onChange={(event) => setOrgForm({ ...orgForm, latitude: event.target.value })} />
                 <input placeholder="Longitude" value={orgForm.longitude} onChange={(event) => setOrgForm({ ...orgForm, longitude: event.target.value })} />
               </div>
               <textarea placeholder="Description" value={orgForm.description} onChange={(event) => setOrgForm({ ...orgForm, description: event.target.value })} />
+              <textarea placeholder="Facilities, programs, parking, accessibility notes" value={orgForm.facilities} onChange={(event) => setOrgForm({ ...orgForm, facilities: event.target.value })} />
               <button className="primary-button">Create profile</button>
             </form>
           </section>
@@ -1123,12 +1146,14 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                   <option value="">Select organization</option>
                   {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
                 </select>
+                <input placeholder="Search people by name, email, city, skills" value={peopleQuery} onChange={(event) => setPeopleQuery(event.target.value)} />
                 <select value={peopleForm.userId} onChange={(event) => setPeopleForm({ ...peopleForm, userId: event.target.value })}>
                   <option value="">Select person</option>
-                  {users.filter((person) => person.id !== user.id).map((person) => <option key={person.id} value={person.id}>{person.name} - {person.accountType}</option>)}
+                  {teamCandidates.map((person) => <option key={person.id} value={person.id}>{person.name} - {person.accountType} - {person.email}</option>)}
                 </select>
                 <input placeholder="Role, e.g. Imam, Khateeb, Coordinator" value={peopleForm.roleLabel} onChange={(event) => setPeopleForm({ ...peopleForm, roleLabel: event.target.value })} />
               </div>
+              <p className="helper-text">Showing {teamCandidates.length} matching people. Search first if the network is large.</p>
               <button className="primary-button">Add to masjid profile</button>
             </form>
           </section>
@@ -1235,6 +1260,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                             {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
                             {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
                             {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
+                            {application.applicant && <button onClick={() => quickAddTeam(org.id, application.applicant, 'Volunteer')}>Add to team</button>}
                           </div>
                         ))}
                       </article>
@@ -1261,6 +1287,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                             {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
                             {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
                             {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
+                            {application.applicant && <button onClick={() => quickAddTeam(org.id, application.applicant, 'Staff')}>Add to team</button>}
                           </div>
                         ))}
                       </article>
@@ -1280,6 +1307,8 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                         <div className="manager-row">
                           {follow.user && <button onClick={() => startMessage(follow.user)}>Message</button>}
                           {follow.user && <button onClick={() => openProfile(follow.user)}>Profile</button>}
+                          {follow.user && <button onClick={() => quickAddTeam(org.id, follow.user, 'Community Liaison')}>Add to team</button>}
+                          <button className="secondary-button danger" onClick={() => removeOrganizationFollower(org.id, follow.userId)}>Remove follower</button>
                         </div>
                       </article>
                     )) : <p className="helper-text">No followers match this dashboard filter yet.</p>}
@@ -1302,6 +1331,8 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                   <div className="manager-row">
                     {follow.user && <button onClick={() => startMessage(follow.user)}>Message</button>}
                     {follow.user && <button onClick={() => openProfile(follow.user)}>Profile</button>}
+                    {follow.user && <button onClick={() => quickAddTeam(org.id, follow.user, 'Community Liaison')}>Add to team</button>}
+                    <button className="secondary-button danger" onClick={() => removeOrganizationFollower(org.id, follow.userId)}>Remove</button>
                   </div>
                 </article>
               ))}
@@ -1536,6 +1567,14 @@ export default function App() {
     if (selectedOrganization?.id === id && refreshed) setSelectedOrganization(refreshed);
   }
 
+  async function removeOrganizationFollower(id, userId) {
+    if (!confirm('Remove this follower from the masjid?')) return;
+    await api(`/api/organizations/${id}/followers/${userId}`, { method: 'DELETE' });
+    const refreshed = await api(`/api/organizations/${id}`).catch(() => null);
+    await Promise.all([loadMyOrganizations(), loadLocationData(location), loadPosts()]);
+    if (selectedOrganization?.id === id && refreshed) setSelectedOrganization(refreshed);
+  }
+
   async function updateApplication(opportunityId, applicationId, data) {
     await api(`/api/opportunities/${opportunityId}/applications/${applicationId}`, { method: 'PUT', body: JSON.stringify(data) });
     await Promise.all([loadMyOrganizations(), loadOpportunities()]);
@@ -1760,7 +1799,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} createPost={createPost} createEvent={createEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} updateRegistration={updateRegistration} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} openProfile={openProfile} startMessage={startMessage} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} createPost={createPost} createEvent={createEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} updateRegistration={updateRegistration} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
   };
 
   return (
