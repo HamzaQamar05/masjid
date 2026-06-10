@@ -481,22 +481,22 @@ function LibraryScreen() {
   );
 }
 
-function BusinessDirectoryScreen() {
-  return (
-    <Page title="Business Directory" subtitle="Browse Muslim-owned businesses and event sponsors.">
-      <div className="card-grid three">
-        {businesses.map((business) => (
-          <article className="business-card" key={business.id}>
-            <Briefcase size={24} />
-            <h3>{business.name}</h3>
-            <p>{business.category} - {business.city}</p>
-            <div className="card-footer"><span>{business.rating} rating</span><span>Sponsored: {business.sponsor}</span></div>
-          </article>
-        ))}
-      </div>
-    </Page>
-  );
-}
+// function BusinessDirectoryScreen() {
+//   return (
+//     <Page title="Business Directory" subtitle="Browse Muslim-owned businesses and event sponsors.">
+//       <div className="card-grid three">
+//         {businesses.map((business) => (
+//           <article className="business-card" key={business.id}>
+//             <Briefcase size={24} />
+//             <h3>{business.name}</h3>
+//             <p>{business.category} - {business.city}</p>
+//             <div className="card-footer"><span>{business.rating} rating</span><span>Sponsored: {business.sponsor}</span></div>
+//           </article>
+//         ))}
+//       </div>
+//     </Page>
+//   );
+// }
 
 function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
   if (!organization) return <Page title="Masjid Profile" subtitle="Choose a masjid to view its profile."><button className="secondary-button" onClick={onBack}>Back to masjids</button></Page>;
