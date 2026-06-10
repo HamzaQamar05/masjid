@@ -513,7 +513,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
           <div>
             <h2>{organization.name}</h2>
             <p>{organization.address || organization.city || 'Location not added yet'}</p>
-            <p>{organization.followerCount || 0} followers</p>
+            <p>{organization.followerCount || 0} followers - {organization.peopleCount || 0} team members</p>
           </div>
         </div>
         <div className="profile-actions">
@@ -550,6 +550,19 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
           </section>
         </section>
         <aside className="right-rail">
+          <section className="panel">
+            <div className="section-title"><h2>Imams & Team</h2><span>{organization.peopleCount || 0}</span></div>
+            <div className="stack-list">
+              {(organization.people || []).map((person) => (
+                <article className="mini-row" key={person.id}>
+                  <strong>{person.user?.name || 'Team member'}</strong>
+                  <span>{person.roleLabel}</span>
+                  <p>{person.user?.bio || person.user?.city || person.user?.accountType || 'Community profile'}</p>
+                </article>
+              ))}
+              {!(organization.people || []).length && <p className="helper-text">No imams or team members listed yet.</p>}
+            </div>
+          </section>
           <section className="panel">
             <div className="section-title"><h2>Iqamah Times</h2><ShieldCheck size={20} /></div>
             <div className="prayer-grid detailed">
@@ -680,6 +693,11 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
         <div className="section-title"><h2>Following Masjids</h2><span>{social.followingMasjids.length}</span></div>
         <div className="tag-row">{social.followingMasjids.map((org) => <span key={org.id}>{org.name}</span>)}</div>
         {!social.followingMasjids.length && <p className="helper-text">No followed masjids yet.</p>}
+        <div className="section-title"><h2>Masjid Roles</h2><span>{social.affiliatedMasjids.length}</span></div>
+        <div className="stack-list">
+          {social.affiliatedMasjids.map((item) => <article className="mini-row" key={item.id}><strong>{item.organization?.name}</strong><span>{item.roleLabel}</span></article>)}
+        </div>
+        {!social.affiliatedMasjids.length && <p className="helper-text">No masjid roles listed yet.</p>}
       </section>
     </Page>
   );
@@ -704,9 +722,10 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateApplication, updateRegistration }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateApplication, updateRegistration, addOrganizationPerson, removeOrganizationPerson }) {
   const [orgForm, setOrgForm] = useState({ name: '', type: 'MASJID', city: '', address: '', website: '', description: '', latitude: '', longitude: '' });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
+  const [peopleForm, setPeopleForm] = useState({ organizationId: '', userId: '', roleLabel: 'Imam' });
   const [editingOrgId, setEditingOrgId] = useState('');
   const [editOrgForm, setEditOrgForm] = useState({});
   async function deleteUser(id) {
@@ -729,6 +748,13 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     if (!organizationId) return alert('Create or select a masjid first.');
     await createOpportunity(organizationId, oppForm);
     setOppForm({ organizationId, type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
+  }
+  async function submitPerson(event) {
+    event.preventDefault();
+    const organizationId = peopleForm.organizationId || myOrganizations[0]?.id;
+    if (!organizationId || !peopleForm.userId) return alert('Select a masjid and person first.');
+    await addOrganizationPerson(organizationId, { userId: peopleForm.userId, roleLabel: peopleForm.roleLabel });
+    setPeopleForm({ organizationId, userId: '', roleLabel: 'Imam' });
   }
   async function approveApplication(opportunityId, applicationId) {
     const approvedHours = Number(prompt('Approved volunteer hours?', '0') || 0);
@@ -813,9 +839,27 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
             </form>
           </section>
 
+          <section className="panel">
+            <div className="section-title"><h2>Masjid Team</h2></div>
+            <form className="profile-form" onSubmit={submitPerson}>
+              <div className="form-grid">
+                <select value={peopleForm.organizationId} onChange={(event) => setPeopleForm({ ...peopleForm, organizationId: event.target.value })}>
+                  <option value="">Select organization</option>
+                  {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                </select>
+                <select value={peopleForm.userId} onChange={(event) => setPeopleForm({ ...peopleForm, userId: event.target.value })}>
+                  <option value="">Select person</option>
+                  {users.filter((person) => person.id !== user.id).map((person) => <option key={person.id} value={person.id}>{person.name} - {person.accountType}</option>)}
+                </select>
+                <input placeholder="Role, e.g. Imam, Khateeb, Coordinator" value={peopleForm.roleLabel} onChange={(event) => setPeopleForm({ ...peopleForm, roleLabel: event.target.value })} />
+              </div>
+              <button className="primary-button">Add to masjid profile</button>
+            </form>
+          </section>
+
           {myOrganizations.map((org) => (
             <section className="panel" key={org.id}>
-              <div className="section-title"><h2>{org.name}</h2><button onClick={() => startEditOrg(org)}>Edit profile</button><span>{org.followerCount || 0} followers</span></div>
+              <div className="section-title"><h2>{org.name}</h2><button onClick={() => startEditOrg(org)}>Edit profile</button><span>{org.followerCount || 0} followers</span><span>{org.peopleCount || 0} team</span></div>
               {editingOrgId === org.id && (
                 <form className="profile-form manager-edit-form" onSubmit={submitEditOrg}>
                   <div className="form-grid">
@@ -835,6 +879,17 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                   </div>
                 </form>
               )}
+              <div className="stack-list">
+                <article className="mini-row">
+                  <strong>Profile team</strong>
+                  {(org.people || []).length ? (org.people || []).map((person) => (
+                    <div className="manager-row" key={person.id}>
+                      <span>{person.user?.name || 'Person'} - {person.roleLabel}</span>
+                      <button onClick={() => removeOrganizationPerson(org.id, person.userId)}>Remove</button>
+                    </div>
+                  )) : <p className="helper-text">No imams or team members attached yet.</p>}
+                </article>
+              </div>
               <div className="stack-list">
                 {(org.events || []).map((event) => (
                   <article className="mini-row" key={event.id}>
@@ -923,7 +978,7 @@ export default function App() {
   const selectedUserIdRef = useRef(null);
   const [viewedUser, setViewedUser] = useState(null);
   const [selectedOrganization, setSelectedOrganization] = useState(null);
-  const [profileSocial, setProfileSocial] = useState({ connections: [], followingMasjids: [] });
+  const [profileSocial, setProfileSocial] = useState({ connections: [], followingMasjids: [], affiliatedMasjids: [] });
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState(defaultLocation);
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
@@ -965,8 +1020,8 @@ export default function App() {
   }
 
   async function loadProfileSocial(userId) {
-    const loaded = await api(`/api/users/${userId}/social`).catch(() => ({ connections: [], followingMasjids: [] }));
-    setProfileSocial({ connections: loaded.connections || [], followingMasjids: loaded.followingMasjids || [] });
+    const loaded = await api(`/api/users/${userId}/social`).catch(() => ({ connections: [], followingMasjids: [], affiliatedMasjids: [] }));
+    setProfileSocial({ connections: loaded.connections || [], followingMasjids: loaded.followingMasjids || [], affiliatedMasjids: loaded.affiliatedMasjids || [] });
   }
 
   async function loadNotificationMasjids() {
@@ -1028,6 +1083,20 @@ export default function App() {
     const updated = await api(`/api/organizations/${id}`, { method: 'PUT', body: JSON.stringify(form) });
     await Promise.all([loadMyOrganizations(), loadLocationData(location)]);
     if (selectedOrganization?.id === id) setSelectedOrganization({ ...selectedOrganization, ...updated });
+  }
+
+  async function addOrganizationPerson(id, form) {
+    await api(`/api/organizations/${id}/people`, { method: 'POST', body: JSON.stringify(form) });
+    const refreshed = await api(`/api/organizations/${id}`);
+    await Promise.all([loadMyOrganizations(), loadLocationData(location), loadProfileSocial(user.id)]);
+    if (selectedOrganization?.id === id) setSelectedOrganization(refreshed);
+  }
+
+  async function removeOrganizationPerson(id, userId) {
+    await api(`/api/organizations/${id}/people/${userId}`, { method: 'DELETE' });
+    const refreshed = await api(`/api/organizations/${id}`).catch(() => null);
+    await Promise.all([loadMyOrganizations(), loadLocationData(location), loadProfileSocial(user.id)]);
+    if (selectedOrganization?.id === id && refreshed) setSelectedOrganization(refreshed);
   }
 
   async function updateApplication(opportunityId, applicationId, data) {
@@ -1237,7 +1306,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateApplication={updateApplication} updateRegistration={updateRegistration} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateApplication={updateApplication} updateRegistration={updateRegistration} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} />
   };
 
   return (

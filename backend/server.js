@@ -160,6 +160,7 @@ function publicUser(user) {
 function publicOrganization(org, viewerId) {
   if (!org) return null;
   const followers = org.followers || [];
+  const people = org.people || [];
   const events = (org.events || []).map((event) => ({
     ...event,
     registrations: (event.registrations || []).map((registration) => ({
@@ -174,13 +175,15 @@ function publicOrganization(org, viewerId) {
       applicant: publicUser(application.applicant)
     }))
   }));
-  const { followers: _followers, events: _events, opportunities: _opportunities, ...safeOrg } = org;
+  const { followers: _followers, people: _people, events: _events, opportunities: _opportunities, ...safeOrg } = org;
   return {
     ...safeOrg,
     events,
     opportunities,
     followers: followers.map((follow) => ({ ...follow, user: publicUser(follow.user) })),
+    people: people.map((person) => ({ ...person, user: publicUser(person.user) })),
     followerCount: followers.length,
+    peopleCount: people.length,
     isFollowing: viewerId ? followers.some((follow) => follow.userId === viewerId) : false,
     notifyPrayers: viewerId ? Boolean(followers.find((follow) => follow.userId === viewerId)?.notifyPrayers) : false
   };
@@ -440,7 +443,7 @@ app.get('/api/users', auth, async (req, res) => {
 app.get('/api/users/:id/social', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const [connections, follows] = await Promise.all([
+  const [connections, follows, affiliations] = await Promise.all([
     prisma.connection.findMany({
       where: { status: 'ACCEPTED', OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] },
       include: { requester: true, receiver: true },
@@ -448,14 +451,23 @@ app.get('/api/users/:id/social', auth, async (req, res) => {
     }),
     prisma.organizationFollow.findMany({
       where: { userId: req.params.id },
-      include: { organization: { include: { followers: true, events: true, opportunities: true } } },
+      include: { organization: { include: { followers: true, people: { include: { user: true } }, events: true, opportunities: true } } },
+      orderBy: { createdAt: 'desc' }
+    }),
+    prisma.organizationPerson.findMany({
+      where: { userId: req.params.id },
+      include: { organization: { include: { followers: true, people: { include: { user: true } }, events: true, opportunities: true } } },
       orderBy: { createdAt: 'desc' }
     })
   ]);
   res.json({
     user: publicUser(user),
     connections: connections.map((connection) => publicUser(connection.requesterId === req.params.id ? connection.receiver : connection.requester)),
-    followingMasjids: follows.map((follow) => publicOrganization(follow.organization, req.user.id))
+    followingMasjids: follows.map((follow) => publicOrganization(follow.organization, req.user.id)),
+    affiliatedMasjids: affiliations.map((affiliation) => ({
+      ...affiliation,
+      organization: publicOrganization(affiliation.organization, req.user.id)
+    }))
   });
 });
 
@@ -463,6 +475,7 @@ app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Admins cannot delete their own active session account' });
   await prisma.eventRegistration.deleteMany({ where: { userId: req.params.id } });
   await prisma.organizationFollow.deleteMany({ where: { userId: req.params.id } });
+  await prisma.organizationPerson.deleteMany({ where: { userId: req.params.id } });
   await prisma.volunteerApplication.deleteMany({ where: { applicantId: req.params.id } });
   await prisma.message.deleteMany({ where: { OR: [{ senderId: req.params.id }, { receiverId: req.params.id }] } });
   await prisma.connection.deleteMany({ where: { OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] } });
@@ -519,6 +532,7 @@ app.get('/api/me/organizations', auth, async (req, res) => {
     where,
     include: {
       followers: { include: { user: true } },
+      people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
       events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
       opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } }
     },
@@ -530,7 +544,7 @@ app.get('/api/me/organizations', auth, async (req, res) => {
 app.get('/api/me/notification-masjids', auth, async (req, res) => {
   const follows = await prisma.organizationFollow.findMany({
     where: { userId: req.user.id, notifyPrayers: true },
-    include: { organization: { include: { followers: true, events: true, opportunities: true } } }
+    include: { organization: { include: { followers: true, people: { include: { user: true } }, events: true, opportunities: true } } }
   });
   res.json(follows.map((follow) => publicOrganization(follow.organization, req.user.id)));
 });
@@ -550,7 +564,8 @@ app.get('/api/organizations', async (req, res) => {
     include: {
       events: { orderBy: { startTime: 'asc' } },
       opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' } },
-      followers: true
+      followers: true,
+      people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
     },
     orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
   });
@@ -603,7 +618,8 @@ app.get('/api/organizations/:id', async (req, res) => {
     include: {
       events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
       opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } },
-      followers: { include: { user: true } }
+      followers: { include: { user: true } },
+      people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
     }
   });
   if (!org) return res.status(404).json({ error: 'Organization not found' });
@@ -641,6 +657,28 @@ app.post('/api/organizations/:id/follow', auth, async (req, res) => {
 app.delete('/api/organizations/:id/follow', auth, async (req, res) => {
   await prisma.organizationFollow.deleteMany({ where: { organizationId: req.params.id, userId: req.user.id } });
   res.json({ message: 'Unfollowed' });
+});
+
+app.post('/api/organizations/:id/people', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can manage team members' });
+  const userId = String(req.body.userId || '');
+  if (!userId) return res.status(400).json({ error: 'User is required' });
+  const memberUser = await prisma.user.findUnique({ where: { id: userId } });
+  if (!memberUser) return res.status(404).json({ error: 'User not found' });
+  const roleLabel = String(req.body.roleLabel || 'Team member').trim().slice(0, 80) || 'Team member';
+  const person = await prisma.organizationPerson.upsert({
+    where: { organizationId_userId: { organizationId: req.params.id, userId } },
+    create: { organizationId: req.params.id, userId, roleLabel },
+    update: { roleLabel },
+    include: { user: true }
+  });
+  res.json({ ...person, user: publicUser(person.user) });
+});
+
+app.delete('/api/organizations/:id/people/:userId', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can manage team members' });
+  await prisma.organizationPerson.deleteMany({ where: { organizationId: req.params.id, userId: req.params.userId } });
+  res.json({ message: 'Team member removed' });
 });
 
 app.get('/api/events', async (_, res) => {
@@ -879,10 +917,16 @@ app.get('/api/location/masjids', async (req, res) => {
   try {
     await ensureFallbackOrganizations();
     const sqlMasjids = await prisma.organization.findMany({
-      where: { type: { in: ['MASJID', 'MSA'] }, latitude: { not: null }, longitude: { not: null } },
-      include: { followers: true, events: true, opportunities: { where: { isActive: true } } }
+      where: { type: { in: ['MASJID', 'MSA'] } },
+      include: {
+        followers: true,
+        people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
+        events: { orderBy: { startTime: 'asc' } },
+        opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' } }
+      },
+      orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
     });
-    if (sqlMasjids.length) return res.json(withDistance(sqlMasjids.map((org) => publicOrganization(org, null)), latitude, longitude));
+    const sqlResults = sqlMasjids.map((org) => publicOrganization(org, null));
 
     const query = `
       [out:json][timeout:12];
@@ -916,11 +960,32 @@ app.get('/api/location/masjids', async (req, res) => {
         source: 'OpenStreetMap'
       };
     }).filter((item) => item.latitude && item.longitude && item.name !== 'Unnamed masjid');
-    const finalMasjids = masjids.length ? masjids : fallbackMasjids;
+    const seen = new Set(sqlResults.map((item) => item.name.toLowerCase()));
+    const supplemental = masjids.length ? masjids : fallbackMasjids;
+    const finalMasjids = [
+      ...sqlResults,
+      ...supplemental.filter((item) => !seen.has(item.name.toLowerCase()))
+    ];
     res.json(withDistance(finalMasjids, latitude, longitude));
   } catch (err) {
     console.error(err);
-    res.json(withDistance(fallbackMasjids, latitude, longitude));
+    try {
+      const sqlMasjids = await prisma.organization.findMany({
+        where: { type: { in: ['MASJID', 'MSA'] } },
+        include: {
+          followers: true,
+          people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
+          events: { orderBy: { startTime: 'asc' } },
+          opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' } }
+        },
+        orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
+      });
+      const sqlResults = sqlMasjids.map((org) => publicOrganization(org, null));
+      const seen = new Set(sqlResults.map((item) => item.name.toLowerCase()));
+      return res.json(withDistance([...sqlResults, ...fallbackMasjids.filter((item) => !seen.has(item.name.toLowerCase()))], latitude, longitude));
+    } catch {
+      res.json(withDistance(fallbackMasjids, latitude, longitude));
+    }
   }
 });
 

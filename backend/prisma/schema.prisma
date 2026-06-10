@@ -44,6 +44,7 @@ model User {
   connectionsSent  Connection[]        @relation("ConnectionRequester")
   connectionsGot   Connection[]        @relation("ConnectionReceiver")
   organizationFollows OrganizationFollow[]
+  organizationAffiliations OrganizationPerson[]
   volunteerApplications VolunteerApplication[] @relation("VolunteerApplicant")
   volunteerApprovals    VolunteerApplication[] @relation("VolunteerApprover")
 }
@@ -75,6 +76,7 @@ model Organization {
   events         Event[]
   opportunities  Opportunity[]
   followers      OrganizationFollow[]
+  people         OrganizationPerson[]
 
   @@index([type, city])
 }
@@ -153,6 +155,20 @@ model OrganizationFollow {
 
   @@unique([organizationId, userId])
   @@index([userId, notifyPrayers])
+}
+
+model OrganizationPerson {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  roleLabel      String   @default("Team member")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
 }
 
 model Opportunity {
