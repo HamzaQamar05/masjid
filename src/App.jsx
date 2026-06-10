@@ -834,7 +834,7 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, createPost, createEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
@@ -954,6 +954,46 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
   }
   function formatDateTime(value) {
     return value ? new Date(value).toLocaleString() : 'Not recorded';
+  }
+  function toDateTimeInput(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  }
+  async function editPost(post) {
+    const title = prompt('Post title', post.title || '');
+    if (title === null) return;
+    const content = prompt('Post content', post.content || '');
+    if (content === null) return;
+    const location = prompt('Location', post.location || '');
+    if (location === null) return;
+    await updatePost(post.id, { title, content, location });
+  }
+  async function editEvent(eventItem) {
+    const title = prompt('Event title', eventItem.title || '');
+    if (title === null) return;
+    const startTime = prompt('Start time', toDateTimeInput(eventItem.startTime));
+    if (startTime === null) return;
+    const location = prompt('Location', eventItem.location || '');
+    if (location === null) return;
+    const capacity = prompt('Capacity', eventItem.capacity || '');
+    if (capacity === null) return;
+    await updateEvent(eventItem.id, { title, startTime, location, capacity });
+  }
+  async function editOpportunity(opportunity) {
+    const title = prompt('Title', opportunity.title || '');
+    if (title === null) return;
+    const description = prompt('Description', opportunity.description || '');
+    if (description === null) return;
+    const location = prompt('Location', opportunity.location || '');
+    if (location === null) return;
+    const skills = prompt('Skills, comma separated', (opportunity.skills || []).join(', '));
+    if (skills === null) return;
+    const hours = prompt('Hours', opportunity.hours || '');
+    if (hours === null) return;
+    await updateOpportunity(opportunity.id, { title, description, location, skills, hours });
   }
   function startEditOrg(org) {
     setEditingOrgId(org.id);
@@ -1215,7 +1255,10 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                         <strong>{post.title}</strong>
                         <span>{post.type} - {new Date(post.createdAt).toLocaleString()}</span>
                         <p>{post.content}</p>
-                        <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
+                        <div className="manager-row">
+                          <button onClick={() => editPost(post)}>Edit post</button>
+                          <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
+                        </div>
                       </article>
                     )) : <p className="helper-text">No posts match this dashboard filter yet.</p>}
                   </div>
@@ -1235,6 +1278,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                           <span>{(event.registrations || []).filter((registration) => registration.status === 'PENDING').length} pending, {(event.registrations || []).filter((registration) => registration.status === 'APPROVED').length} approved, {(event.registrations || []).filter((registration) => registration.status === 'ATTENDED').length} attended</span>
                           <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
                           <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'ATTENDED', fromStatus: 'APPROVED' })}>Mark approved attended</button>
+                          <button onClick={() => editEvent(event)}>Edit event</button>
                           <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
                         </div>
                         {(event.registrations || []).map((registration) => (
@@ -1265,6 +1309,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                           <span>{(opportunity.applications || []).filter((application) => application.status === 'PENDING').length} pending, {(opportunity.applications || []).filter((application) => application.status === 'APPROVED').length} approved, {(opportunity.applications || []).filter((application) => application.status === 'COMPLETED').length} completed</span>
                           <button onClick={() => approvePendingApplications(opportunity.id)}>Approve pending</button>
                           <button onClick={() => bulkUpdateApplications(opportunity.id, { status: 'COMPLETED', fromStatus: 'APPROVED', checkedOutAt: true })}>Complete approved</button>
+                          <button onClick={() => editOpportunity(opportunity)}>Edit post</button>
                           <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete post</button>
                         </div>
                         {(opportunity.applications || []).map((application) => (
@@ -1299,6 +1344,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                         <div className="manager-row">
                           <span>{(opportunity.applications || []).filter((application) => application.status === 'PENDING').length} pending, {(opportunity.applications || []).filter((application) => application.status === 'APPROVED').length} approved</span>
                           <button onClick={() => bulkUpdateApplications(opportunity.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
+                          <button onClick={() => editOpportunity(opportunity)}>Edit job</button>
                           <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete job</button>
                         </div>
                         {(opportunity.applications || []).map((application) => (
@@ -1536,13 +1582,28 @@ export default function App() {
     await Promise.all([loadMyOrganizations(), loadOpportunities()]);
   }
 
+  async function updateOpportunity(id, form) {
+    await api(`/api/opportunities/${id}`, { method: 'PUT', body: JSON.stringify(form) });
+    await Promise.all([loadMyOrganizations(), loadOpportunities(), loadLocationData(location)]);
+  }
+
   async function createPost(organizationId, form) {
     await api(`/api/organizations/${organizationId}/posts`, { method: 'POST', body: JSON.stringify(form) });
     await Promise.all([loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
+  async function updatePost(id, form) {
+    await api(`/api/posts/${id}`, { method: 'PUT', body: JSON.stringify(form) });
+    await Promise.all([loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
+  }
+
   async function createEvent(form) {
     await api('/api/events', { method: 'POST', body: JSON.stringify(form) });
+    await Promise.all([loadEvents(), loadMyOrganizations(), loadLocationData(location)]);
+  }
+
+  async function updateEvent(id, form) {
+    await api(`/api/events/${id}`, { method: 'PUT', body: JSON.stringify(form) });
     await Promise.all([loadEvents(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
@@ -1832,7 +1893,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} createPost={createPost} createEvent={createEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
   };
 
   return (

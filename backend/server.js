@@ -725,6 +725,28 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
   res.json(publicPost(post));
 });
 
+app.put('/api/posts/:id', auth, async (req, res) => {
+  const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  const canUpdate = post.authorId === req.user.id || req.user.accountType === 'ADMIN' || await canManageOrganization(req.user, post.organizationId);
+  if (!canUpdate) return res.status(403).json({ error: 'Only post managers can update this post' });
+  const data = {};
+  if (req.body.title !== undefined) {
+    if (!String(req.body.title).trim()) return res.status(400).json({ error: 'Title is required' });
+    data.title = String(req.body.title).trim();
+  }
+  if (req.body.content !== undefined) {
+    if (!String(req.body.content).trim()) return res.status(400).json({ error: 'Content is required' });
+    data.content = String(req.body.content).trim();
+  }
+  if (req.body.type !== undefined) data.type = ['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].includes(String(req.body.type).toUpperCase()) ? String(req.body.type).toUpperCase() : post.type;
+  if (req.body.imageUrl !== undefined) data.imageUrl = req.body.imageUrl || null;
+  if (req.body.location !== undefined) data.location = req.body.location || null;
+  if (req.body.eventTime !== undefined) data.eventTime = req.body.eventTime ? new Date(req.body.eventTime) : null;
+  const updated = await prisma.post.update({ where: { id: post.id }, data, include: { author: true, organization: true } });
+  res.json(publicPost(updated));
+});
+
 app.delete('/api/posts/:id', auth, async (req, res) => {
   const post = await prisma.post.findUnique({ where: { id: req.params.id } });
   if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -809,6 +831,29 @@ app.post('/api/events', auth, canPostEvent, async (req, res) => {
   res.json(event);
 });
 
+app.put('/api/events/:eventId', auth, async (req, res) => {
+  const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const canManage = event.createdById === req.user.id || req.user.accountType === 'ADMIN' || (event.organizationId && await canManageOrganization(req.user, event.organizationId));
+  if (!canManage) return res.status(403).json({ error: 'Only event managers can update this event' });
+  const data = {};
+  if (req.body.title !== undefined) {
+    if (!String(req.body.title).trim()) return res.status(400).json({ error: 'Title is required' });
+    data.title = String(req.body.title).trim();
+  }
+  if (req.body.description !== undefined) data.description = req.body.description || null;
+  if (req.body.location !== undefined) data.location = req.body.location || null;
+  if (req.body.startTime !== undefined) {
+    if (!req.body.startTime) return res.status(400).json({ error: 'Start time is required' });
+    data.startTime = new Date(req.body.startTime);
+  }
+  if (req.body.endTime !== undefined) data.endTime = req.body.endTime ? new Date(req.body.endTime) : null;
+  if (req.body.capacity !== undefined) data.capacity = req.body.capacity == null || req.body.capacity === '' ? null : Number(req.body.capacity);
+  if (req.body.requiresApproval !== undefined) data.requiresApproval = Boolean(req.body.requiresApproval);
+  const updated = await prisma.event.update({ where: { id: event.id }, data, include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } } });
+  res.json({ ...updated, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) });
+});
+
 app.delete('/api/events/:eventId', auth, async (req, res) => {
   const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
   if (!event) return res.status(404).json({ error: 'Event not found' });
@@ -888,6 +933,25 @@ app.post('/api/organizations/:id/opportunities', auth, async (req, res) => {
     }
   });
   res.json(opportunity);
+});
+
+app.put('/api/opportunities/:id', auth, async (req, res) => {
+  const opportunity = await prisma.opportunity.findUnique({ where: { id: req.params.id } });
+  if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
+  if (!(await canManageOrganization(req.user, opportunity.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can update opportunities' });
+  const data = {};
+  if (req.body.title !== undefined) {
+    if (!String(req.body.title).trim()) return res.status(400).json({ error: 'Title is required' });
+    data.title = String(req.body.title).trim();
+  }
+  if (req.body.description !== undefined) data.description = req.body.description || null;
+  if (req.body.type !== undefined) data.type = ['JOB', 'VOLUNTEER', 'OPPORTUNITY'].includes(String(req.body.type).toUpperCase()) ? String(req.body.type).toUpperCase() : opportunity.type;
+  if (req.body.location !== undefined) data.location = req.body.location || null;
+  if (req.body.skills !== undefined) data.skills = normalizeList(req.body.skills);
+  if (req.body.hours !== undefined) data.hours = req.body.hours == null || req.body.hours === '' ? null : Number(req.body.hours);
+  if (req.body.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
+  const updated = await prisma.opportunity.update({ where: { id: opportunity.id }, data, include: { applications: { include: { applicant: true } } } });
+  res.json({ ...updated, applications: updated.applications.map((application) => ({ ...application, applicant: publicUser(application.applicant) })) });
 });
 
 app.delete('/api/opportunities/:id', auth, async (req, res) => {
