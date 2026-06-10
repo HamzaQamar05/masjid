@@ -192,7 +192,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, masjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization }) {
+function HomeScreen({ user, posts, masjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization }) {
   return (
     <div className="content-grid">
       <section className="feed-column">
@@ -206,16 +206,45 @@ function HomeScreen({ user, masjids, locationStatus, requestLocation, prayerTime
             <button onClick={() => setTab('messages')}><Mail size={18} />Messages</button>
           </div>
         </section>
-         <NearbyMasjids masjids={masjids.slice(0, 5)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
+        <PostFeed posts={posts} openOrganization={openOrganization} />
       </section>
       <aside className="right-rail">
         <PrayerWidget prayerTimes={prayerTimes} />
+        <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
         <section className="panel">
           <div className="section-title"><h2>Account</h2><button onClick={() => setTab('profile')}>Edit</button></div>
           <p className="helper-text">Logged in as {user.name}. Network, messages, connections, events, and profile data are now backend-backed.</p>
         </section>
       </aside>
     </div>
+  );
+}
+
+function PostFeed({ posts, openOrganization }) {
+  return (
+    <section className="panel">
+      <div className="section-title"><div><p className="eyebrow">Feed</p><h2>Community updates</h2></div><span>{posts.length}</span></div>
+      <div className="stack-list">
+        {posts.map((post) => (
+          <article className="mini-row feed-post" key={post.id}>
+            <div className="thread-head">
+              <div className="org-logo">{post.organization?.imageUrl ? <img src={post.organization.imageUrl} alt="" /> : initials(post.organization?.name || 'UC')}</div>
+              <div>
+                <button className="text-action" onClick={() => post.organization?.id && openOrganization(post.organization.id)}>{post.organization?.name || 'Community'}</button>
+                <p>{post.type} - {new Date(post.createdAt).toLocaleString()}</p>
+              </div>
+            </div>
+            {post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}
+            <strong>{post.title}</strong>
+            <p>{post.content}</p>
+            {post.location && <div className="meta-line"><MapPin size={16} />{post.location}</div>}
+            {post.eventTime && <div className="meta-line"><CalendarDays size={16} />{new Date(post.eventTime).toLocaleString()}</div>}
+            {post.isFromFollowedMasjid && <span className="status-pill">Following</span>}
+          </article>
+        ))}
+        {!posts.length && <p className="helper-text">Follow masjids or ask an admin to create posts to populate your feed.</p>}
+      </div>
+    </section>
   );
 }
 
@@ -519,6 +548,7 @@ function BusinessDirectoryScreen() {
 
 function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
   if (!organization) return <Page title="Masjid Profile" subtitle="Choose a masjid to view its profile."><button className="secondary-button" onClick={onBack}>Back to masjids</button></Page>;
+  const posts = organization.posts || [];
   const events = organization.events || [];
   const opportunities = organization.opportunities || [];
   const jobs = opportunities.filter((item) => item.type === 'JOB');
@@ -546,6 +576,13 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
 
       <div className="content-grid">
         <section className="feed-column">
+          <section className="panel">
+            <div className="section-title"><h2>Posts</h2><span>{posts.length}</span></div>
+            <div className="stack-list">
+              {posts.map((post) => <article className="mini-row feed-post" key={post.id}><span>{post.type} - {new Date(post.createdAt).toLocaleString()}</span><strong>{post.title}</strong><p>{post.content}</p>{post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}</article>)}
+              {!posts.length && <p className="helper-text">No posts yet.</p>}
+            </div>
+          </section>
           <section className="panel">
             <div className="section-title"><h2>Events</h2><span>{events.length}</span></div>
             <div className="stack-list">
@@ -782,8 +819,9 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateApplication, updateRegistration, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, createPost, deletePost, updateApplication, updateRegistration, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson }) {
   const [orgForm, setOrgForm] = useState({ name: '', type: 'MASJID', city: '', address: '', website: '', description: '', latitude: '', longitude: '' });
+  const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
   const [peopleForm, setPeopleForm] = useState({ organizationId: '', userId: '', roleLabel: 'Imam' });
   const [editingOrgId, setEditingOrgId] = useState('');
@@ -808,6 +846,13 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     if (!organizationId) return alert('Create or select a masjid first.');
     await createOpportunity(organizationId, oppForm);
     setOppForm({ organizationId, type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
+  }
+  async function submitPost(event) {
+    event.preventDefault();
+    const organizationId = postForm.organizationId || myOrganizations[0]?.id;
+    if (!organizationId) return alert('Create or select a masjid first.');
+    await createPost(organizationId, postForm);
+    setPostForm({ organizationId, type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
   }
   async function submitPerson(event) {
     event.preventDefault();
@@ -877,6 +922,27 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
               </div>
               <textarea placeholder="Description" value={orgForm.description} onChange={(event) => setOrgForm({ ...orgForm, description: event.target.value })} />
               <button className="primary-button">Create profile</button>
+            </form>
+          </section>
+
+          <section className="panel">
+            <div className="section-title"><h2>Create Feed Post</h2></div>
+            <form className="profile-form" onSubmit={submitPost}>
+              <div className="form-grid">
+                <select value={postForm.organizationId} onChange={(event) => setPostForm({ ...postForm, organizationId: event.target.value })}>
+                  <option value="">Select organization</option>
+                  {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                </select>
+                <select value={postForm.type} onChange={(event) => setPostForm({ ...postForm, type: event.target.value })}>
+                  {['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+                <input required placeholder="Post title" value={postForm.title} onChange={(event) => setPostForm({ ...postForm, title: event.target.value })} />
+                <input placeholder="Image URL" value={postForm.imageUrl} onChange={(event) => setPostForm({ ...postForm, imageUrl: event.target.value })} />
+                <input placeholder="Location" value={postForm.location} onChange={(event) => setPostForm({ ...postForm, location: event.target.value })} />
+                <input type="datetime-local" value={postForm.eventTime} onChange={(event) => setPostForm({ ...postForm, eventTime: event.target.value })} />
+              </div>
+              <textarea required placeholder="Post content" value={postForm.content} onChange={(event) => setPostForm({ ...postForm, content: event.target.value })} />
+              <button className="primary-button">Publish post</button>
             </form>
           </section>
 
@@ -951,6 +1017,14 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                 </article>
               </div>
               <div className="stack-list">
+                {(org.posts || []).map((post) => (
+                  <article className="mini-row" key={post.id}>
+                    <strong>{post.title}</strong>
+                    <span>{post.type} - {new Date(post.createdAt).toLocaleString()}</span>
+                    <p>{post.content}</p>
+                    <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
+                  </article>
+                ))}
                 {(org.events || []).map((event) => (
                   <article className="mini-row" key={event.id}>
                     <strong>{event.title}</strong>
@@ -1025,6 +1099,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
   const [users, setUsers] = useState([]);
+  const [posts, setPosts] = useState([]);
   const [events, setEvents] = useState([]);
   const [opportunities, setOpportunities] = useState([]);
   const [myOrganizations, setMyOrganizations] = useState([]);
@@ -1051,7 +1126,7 @@ export default function App() {
     const me = await api('/api/me');
     sessionStorage.setItem('user', JSON.stringify(me));
     setUser(me);
-    await Promise.all([loadNetwork(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids()]);
+    await Promise.all([loadNetwork(), loadPosts(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids()]);
   }
 
   async function loadNetwork() {
@@ -1064,6 +1139,11 @@ export default function App() {
   async function loadEvents() {
     const loadedEvents = await api('/api/events').catch(() => seedEvents);
     setEvents(loadedEvents);
+  }
+
+  async function loadPosts() {
+    const loadedPosts = await api('/api/posts').catch(() => []);
+    setPosts(loadedPosts);
   }
 
   async function loadOpportunities() {
@@ -1143,6 +1223,17 @@ export default function App() {
   async function createOpportunity(organizationId, form) {
     await api(`/api/organizations/${organizationId}/opportunities`, { method: 'POST', body: JSON.stringify(form) });
     await Promise.all([loadMyOrganizations(), loadOpportunities()]);
+  }
+
+  async function createPost(organizationId, form) {
+    await api(`/api/organizations/${organizationId}/posts`, { method: 'POST', body: JSON.stringify(form) });
+    await Promise.all([loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
+  }
+
+  async function deletePost(id) {
+    if (!confirm('Delete this post?')) return;
+    await api(`/api/posts/${id}`, { method: 'DELETE' });
+    await Promise.all([loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
   async function deleteOpportunity(id) {
@@ -1250,7 +1341,7 @@ export default function App() {
     const org = await api(`/api/organizations/${id}`);
     setSelectedOrganization(org);
     if (notifyPrayers) schedulePrayerNotification(org);
-    await loadLocationData(location);
+    await Promise.all([loadLocationData(location), loadPosts()]);
   }
 
   function requestLocation() {
@@ -1283,7 +1374,10 @@ export default function App() {
   useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
   useEffect(() => {
     function refreshOnFocus() {
-      if (document.visibilityState === 'visible') loadLocationData(location);
+      if (document.visibilityState === 'visible') {
+        loadLocationData(location);
+        loadPosts();
+      }
     }
     document.addEventListener('visibilitychange', refreshOnFocus);
     return () => document.removeEventListener('visibilitychange', refreshOnFocus);
@@ -1324,6 +1418,7 @@ export default function App() {
     sessionStorage.removeItem('user');
     setUser(null);
     setUsers([]);
+    setPosts([]);
     setConnections([]);
     setMessages([]);
     setThreads([]);
@@ -1371,6 +1466,7 @@ export default function App() {
     if (!query) return [];
     const index = [
       ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`, tab: 'network' })),
+      ...posts.map((post) => ({ id: post.id, kind: 'Post', title: post.title, subtitle: `${post.organization?.name || ''} ${post.type} ${post.content || ''}`, tab: 'home' })),
       ...masjids.map((masjid) => ({ id: masjid.id, kind: 'Masjid', title: masjid.name, subtitle: `${masjid.address || ''} ${masjid.city || ''}`, tab: 'organizations' })),
       ...events.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' })),
       ...opportunities.map((item) => ({ id: item.id, kind: item.type === 'JOB' ? 'Job' : 'Volunteer', title: item.title, subtitle: `${item.organization?.name || ''} ${item.description || ''} ${item.location || ''} ${Array.isArray(item.skills) ? item.skills.join(' ') : item.skills || ''}`, tab: item.type === 'JOB' ? 'jobs' : 'volunteers' })),
@@ -1378,12 +1474,12 @@ export default function App() {
       ...businesses.map((business) => ({ id: business.id, kind: 'Business', title: business.name, subtitle: `${business.category} ${business.city}`, tab: 'businesses' }))
     ];
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
-  }, [searchQuery, users, masjids, events, opportunities]);
+  }, [searchQuery, users, posts, masjids, events, opportunities]);
 
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
+    home: <HomeScreen user={user} posts={posts} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
     events: <EventsScreen user={user} events={events} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
     post: <PostEventScreen setTab={setTab} loadEvents={loadEvents} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
@@ -1395,7 +1491,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateApplication={updateApplication} updateRegistration={updateRegistration} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} createPost={createPost} deletePost={deletePost} updateApplication={updateApplication} updateRegistration={updateRegistration} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} />
   };
 
   return (

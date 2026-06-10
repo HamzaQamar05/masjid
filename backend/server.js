@@ -161,6 +161,7 @@ function publicOrganization(org, viewerId) {
   if (!org) return null;
   const followers = org.followers || [];
   const people = org.people || [];
+  const posts = (org.posts || []).map(publicPost);
   const events = (org.events || []).map((event) => ({
     ...event,
     registrations: (event.registrations || []).map((registration) => ({
@@ -175,9 +176,10 @@ function publicOrganization(org, viewerId) {
       applicant: publicUser(application.applicant)
     }))
   }));
-  const { followers: _followers, people: _people, events: _events, opportunities: _opportunities, ...safeOrg } = org;
+  const { followers: _followers, people: _people, posts: _posts, events: _events, opportunities: _opportunities, ...safeOrg } = org;
   return {
     ...safeOrg,
+    posts,
     events,
     opportunities,
     followers: followers.map((follow) => ({ ...follow, user: publicUser(follow.user) })),
@@ -186,6 +188,23 @@ function publicOrganization(org, viewerId) {
     peopleCount: people.length,
     isFollowing: viewerId ? followers.some((follow) => follow.userId === viewerId) : false,
     notifyPrayers: viewerId ? Boolean(followers.find((follow) => follow.userId === viewerId)?.notifyPrayers) : false
+  };
+}
+
+function publicPost(post) {
+  if (!post) return null;
+  return {
+    ...post,
+    author: publicUser(post.author),
+    organization: post.organization ? {
+      id: post.organization.id,
+      name: post.organization.name,
+      type: post.organization.type,
+      city: post.organization.city,
+      address: post.organization.address,
+      imageUrl: post.organization.imageUrl,
+      verified: post.organization.verified
+    } : null
   };
 }
 
@@ -451,12 +470,12 @@ app.get('/api/users/:id/social', auth, async (req, res) => {
     }),
     prisma.organizationFollow.findMany({
       where: { userId: req.params.id },
-      include: { organization: { include: { followers: true, people: { include: { user: true } }, events: true, opportunities: true } } },
+      include: { organization: { include: { followers: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
       orderBy: { createdAt: 'desc' }
     }),
     prisma.organizationPerson.findMany({
       where: { userId: req.params.id },
-      include: { organization: { include: { followers: true, people: { include: { user: true } }, events: true, opportunities: true } } },
+      include: { organization: { include: { followers: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
       orderBy: { createdAt: 'desc' }
     })
   ]);
@@ -479,6 +498,7 @@ app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
   await prisma.volunteerApplication.deleteMany({ where: { applicantId: req.params.id } });
   await prisma.message.deleteMany({ where: { OR: [{ senderId: req.params.id }, { receiverId: req.params.id }] } });
   await prisma.connection.deleteMany({ where: { OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] } });
+  await prisma.post.deleteMany({ where: { authorId: req.params.id } });
   await prisma.event.deleteMany({ where: { createdById: req.params.id } });
   await prisma.user.delete({ where: { id: req.params.id } });
   res.json({ message: 'User deleted' });
@@ -533,6 +553,7 @@ app.get('/api/me/organizations', auth, async (req, res) => {
     include: {
       followers: { include: { user: true } },
       people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
+      posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
       events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
       opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } }
     },
@@ -544,7 +565,7 @@ app.get('/api/me/organizations', auth, async (req, res) => {
 app.get('/api/me/notification-masjids', auth, async (req, res) => {
   const follows = await prisma.organizationFollow.findMany({
     where: { userId: req.user.id, notifyPrayers: true },
-    include: { organization: { include: { followers: true, people: { include: { user: true } }, events: true, opportunities: true } } }
+    include: { organization: { include: { followers: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } }
   });
   res.json(follows.map((follow) => publicOrganization(follow.organization, req.user.id)));
 });
@@ -563,6 +584,7 @@ app.get('/api/organizations', async (req, res) => {
   const organizations = await prisma.organization.findMany({
     include: {
       events: { orderBy: { startTime: 'asc' } },
+      posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
       opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' } },
       followers: true,
       people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
@@ -617,6 +639,7 @@ app.get('/api/organizations/:id', async (req, res) => {
     where: { id: req.params.id },
     include: {
       events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
+      posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
       opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } },
       followers: { include: { user: true } },
       people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
@@ -638,6 +661,50 @@ app.put('/api/organizations/:id', auth, async (req, res) => {
   if (req.body.longitude !== undefined) data.longitude = req.body.longitude === '' ? null : Number(req.body.longitude);
   const org = await prisma.organization.update({ where: { id: req.params.id }, data });
   res.json(org);
+});
+
+app.get('/api/posts', auth, async (req, res) => {
+  const follows = await prisma.organizationFollow.findMany({ where: { userId: req.user.id }, select: { organizationId: true } });
+  const followedIds = new Set(follows.map((follow) => follow.organizationId));
+  const posts = await prisma.post.findMany({
+    include: { author: true, organization: { include: { followers: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 100
+  });
+  res.json(posts.map((post) => ({
+    ...publicPost(post),
+    isFromFollowedMasjid: followedIds.has(post.organizationId),
+    followerCount: post.organization?.followers?.length || 0
+  })).sort((a, b) => Number(b.isFromFollowedMasjid) - Number(a.isFromFollowedMasjid) || new Date(b.createdAt) - new Date(a.createdAt)));
+});
+
+app.post('/api/organizations/:id/posts', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this masjid or admin can create posts' });
+  if (!req.body.title?.trim() || !req.body.content?.trim()) return res.status(400).json({ error: 'Title and content are required' });
+  const type = ['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].includes(String(req.body.type || '').toUpperCase()) ? String(req.body.type).toUpperCase() : 'ANNOUNCEMENT';
+  const post = await prisma.post.create({
+    data: {
+      organizationId: req.params.id,
+      authorId: req.user.id,
+      title: req.body.title.trim(),
+      content: req.body.content.trim(),
+      type,
+      imageUrl: req.body.imageUrl || null,
+      location: req.body.location || null,
+      eventTime: req.body.eventTime ? new Date(req.body.eventTime) : null
+    },
+    include: { author: true, organization: true }
+  });
+  res.json(publicPost(post));
+});
+
+app.delete('/api/posts/:id', auth, async (req, res) => {
+  const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  const canDelete = post.authorId === req.user.id || req.user.accountType === 'ADMIN' || await canManageOrganization(req.user, post.organizationId);
+  if (!canDelete) return res.status(403).json({ error: 'Only post managers can delete this post' });
+  await prisma.post.delete({ where: { id: post.id } });
+  res.json({ message: 'Post deleted' });
 });
 
 app.post('/api/organizations/:id/follow', auth, async (req, res) => {
@@ -933,6 +1000,7 @@ app.get('/api/location/masjids', async (req, res) => {
       include: {
         followers: true,
         people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
+        posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
         events: { orderBy: { startTime: 'asc' } },
         opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' } }
       },
@@ -987,6 +1055,7 @@ app.get('/api/location/masjids', async (req, res) => {
         include: {
           followers: true,
           people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
+          posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
           events: { orderBy: { startTime: 'asc' } },
           opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' } }
         },
