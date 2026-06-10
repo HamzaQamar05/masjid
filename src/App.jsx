@@ -834,7 +834,7 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, createPost, createEvent, deletePost, deleteEvent, updateApplication, updateRegistration, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, createPost, createEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
@@ -947,6 +947,13 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
   async function approveApplication(opportunityId, applicationId) {
     const approvedHours = Number(prompt('Approved volunteer hours?', '0') || 0);
     await updateApplication(opportunityId, applicationId, { status: 'APPROVED', approvedHours });
+  }
+  async function approvePendingApplications(opportunityId) {
+    const approvedHours = Number(prompt('Approved hours for each pending applicant?', '0') || 0);
+    await bulkUpdateApplications(opportunityId, { status: 'APPROVED', fromStatus: 'PENDING', approvedHours });
+  }
+  function formatDateTime(value) {
+    return value ? new Date(value).toLocaleString() : 'Not recorded';
   }
   function startEditOrg(org) {
     setEditingOrgId(org.id);
@@ -1224,7 +1231,12 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                         <strong>{event.title}</strong>
                         <span>{new Date(event.startTime).toLocaleString()} - {(event.registrations || []).length} attendees</span>
                         <p>{event.location || 'Location TBA'}</p>
-                        <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
+                        <div className="manager-row">
+                          <span>{(event.registrations || []).filter((registration) => registration.status === 'PENDING').length} pending, {(event.registrations || []).filter((registration) => registration.status === 'APPROVED').length} approved, {(event.registrations || []).filter((registration) => registration.status === 'ATTENDED').length} attended</span>
+                          <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
+                          <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'ATTENDED', fromStatus: 'APPROVED' })}>Mark approved attended</button>
+                          <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
+                        </div>
                         {(event.registrations || []).map((registration) => (
                           <div className="manager-row" key={registration.id}>
                             <span>{registration.user?.name || 'User'} - {registration.status}</span>
@@ -1249,18 +1261,25 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                       <article className="mini-row" key={opportunity.id}>
                         <strong>{opportunity.title}</strong>
                         <span>{opportunity.type} - {(opportunity.applications || []).length} applicants</span>
-                        <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete post</button>
+                        <div className="manager-row">
+                          <span>{(opportunity.applications || []).filter((application) => application.status === 'PENDING').length} pending, {(opportunity.applications || []).filter((application) => application.status === 'APPROVED').length} approved, {(opportunity.applications || []).filter((application) => application.status === 'COMPLETED').length} completed</span>
+                          <button onClick={() => approvePendingApplications(opportunity.id)}>Approve pending</button>
+                          <button onClick={() => bulkUpdateApplications(opportunity.id, { status: 'COMPLETED', fromStatus: 'APPROVED', checkedOutAt: true })}>Complete approved</button>
+                          <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete post</button>
+                        </div>
                         {(opportunity.applications || []).map((application) => (
                           <div className="manager-row" key={application.id}>
                             <span>{application.applicant?.name || 'Applicant'} - {application.status} - {application.approvedHours || 0} hrs{application.contactPhone ? ` - ${application.contactPhone}` : ''}</span>
                             {application.note && <p>{application.note}</p>}
                             <button onClick={() => approveApplication(opportunity.id, application.id)}>Approve hours</button>
+                            <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'APPROVED', checkedInAt: true })}>Check in</button>
+                            <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'COMPLETED', checkedOutAt: true })}>Check out</button>
                             <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'DENIED' })}>Deny</button>
-                            <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'COMPLETED', checkedOutAt: true })}>Complete</button>
                             {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
                             {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
                             {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
                             {application.applicant && <button onClick={() => quickAddTeam(org.id, application.applicant, 'Volunteer')}>Add to team</button>}
+                            <small>In: {formatDateTime(application.checkedInAt)} | Out: {formatDateTime(application.checkedOutAt)}</small>
                           </div>
                         ))}
                       </article>
@@ -1277,7 +1296,11 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                       <article className="mini-row" key={opportunity.id}>
                         <strong>{opportunity.title}</strong>
                         <span>{(opportunity.applications || []).length} applicants</span>
-                        <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete job</button>
+                        <div className="manager-row">
+                          <span>{(opportunity.applications || []).filter((application) => application.status === 'PENDING').length} pending, {(opportunity.applications || []).filter((application) => application.status === 'APPROVED').length} approved</span>
+                          <button onClick={() => bulkUpdateApplications(opportunity.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
+                          <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete job</button>
+                        </div>
                         {(opportunity.applications || []).map((application) => (
                           <div className="manager-row" key={application.id}>
                             <span>{application.applicant?.name || 'Applicant'} - {application.status}{application.contactPhone ? ` - ${application.contactPhone}` : ''}</span>
@@ -1580,8 +1603,18 @@ export default function App() {
     await Promise.all([loadMyOrganizations(), loadOpportunities()]);
   }
 
+  async function bulkUpdateApplications(opportunityId, data) {
+    await api(`/api/opportunities/${opportunityId}/applications`, { method: 'PUT', body: JSON.stringify(data) });
+    await Promise.all([loadMyOrganizations(), loadOpportunities()]);
+  }
+
   async function updateRegistration(eventId, registrationId, status) {
     await api(`/api/events/${eventId}/registrations/${registrationId}`, { method: 'PUT', body: JSON.stringify({ status }) });
+    await Promise.all([loadEvents(), loadMyOrganizations()]);
+  }
+
+  async function bulkUpdateRegistrations(eventId, data) {
+    await api(`/api/events/${eventId}/registrations`, { method: 'PUT', body: JSON.stringify(data) });
     await Promise.all([loadEvents(), loadMyOrganizations()]);
   }
 
@@ -1799,7 +1832,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} createPost={createPost} createEvent={createEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} updateRegistration={updateRegistration} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} createPost={createPost} createEvent={createEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
   };
 
   return (

@@ -836,9 +836,23 @@ app.put('/api/events/:eventId/registrations/:registrationId', auth, async (req, 
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const canManage = event.createdById === req.user.id || req.user.accountType === 'ADMIN' || (event.organizationId && await canManageOrganization(req.user, event.organizationId));
   if (!canManage) return res.status(403).json({ error: 'Only event managers can update attendance' });
+  const existingRegistration = await prisma.eventRegistration.findUnique({ where: { id: req.params.registrationId } });
+  if (!existingRegistration || existingRegistration.eventId !== event.id) return res.status(404).json({ error: 'Registration not found for this event' });
   const status = ['APPROVED', 'DENIED', 'ATTENDED'].includes(req.body.status) ? req.body.status : 'APPROVED';
   const registration = await prisma.eventRegistration.update({ where: { id: req.params.registrationId }, data: { status } });
   res.json(registration);
+});
+
+app.put('/api/events/:eventId/registrations', auth, async (req, res) => {
+  const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const canManage = event.createdById === req.user.id || req.user.accountType === 'ADMIN' || (event.organizationId && await canManageOrganization(req.user, event.organizationId));
+  if (!canManage) return res.status(403).json({ error: 'Only event managers can update attendance' });
+  const status = ['APPROVED', 'DENIED', 'ATTENDED'].includes(req.body.status) ? req.body.status : 'APPROVED';
+  const where = { eventId: event.id };
+  if (req.body.fromStatus && ['PENDING', 'APPROVED', 'DENIED', 'ATTENDED'].includes(req.body.fromStatus)) where.status = req.body.fromStatus;
+  const result = await prisma.eventRegistration.updateMany({ where, data: { status } });
+  res.json({ updated: result.count, status });
 });
 
 app.delete('/api/events/:eventId/register', auth, async (req, res) => {
@@ -897,6 +911,21 @@ app.post('/api/opportunities/:id/apply', auth, async (req, res) => {
     update: { ...data, status: 'PENDING' }
   });
   res.json(application);
+});
+
+app.put('/api/opportunities/:id/applications', auth, async (req, res) => {
+  const opportunity = await prisma.opportunity.findUnique({ where: { id: req.params.id } });
+  if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
+  if (!(await canManageOrganization(req.user, opportunity.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can manage applications' });
+  const status = ['PENDING', 'APPROVED', 'DENIED', 'COMPLETED'].includes(req.body.status) ? req.body.status : 'APPROVED';
+  const where = { opportunityId: opportunity.id };
+  if (req.body.fromStatus && ['PENDING', 'APPROVED', 'DENIED', 'COMPLETED'].includes(req.body.fromStatus)) where.status = req.body.fromStatus;
+  const data = { status, approvedById: req.user.id };
+  if (req.body.approvedHours != null) data.approvedHours = Number(req.body.approvedHours);
+  if (req.body.checkedInAt === true) data.checkedInAt = new Date();
+  if (req.body.checkedOutAt === true) data.checkedOutAt = new Date();
+  const result = await prisma.volunteerApplication.updateMany({ where, data });
+  res.json({ updated: result.count, status });
 });
 
 app.put('/api/opportunities/:id/applications/:applicationId', auth, async (req, res) => {

@@ -1385,6 +1385,12 @@ a {
   flex: 1 1 220px;
 }
 
+.manager-row small {
+  flex: 1 1 100%;
+  color: #64766f;
+  font-weight: 750;
+}
+
 .manager-row button {
   min-height: 32px;
   border: 1px solid #d8e2df;
