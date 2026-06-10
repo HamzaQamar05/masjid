@@ -25,7 +25,7 @@ import {
   X
 } from 'lucide-react';
 import AuthScreen from './components/AuthScreen.jsx';
-import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganizations, volunteerRoles } from './data/seedData.js';
+import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganizations } from './data/seedData.js';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -35,6 +35,7 @@ const navItems = [
   { key: 'organizations', label: 'Masjids', icon: Building2 },
   { key: 'network', label: 'Network', icon: Users },
   { key: 'volunteers', label: 'Volunteer', icon: HeartHandshake },
+  { key: 'jobs', label: 'Jobs', icon: Briefcase },
   { key: 'library', label: 'Library', icon: Library },
   { key: 'businesses', label: 'Business', icon: Briefcase },
   { key: 'messages', label: 'Messages', icon: Mail },
@@ -49,6 +50,10 @@ function token() {
 }
 
 function canPost(user) {
+  return ['MASJID', 'MSA', 'ADMIN'].includes(user?.accountType);
+}
+
+function canManageOrgs(user) {
   return ['MASJID', 'MSA', 'ADMIN'].includes(user?.accountType);
 }
 
@@ -139,7 +144,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
 function NavigationList({ tab, setTab, user }) {
   return (
     <nav className="side-nav">
-      {navItems.filter((item) => item.key !== 'dashboard' || user.accountType === 'ADMIN').map((item) => {
+      {navItems.filter((item) => item.key !== 'dashboard' || canManageOrgs(user)).map((item) => {
         const Icon = item.icon;
         return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span></button>;
       })}
@@ -257,12 +262,12 @@ function EventsScreen({ user, events, loadEvents }) {
   );
 }
 
-function PostEventScreen({ setTab, loadEvents }) {
-  const [form, setForm] = useState({ title: '', description: '', location: '', startTime: '' });
+function PostEventScreen({ setTab, loadEvents, loadMyOrganizations, myOrganizations }) {
+  const [form, setForm] = useState({ title: '', description: '', location: '', startTime: '', organizationId: '', capacity: '', requiresApproval: false });
   async function submit(event) {
     event.preventDefault();
     await api('/api/events', { method: 'POST', body: JSON.stringify(form) });
-    await loadEvents();
+    await Promise.all([loadEvents(), loadMyOrganizations()]);
     setTab('events');
   }
   return (
@@ -272,6 +277,12 @@ function PostEventScreen({ setTab, loadEvents }) {
         <textarea placeholder="Description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
         <input placeholder="Location" value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} />
         <input required type="datetime-local" value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })} />
+        <select value={form.organizationId} onChange={(event) => setForm({ ...form, organizationId: event.target.value })}>
+          <option value="">Personal/admin event</option>
+          {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+        </select>
+        <input placeholder="Capacity" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} />
+        <label className="check-toggle"><input type="checkbox" checked={form.requiresApproval} onChange={(event) => setForm({ ...form, requiresApproval: event.target.checked })} />Requires approval/payment</label>
         <button className="primary-button">Post event</button>
       </form>
     </Page>
@@ -542,48 +553,47 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
   );
 }
 
-function VolunteersScreen({ roles, updateVolunteerRole }) {
-  const verifiedTotal = roles.reduce((sum, role) => sum + (Number(role.verifiedHours) || 0), 0);
-  const approvedCount = roles.filter((role) => role.status === 'Approved').length;
+function OpportunitiesScreen({ opportunities, type = 'VOLUNTEER', applyToOpportunity, title, subtitle }) {
+  const visible = opportunities.filter((item) => item.type === type || (type === 'VOLUNTEER' && item.type === 'OPPORTUNITY'));
+  const verifiedTotal = visible.reduce((sum, item) => sum + (item.applications?.[0]?.approvedHours || 0), 0);
   return (
-    <Page title="Volunteer Marketplace" subtitle="Find shifts, manage approvals, and keep verified service hours organized.">
-      <section className="hours-summary panel">
-        <div>
-          <span>Verified Hours</span>
-          <h2>{verifiedTotal}</h2>
-          <p>{approvedCount} approved role{approvedCount === 1 ? '' : 's'} ready for check-in tracking.</p>
-        </div>
-        <button className="secondary-button">Download PDF</button>
-      </section>
+    <Page title={title} subtitle={subtitle}>
+      {type === 'VOLUNTEER' && (
+        <section className="hours-summary panel">
+          <div>
+            <span>Verified Hours</span>
+            <h2>{verifiedTotal}</h2>
+            <p>Hours only count after the masjid approves them.</p>
+          </div>
+          <button className="secondary-button">Download PDF</button>
+        </section>
+      )}
       <div className="card-grid two">
-        {roles.map((role) => (
-          <article className="role-card" key={role.id}>
-            <div className="role-icon"><HeartHandshake size={24} /></div>
+        {visible.map((item) => {
+          const application = item.applications?.[0];
+          return (
+          <article className="role-card" key={item.id}>
+            <div className="role-icon">{item.type === 'JOB' ? <Briefcase size={24} /> : <HeartHandshake size={24} />}</div>
             <div>
-              <h3>{role.title}</h3>
-              <p>{role.org}</p>
-              <TagRow tags={[role.shift, `${role.hours} hours`, role.skill]} />
+              <h3>{item.title}</h3>
+              <p>{item.organization?.name || 'Community organization'}</p>
+              <TagRow tags={[item.location || 'Location TBD', item.hours ? `${item.hours} hours` : item.type, ...(item.skills || [])]} />
             </div>
-            <div className="check-row"><span>Applicants</span><strong>{role.applicants}</strong></div>
-            <div className="check-row"><span>Approved</span><strong>{role.approved}</strong></div>
-            <div className="check-row"><span>Status</span><strong>{role.status}</strong></div>
-            <div className="check-row"><span>Check-in</span><strong>{role.checkIn || 'Not checked in'}</strong></div>
-            <div className="check-row"><span>Check-out</span><strong>{role.checkOut || 'Not checked out'}</strong></div>
+            <p>{item.description || 'No description yet.'}</p>
+            <div className="check-row"><span>Status</span><strong>{application?.status || 'Not applied'}</strong></div>
+            <div className="check-row"><span>Approved hours</span><strong>{application?.approvedHours || 0}</strong></div>
             <div className="card-footer">
-              {role.status === 'Open' && <button className="primary-button" onClick={() => updateVolunteerRole(role.id, 'apply')}>Apply</button>}
-              {role.status === 'Pending approval' && <button className="secondary-button" onClick={() => updateVolunteerRole(role.id, 'approve')}>Approve</button>}
-              {role.status === 'Approved' && !role.checkIn && <button className="primary-button" onClick={() => updateVolunteerRole(role.id, 'check-in')}>Check in</button>}
-              {role.status === 'Approved' && role.checkIn && !role.checkOut && <button className="primary-button" onClick={() => updateVolunteerRole(role.id, 'check-out')}>Check out</button>}
-              {role.checkOut && <span>{role.verifiedHours} verified hours</span>}
+              {application ? <span>{application.status}</span> : <button className="primary-button" onClick={() => applyToOpportunity(item.id)}>Apply</button>}
             </div>
           </article>
-        ))}
+        );})}
+        {!visible.length && <p className="helper-text">No {type.toLowerCase()} posts yet.</p>}
       </div>
     </Page>
   );
 }
 
-function ProfileScreen({ user, viewedUser, onCloseViewed, onSave }) {
+function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
   const editingSelf = !viewedUser || viewedUser.id === user.id;
   const profile = viewedUser || user;
   const [form, setForm] = useState(() => ({
@@ -648,6 +658,14 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave }) {
           </form>
         ) : <ReadOnlyProfile profile={profile} />}
       </section>
+      <section className="panel profile-social">
+        <div className="section-title"><h2>Connections</h2><span>{social.connections.length}</span></div>
+        <div className="tag-row">{social.connections.map((person) => <span key={person.id}>{person.name}</span>)}</div>
+        {!social.connections.length && <p className="helper-text">No accepted connections yet.</p>}
+        <div className="section-title"><h2>Following Masjids</h2><span>{social.followingMasjids.length}</span></div>
+        <div className="tag-row">{social.followingMasjids.map((org) => <span key={org.id}>{org.name}</span>)}</div>
+        {!social.followingMasjids.length && <p className="helper-text">No followed masjids yet.</p>}
+      </section>
     </Page>
   );
 }
@@ -671,7 +689,9 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, createOpportunity, updateApplication, updateRegistration }) {
+  const [orgForm, setOrgForm] = useState({ name: '', type: 'MASJID', city: '', address: '', website: '', description: '', latitude: '', longitude: '' });
+  const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
   async function deleteUser(id) {
     if (!confirm('Delete this user and their messages/events?')) return;
     await api(`/api/users/${id}`, { method: 'DELETE' });
@@ -679,21 +699,120 @@ function AdminScreen({ user, users, loadNetwork }) {
   }
   async function updateRole(id, accountType) {
     await api(`/api/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ accountType }) });
-    await loadNetwork();
+    await Promise.all([loadNetwork(), loadMyOrganizations()]);
+  }
+  async function submitOrg(event) {
+    event.preventDefault();
+    await createOrganization(orgForm);
+    setOrgForm({ name: '', type: 'MASJID', city: '', address: '', website: '', description: '', latitude: '', longitude: '' });
+  }
+  async function submitOpp(event) {
+    event.preventDefault();
+    const organizationId = oppForm.organizationId || myOrganizations[0]?.id;
+    if (!organizationId) return alert('Create or select a masjid first.');
+    await createOpportunity(organizationId, oppForm);
+    setOppForm({ organizationId, type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
+  }
+  async function approveApplication(opportunityId, applicationId) {
+    const approvedHours = Number(prompt('Approved volunteer hours?', '0') || 0);
+    await updateApplication(opportunityId, applicationId, { status: 'APPROVED', approvedHours });
   }
   return (
-    <Page title="Admin" subtitle="Admin-only user cleanup and role assignment. Public registration always creates regular user accounts.">
-      <div className="card-grid two">
-        {users.filter((person) => person.id !== user.id).map((person) => (
-          <article className="person-card" key={person.id}>
-            <h3>{person.name}</h3>
-            <p>{person.email}</p>
-            <select value={person.accountType} onChange={(event) => updateRole(person.id, event.target.value)}>
-              {['USER', 'MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'BUSINESS', 'ADMIN'].map((role) => <option key={role} value={role}>{role}</option>)}
-            </select>
-            <button className="secondary-button danger" onClick={() => deleteUser(person.id)}>Delete user</button>
-          </article>
-        ))}
+    <Page title="Dashboard" subtitle="Manage masjid onboarding, attendees, jobs, opportunities, volunteers, and account roles.">
+      <div className="content-grid">
+        <section className="feed-column">
+          <section className="panel">
+            <div className="section-title"><h2>Create Masjid Profile</h2></div>
+            <form className="profile-form" onSubmit={submitOrg}>
+              <div className="form-grid">
+                <input required placeholder="Masjid name" value={orgForm.name} onChange={(event) => setOrgForm({ ...orgForm, name: event.target.value })} />
+                <select value={orgForm.type} onChange={(event) => setOrgForm({ ...orgForm, type: event.target.value })}><option value="MASJID">Masjid</option><option value="MSA">MSA</option></select>
+                <input placeholder="City" value={orgForm.city} onChange={(event) => setOrgForm({ ...orgForm, city: event.target.value })} />
+                <input placeholder="Address" value={orgForm.address} onChange={(event) => setOrgForm({ ...orgForm, address: event.target.value })} />
+                <input placeholder="Website" value={orgForm.website} onChange={(event) => setOrgForm({ ...orgForm, website: event.target.value })} />
+                <input placeholder="Latitude" value={orgForm.latitude} onChange={(event) => setOrgForm({ ...orgForm, latitude: event.target.value })} />
+                <input placeholder="Longitude" value={orgForm.longitude} onChange={(event) => setOrgForm({ ...orgForm, longitude: event.target.value })} />
+              </div>
+              <textarea placeholder="Description" value={orgForm.description} onChange={(event) => setOrgForm({ ...orgForm, description: event.target.value })} />
+              <button className="primary-button">Create profile</button>
+            </form>
+          </section>
+
+          <section className="panel">
+            <div className="section-title"><h2>Post Job or Opportunity</h2></div>
+            <form className="profile-form" onSubmit={submitOpp}>
+              <div className="form-grid">
+                <select value={oppForm.organizationId} onChange={(event) => setOppForm({ ...oppForm, organizationId: event.target.value })}>
+                  <option value="">Select organization</option>
+                  {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                </select>
+                <select value={oppForm.type} onChange={(event) => setOppForm({ ...oppForm, type: event.target.value })}><option value="VOLUNTEER">Volunteer</option><option value="JOB">Job</option><option value="OPPORTUNITY">Opportunity</option></select>
+                <input required placeholder="Title" value={oppForm.title} onChange={(event) => setOppForm({ ...oppForm, title: event.target.value })} />
+                <input placeholder="Location" value={oppForm.location} onChange={(event) => setOppForm({ ...oppForm, location: event.target.value })} />
+                <input placeholder="Skills, comma separated" value={oppForm.skills} onChange={(event) => setOppForm({ ...oppForm, skills: event.target.value })} />
+                <input placeholder="Hours" value={oppForm.hours} onChange={(event) => setOppForm({ ...oppForm, hours: event.target.value })} />
+              </div>
+              <textarea placeholder="Description" value={oppForm.description} onChange={(event) => setOppForm({ ...oppForm, description: event.target.value })} />
+              <button className="primary-button">Post</button>
+            </form>
+          </section>
+
+          {myOrganizations.map((org) => (
+            <section className="panel" key={org.id}>
+              <div className="section-title"><h2>{org.name}</h2><span>{org.followerCount || 0} followers</span></div>
+              <div className="stack-list">
+                {(org.events || []).map((event) => (
+                  <article className="mini-row" key={event.id}>
+                    <strong>{event.title}</strong>
+                    <span>{(event.registrations || []).length} attendees</span>
+                    {(event.registrations || []).map((registration) => (
+                      <div className="manager-row" key={registration.id}>
+                        <span>{registration.user?.name || 'User'} - {registration.status}</span>
+                        <button onClick={() => updateRegistration(event.id, registration.id, 'APPROVED')}>Approve</button>
+                        <button onClick={() => updateRegistration(event.id, registration.id, 'DENIED')}>Deny</button>
+                        <button onClick={() => updateRegistration(event.id, registration.id, 'ATTENDED')}>Attended</button>
+                      </div>
+                    ))}
+                  </article>
+                ))}
+                {(org.opportunities || []).map((opportunity) => (
+                  <article className="mini-row" key={opportunity.id}>
+                    <strong>{opportunity.title}</strong>
+                    <span>{opportunity.type} - {(opportunity.applications || []).length} applicants</span>
+                    {(opportunity.applications || []).map((application) => (
+                      <div className="manager-row" key={application.id}>
+                        <span>{application.applicant?.name || 'Applicant'} - {application.status} - {application.approvedHours || 0} hrs</span>
+                        <button onClick={() => approveApplication(opportunity.id, application.id)}>Approve hours</button>
+                        <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'DENIED' })}>Deny</button>
+                        <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'COMPLETED', checkedOutAt: true })}>Complete</button>
+                      </div>
+                    ))}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </section>
+
+        {user.accountType === 'ADMIN' && (
+          <aside className="right-rail">
+            <section className="panel">
+              <div className="section-title"><h2>User Roles</h2></div>
+              <div className="stack-list">
+                {users.filter((person) => person.id !== user.id).map((person) => (
+                  <article className="mini-row" key={person.id}>
+                    <strong>{person.name}</strong>
+                    <span>{person.email}</span>
+                    <select value={person.accountType} onChange={(event) => updateRole(person.id, event.target.value)}>
+                      {['USER', 'MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'BUSINESS', 'ADMIN'].map((role) => <option key={role} value={role}>{role}</option>)}
+                    </select>
+                    <button className="secondary-button danger" onClick={() => deleteUser(person.id)}>Delete user</button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </aside>
+        )}
       </div>
     </Page>
   );
@@ -716,6 +835,8 @@ export default function App() {
   });
   const [users, setUsers] = useState([]);
   const [events, setEvents] = useState([]);
+  const [opportunities, setOpportunities] = useState([]);
+  const [myOrganizations, setMyOrganizations] = useState([]);
   const [connections, setConnections] = useState([]);
   const [messages, setMessages] = useState([]);
   const [threads, setThreads] = useState([]);
@@ -727,19 +848,19 @@ export default function App() {
   const selectedUserIdRef = useRef(null);
   const [viewedUser, setViewedUser] = useState(null);
   const [selectedOrganization, setSelectedOrganization] = useState(null);
+  const [profileSocial, setProfileSocial] = useState({ connections: [], followingMasjids: [] });
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState(defaultLocation);
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
   const [masjids, setMasjids] = useState([]);
   const [prayerTimes, setPrayerTimes] = useState(prayers);
-  const [volunteerShifts, setVolunteerShifts] = useState(volunteerRoles);
 
   async function bootstrap() {
     if (!token()) return;
     const me = await api('/api/me');
     sessionStorage.setItem('user', JSON.stringify(me));
     setUser(me);
-    await Promise.all([loadNetwork(), loadEvents(), loadThreads()]);
+    await Promise.all([loadNetwork(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids()]);
   }
 
   async function loadNetwork() {
@@ -752,6 +873,30 @@ export default function App() {
   async function loadEvents() {
     const loadedEvents = await api('/api/events').catch(() => seedEvents);
     setEvents(loadedEvents);
+  }
+
+  async function loadOpportunities() {
+    const loaded = await api('/api/opportunities').catch(() => []);
+    setOpportunities(loaded);
+  }
+
+  async function loadMyOrganizations(currentUser = user) {
+    if (!canManageOrgs(currentUser)) {
+      setMyOrganizations([]);
+      return;
+    }
+    const loaded = await api('/api/me/organizations').catch(() => []);
+    setMyOrganizations(loaded);
+  }
+
+  async function loadProfileSocial(userId) {
+    const loaded = await api(`/api/users/${userId}/social`).catch(() => ({ connections: [], followingMasjids: [] }));
+    setProfileSocial({ connections: loaded.connections || [], followingMasjids: loaded.followingMasjids || [] });
+  }
+
+  async function loadNotificationMasjids() {
+    const orgs = await api('/api/me/notification-masjids').catch(() => []);
+    orgs.forEach(schedulePrayerNotification);
   }
 
   async function loadMessages(userId) {
@@ -789,6 +934,31 @@ export default function App() {
     mergeMessage(updated);
   }
 
+  async function applyToOpportunity(id) {
+    await api(`/api/opportunities/${id}/apply`, { method: 'POST' });
+    await loadOpportunities();
+  }
+
+  async function createOpportunity(organizationId, form) {
+    await api(`/api/organizations/${organizationId}/opportunities`, { method: 'POST', body: JSON.stringify(form) });
+    await Promise.all([loadMyOrganizations(), loadOpportunities()]);
+  }
+
+  async function createOrganization(form) {
+    await api('/api/organizations', { method: 'POST', body: JSON.stringify(form) });
+    await Promise.all([loadMyOrganizations(), loadLocationData(location)]);
+  }
+
+  async function updateApplication(opportunityId, applicationId, data) {
+    await api(`/api/opportunities/${opportunityId}/applications/${applicationId}`, { method: 'PUT', body: JSON.stringify(data) });
+    await Promise.all([loadMyOrganizations(), loadOpportunities()]);
+  }
+
+  async function updateRegistration(eventId, registrationId, status) {
+    await api(`/api/events/${eventId}/registrations/${registrationId}`, { method: 'PUT', body: JSON.stringify({ status }) });
+    await Promise.all([loadEvents(), loadMyOrganizations()]);
+  }
+
   async function unsendMessage(messageId) {
     const updated = await api(`/api/messages/${messageId}`, { method: 'DELETE' });
     mergeMessage(updated);
@@ -797,18 +967,6 @@ export default function App() {
   function sendTyping(receiverId, isTyping) {
     if (!socket || !receiverId) return;
     socket.emit(isTyping ? 'typing:start' : 'typing:stop', { receiverId });
-  }
-
-  function updateVolunteerRole(roleId, action) {
-    const now = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    setVolunteerShifts((roles) => roles.map((role) => {
-      if (role.id !== roleId) return role;
-      if (action === 'apply') return { ...role, status: 'Pending approval', applicants: role.applicants + 1 };
-      if (action === 'approve') return { ...role, status: 'Approved', approved: role.approved + 1 };
-      if (action === 'check-in') return { ...role, checkIn: now, checkOut: null, verifiedHours: 0 };
-      if (action === 'check-out') return { ...role, checkOut: now, verifiedHours: role.hours };
-      return role;
-    }));
   }
 
   async function loadLocationData(nextLocation) {
@@ -952,6 +1110,7 @@ export default function App() {
 
   function openProfile(person) {
     setViewedUser(person);
+    loadProfileSocial(person.id).catch(console.error);
     setTab('profile');
   }
 
@@ -980,16 +1139,17 @@ export default function App() {
   const screens = {
     home: <HomeScreen user={user} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
     events: <EventsScreen user={user} events={events} loadEvents={loadEvents} />,
-    post: <PostEventScreen setTab={setTab} loadEvents={loadEvents} />,
+    post: <PostEventScreen setTab={setTab} loadEvents={loadEvents} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
     masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => setTab('organizations')} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
-    volunteers: <VolunteersScreen roles={volunteerShifts} updateVolunteerRole={updateVolunteerRole} />,
+    volunteers: <OpportunitiesScreen opportunities={opportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
+    jobs: <OpportunitiesScreen opportunities={opportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
-    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => setViewedUser(null)} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} />
+    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} createOpportunity={createOpportunity} updateApplication={updateApplication} updateRegistration={updateRegistration} />
   };
 
   return (

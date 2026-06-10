@@ -433,6 +433,28 @@ app.get('/api/users', auth, async (req, res) => {
   res.json(users.map((user) => ({ ...publicUser(user), connectionStatus: user.id === req.user.id ? 'SELF' : connectionMap.get(user.id) || 'NONE' })));
 });
 
+app.get('/api/users/:id/social', auth, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const [connections, follows] = await Promise.all([
+    prisma.connection.findMany({
+      where: { status: 'ACCEPTED', OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] },
+      include: { requester: true, receiver: true },
+      orderBy: { updatedAt: 'desc' }
+    }),
+    prisma.organizationFollow.findMany({
+      where: { userId: req.params.id },
+      include: { organization: { include: { followers: true, events: true, opportunities: true } } },
+      orderBy: { createdAt: 'desc' }
+    })
+  ]);
+  res.json({
+    user: publicUser(user),
+    connections: connections.map((connection) => publicUser(connection.requesterId === req.params.id ? connection.receiver : connection.requester)),
+    followingMasjids: follows.map((follow) => publicOrganization(follow.organization, req.user.id))
+  });
+});
+
 app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Admins cannot delete their own active session account' });
   await prisma.eventRegistration.deleteMany({ where: { userId: req.params.id } });
@@ -485,6 +507,28 @@ app.get('/api/connections', auth, async (req, res) => {
     requester: publicUser(connection.requester),
     receiver: publicUser(connection.receiver)
   })));
+});
+
+app.get('/api/me/organizations', auth, async (req, res) => {
+  const where = req.user.accountType === 'ADMIN' ? {} : { ownerId: req.user.id };
+  const organizations = await prisma.organization.findMany({
+    where,
+    include: {
+      followers: { include: { user: true } },
+      events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
+      opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+  res.json(organizations.map((org) => publicOrganization(org, req.user.id)));
+});
+
+app.get('/api/me/notification-masjids', auth, async (req, res) => {
+  const follows = await prisma.organizationFollow.findMany({
+    where: { userId: req.user.id, notifyPrayers: true },
+    include: { organization: { include: { followers: true, events: true, opportunities: true } } }
+  });
+  res.json(follows.map((follow) => publicOrganization(follow.organization, req.user.id)));
 });
 
 app.get('/api/organizations', async (req, res) => {

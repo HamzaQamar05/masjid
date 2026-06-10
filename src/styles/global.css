@@ -1244,6 +1244,7 @@ a {
 }
 
 .profile-form input,
+.profile-form select,
 .profile-form textarea {
   width: 100%;
   border: 1px solid #d8e2df;
@@ -1257,6 +1258,19 @@ a {
 .profile-form textarea {
   min-height: 96px;
   resize: vertical;
+}
+
+.check-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #50665f;
+  font-weight: 850;
+}
+
+.check-toggle input {
+  width: 18px;
+  height: 18px;
 }
 
 .profile-read {
@@ -1310,6 +1324,30 @@ a {
 .mini-row p {
   color: #5d716b;
   margin: 0;
+}
+
+.manager-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid #e0e8e6;
+  padding-top: 8px;
+  margin-top: 6px;
+}
+
+.manager-row span {
+  flex: 1 1 220px;
+}
+
+.manager-row button {
+  min-height: 32px;
+  border: 1px solid #d8e2df;
+  border-radius: 8px;
+  background: #fff;
+  color: #23322d;
+  font-weight: 850;
+  padding: 0 10px;
 }
 
 .person-card select {
@@ -1384,6 +1422,7 @@ a {
 }
 
 .post-form input,
+.post-form select,
 .post-form textarea,
 .auth-form input,
 .auth-form textarea,
