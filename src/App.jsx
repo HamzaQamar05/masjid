@@ -114,7 +114,7 @@ async function showPrayerNotification(title, body, tag) {
   new Notification(title, { body, tag });
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess }) {
   const [navOpen, setNavOpen] = useState(false);
   function navigate(key) {
     setTab(key);
@@ -154,24 +154,25 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
           <button className="profile-avatar" onClick={() => navigate('profile')}>{initials(user.name)}</button>
           <div><strong>{user.name}</strong><span>{user.accountType}</span></div>
         </div>
-        <NavigationList tab={tab} setTab={navigate} user={user} />
+        <NavigationList tab={tab} setTab={navigate} user={user} hasDashboardAccess={hasDashboardAccess} />
         <button className="mobile-logout" onClick={onLogout}><LogOut size={18} />Logout</button>
       </div>
       <aside className="rail left-rail">
         <ProfileSummary user={user} onLogout={onLogout} setTab={navigate} />
-        <NavigationList tab={tab} setTab={navigate} user={user} />
+        <NavigationList tab={tab} setTab={navigate} user={user} hasDashboardAccess={hasDashboardAccess} />
       </aside>
       <main className="main-panel">{children}</main>
     </div>
   );
 }
 
-function NavigationList({ tab, setTab, user }) {
+function NavigationList({ tab, setTab, user, hasDashboardAccess }) {
   return (
     <nav className="side-nav">
-      {navItems.filter((item) => item.key !== 'dashboard' || canManageOrgs(user)).map((item) => {
+      {navItems.filter((item) => item.key !== 'dashboard' || canManageOrgs(user) || hasDashboardAccess).map((item) => {
         const Icon = item.icon;
-        return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span></button>;
+        const label = item.key === 'dashboard' && user.accountType !== 'ADMIN' ? 'Dashboard' : item.label;
+        return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{label}</span></button>;
       })}
     </nav>
   );
@@ -1898,7 +1899,7 @@ export default function App() {
 
   return (
     <>
-      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout}>
+      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0}>
         {screens[tab] || screens.home}
       </Shell>
       <section className="mobile-bottom-nav">

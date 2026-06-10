@@ -209,11 +209,20 @@ function publicPost(post) {
   };
 }
 
+function canOperateOrganizationRole(roleLabel = '') {
+  return /(admin|manager|coordinator|imam|khateeb|staff|director|lead|owner)/i.test(roleLabel);
+}
+
 async function canManageOrganization(user, organizationId) {
+  if (!user || !organizationId) return false;
   if (user.accountType === 'ADMIN') return true;
-  if (!organizationId) return false;
-  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
-  return Boolean(org && org.ownerId === user.id && ['MASJID', 'MSA', 'ADMIN'].includes(user.accountType));
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    include: { people: { where: { userId: user.id } } }
+  });
+  if (!org) return false;
+  if (org.ownerId === user.id && ['MASJID', 'MSA', 'ADMIN'].includes(user.accountType)) return true;
+  return org.people.some((person) => canOperateOrganizationRole(person.roleLabel));
 }
 
 async function ensureFallbackOrganizations() {
@@ -335,11 +344,6 @@ async function auth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Admin account required' });
-  next();
-}
-
-function canPostEvent(req, res, next) {
-  if (!['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Only masjid, MSA, or admin accounts can post events right now' });
   next();
 }
 
@@ -549,7 +553,13 @@ app.get('/api/connections', auth, async (req, res) => {
 });
 
 app.get('/api/me/organizations', auth, async (req, res) => {
-  const where = req.user.accountType === 'ADMIN' ? {} : { ownerId: req.user.id };
+  const operationalRoleFilters = ['admin', 'manager', 'coordinator', 'imam', 'khateeb', 'staff', 'director', 'lead', 'owner'].map((keyword) => ({ roleLabel: { contains: keyword, mode: 'insensitive' } }));
+  const where = req.user.accountType === 'ADMIN' ? {} : {
+    OR: [
+      { ownerId: req.user.id },
+      { people: { some: { userId: req.user.id, OR: operationalRoleFilters } } }
+    ]
+  };
   const organizations = await prisma.organization.findMany({
     where,
     include: {
@@ -811,9 +821,10 @@ app.get('/api/events', async (_, res) => {
   res.json(events.map((event) => ({ ...event, registrations: event.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) })));
 });
 
-app.post('/api/events', auth, canPostEvent, async (req, res) => {
+app.post('/api/events', auth, async (req, res) => {
   const { title, description, location, startTime, endTime, organizationId, capacity, requiresApproval } = req.body;
   if (!title || !startTime) return res.status(400).json({ error: 'Title and start time are required' });
+  if (!organizationId && !['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Only masjid, MSA, or admin accounts can post standalone events' });
   if (organizationId && !(await canManageOrganization(req.user, organizationId))) return res.status(403).json({ error: 'You can only post under an organization you manage' });
   const event = await prisma.event.create({
     data: {
