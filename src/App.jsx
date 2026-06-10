@@ -104,7 +104,7 @@ async function showPrayerNotification(title, body, tag) {
   new Notification(title, { body, tag });
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onLogout }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout }) {
   const [navOpen, setNavOpen] = useState(false);
   function navigate(key) {
     setTab(key);
@@ -123,7 +123,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
           {searchQuery && (
             <div className="search-results">
               {searchResults.length ? searchResults.map((result) => (
-                <button key={`${result.kind}-${result.id}`} onClick={() => { navigate(result.tab); setSearchQuery(''); }}>
+                <button key={`${result.kind}-${result.id}`} onClick={() => { onSearchSelect(result); setSearchQuery(''); setNavOpen(false); }}>
                   <span>{result.kind}</span>
                   <strong>{result.title}</strong>
                   <small>{result.subtitle}</small>
@@ -1277,6 +1277,17 @@ export default function App() {
     loadMessages(person.id).catch(console.error);
   }
 
+  function handleSearchSelect(result) {
+    if (result.kind === 'User') {
+      const person = users.find((item) => item.id === result.id);
+      if (person) return openProfile(person);
+    }
+    if (result.kind === 'Masjid') return openOrganization(result.id).catch(console.error);
+    if (result.kind === 'Job') setTab('jobs');
+    else if (result.kind === 'Volunteer') setTab('volunteers');
+    else setTab(result.tab);
+  }
+
   const otherUsers = users.filter((person) => person.id !== user?.id);
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -1285,11 +1296,12 @@ export default function App() {
       ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`, tab: 'network' })),
       ...masjids.map((masjid) => ({ id: masjid.id, kind: 'Masjid', title: masjid.name, subtitle: `${masjid.address || ''} ${masjid.city || ''}`, tab: 'organizations' })),
       ...events.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' })),
+      ...opportunities.map((item) => ({ id: item.id, kind: item.type === 'JOB' ? 'Job' : 'Volunteer', title: item.title, subtitle: `${item.organization?.name || ''} ${item.description || ''} ${item.location || ''} ${Array.isArray(item.skills) ? item.skills.join(' ') : item.skills || ''}`, tab: item.type === 'JOB' ? 'jobs' : 'volunteers' })),
       ...lectures.map((lecture) => ({ id: lecture.id, kind: 'Lecture', title: lecture.title, subtitle: `${lecture.speaker} ${lecture.category}`, tab: 'library' })),
       ...businesses.map((business) => ({ id: business.id, kind: 'Business', title: business.name, subtitle: `${business.category} ${business.city}`, tab: 'businesses' }))
     ];
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
-  }, [searchQuery, users, masjids, events]);
+  }, [searchQuery, users, masjids, events, opportunities]);
 
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} /></div>;
 
@@ -1311,7 +1323,7 @@ export default function App() {
 
   return (
     <>
-      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onLogout={logout}>
+      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout}>
         {screens[tab] || screens.home}
       </Shell>
       <section className="mobile-bottom-nav">
