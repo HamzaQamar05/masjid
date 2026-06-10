@@ -681,6 +681,14 @@ function printableHoursReport(user, visible) {
 function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToOpportunity, title, subtitle }) {
   const visible = opportunities.filter((item) => item.type === type || (type === 'VOLUNTEER' && item.type === 'OPPORTUNITY'));
   const verifiedTotal = visible.reduce((sum, item) => sum + (item.applications?.[0]?.approvedHours || 0), 0);
+  const [applicationForms, setApplicationForms] = useState({});
+  function updateApplicationForm(id, field, value) {
+    setApplicationForms((current) => ({ ...current, [id]: { ...(current[id] || {}), [field]: value } }));
+  }
+  async function submitApplication(id) {
+    await applyToOpportunity(id, applicationForms[id] || {});
+    setApplicationForms((current) => ({ ...current, [id]: { note: '', contactPhone: '', resumeUrl: '' } }));
+  }
   return (
     <Page title={title} subtitle={subtitle}>
       {type === 'VOLUNTEER' && (
@@ -707,8 +715,16 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
             <p>{item.description || 'No description yet.'}</p>
             <div className="check-row"><span>Status</span><strong>{application?.status || 'Not applied'}</strong></div>
             <div className="check-row"><span>Approved hours</span><strong>{application?.approvedHours || 0}</strong></div>
+            {application?.note && <div className="check-row"><span>Your note</span><strong>{application.note}</strong></div>}
             <div className="card-footer">
-              {application ? <span>{application.status}</span> : <button className="primary-button" onClick={() => applyToOpportunity(item.id)}>Apply</button>}
+              {application ? <span>{application.status}</span> : (
+                <div className="application-form">
+                  <input placeholder="Phone optional" value={applicationForms[item.id]?.contactPhone || ''} onChange={(event) => updateApplicationForm(item.id, 'contactPhone', event.target.value)} />
+                  <input placeholder="Resume/profile link optional" value={applicationForms[item.id]?.resumeUrl || ''} onChange={(event) => updateApplicationForm(item.id, 'resumeUrl', event.target.value)} />
+                  <textarea placeholder={item.type === 'JOB' ? 'Why are you a good fit?' : 'Availability or short note to the coordinator'} value={applicationForms[item.id]?.note || ''} onChange={(event) => updateApplicationForm(item.id, 'note', event.target.value)} />
+                  <button className="primary-button" onClick={() => submitApplication(item.id)}>Apply</button>
+                </div>
+              )}
             </div>
           </article>
         );})}
@@ -968,9 +984,12 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                   <article className="mini-row" key={application.id}>
                     <strong>{application.applicant?.name || 'Applicant'} applied for {opportunity.title}</strong>
                     <span>{org.name} - {opportunity.type}</span>
+                    {application.note && <p>{application.note}</p>}
+                    <TagRow tags={[application.contactPhone && `Phone: ${application.contactPhone}`, application.resumeUrl && 'Resume/profile link'].filter(Boolean)} />
                     <div className="manager-row">
                       <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'APPROVED' })}>Approve</button>
                       <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'DENIED' })}>Deny</button>
+                      {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
                       {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
                       {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
                     </div>
@@ -1137,10 +1156,12 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                     <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete post</button>
                     {(opportunity.applications || []).map((application) => (
                       <div className="manager-row" key={application.id}>
-                        <span>{application.applicant?.name || 'Applicant'} - {application.status} - {application.approvedHours || 0} hrs</span>
+                        <span>{application.applicant?.name || 'Applicant'} - {application.status} - {application.approvedHours || 0} hrs{application.contactPhone ? ` - ${application.contactPhone}` : ''}</span>
+                        {application.note && <p>{application.note}</p>}
                         <button onClick={() => approveApplication(opportunity.id, application.id)}>Approve hours</button>
                         <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'DENIED' })}>Deny</button>
                         <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'COMPLETED', checkedOutAt: true })}>Complete</button>
+                        {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
                         {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
                         {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
                       </div>
@@ -1324,8 +1345,8 @@ export default function App() {
     mergeMessage(updated);
   }
 
-  async function applyToOpportunity(id) {
-    await api(`/api/opportunities/${id}/apply`, { method: 'POST' });
+  async function applyToOpportunity(id, form = {}) {
+    await api(`/api/opportunities/${id}/apply`, { method: 'POST', body: JSON.stringify(form) });
     await loadOpportunities();
   }
 

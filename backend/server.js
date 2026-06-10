@@ -880,10 +880,15 @@ app.delete('/api/opportunities/:id', auth, async (req, res) => {
 });
 
 app.post('/api/opportunities/:id/apply', auth, async (req, res) => {
+  const data = {
+    note: req.body.note?.trim() || null,
+    contactPhone: req.body.contactPhone?.trim() || null,
+    resumeUrl: req.body.resumeUrl?.trim() || null
+  };
   const application = await prisma.volunteerApplication.upsert({
     where: { opportunityId_applicantId: { opportunityId: req.params.id, applicantId: req.user.id } },
-    create: { opportunityId: req.params.id, applicantId: req.user.id },
-    update: {}
+    create: { opportunityId: req.params.id, applicantId: req.user.id, ...data },
+    update: { ...data, status: 'PENDING' }
   });
   res.json(application);
 });

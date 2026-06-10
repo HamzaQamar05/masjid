@@ -216,6 +216,9 @@ model VolunteerApplication {
   opportunityId String
   applicantId   String
   status        String    @default("PENDING")
+  note          String?
+  contactPhone  String?
+  resumeUrl     String?
   approvedHours Float     @default(0)
   checkedInAt   DateTime?
   checkedOutAt  DateTime?

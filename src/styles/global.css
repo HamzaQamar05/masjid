@@ -1280,6 +1280,27 @@ a {
   resize: vertical;
 }
 
+.application-form {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.application-form input,
+.application-form textarea {
+  width: 100%;
+  border: 1px solid #d8e2df;
+  background: #fff;
+  color: #17221d;
+  border-radius: 8px;
+  padding: 11px 12px;
+}
+
+.application-form textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
 .check-toggle {
   display: inline-flex;
   align-items: center;
