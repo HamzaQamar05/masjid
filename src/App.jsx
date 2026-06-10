@@ -28,6 +28,7 @@ import AuthScreen from './components/AuthScreen.jsx';
 import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganizations } from './data/seedData.js';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const notificationTimers = new Map();
 
 const navItems = [
   { key: 'home', label: 'Home', icon: Home },
@@ -87,6 +88,20 @@ async function api(path, options = {}) {
 function distanceText(item) {
   if (item.distanceKm == null) return 'Distance unavailable';
   return `${item.distanceKm.toFixed ? item.distanceKm.toFixed(1) : item.distanceKm} km away`;
+}
+
+async function showPrayerNotification(title, body, tag) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if ('serviceWorker' in navigator) {
+    const registration = await navigator.serviceWorker.ready;
+    if (registration.active) {
+      registration.active.postMessage({ type: 'SHOW_PRAYER_NOTIFICATION', title, body, tag });
+      return;
+    }
+    await registration.showNotification(title, { body, tag });
+    return;
+  }
+  new Notification(title, { body, tag });
 }
 
 function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onLogout }) {
@@ -235,7 +250,7 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
   );
 }
 
-function EventsScreen({ user, events, loadEvents }) {
+function EventsScreen({ user, events, loadEvents, myOrganizations }) {
   async function deleteEvent(id) {
     if (!confirm('Delete this event?')) return;
     await api(`/api/events/${id}`, { method: 'DELETE' });
@@ -245,7 +260,7 @@ function EventsScreen({ user, events, loadEvents }) {
     <Page title="Events" subtitle="Create, register for, and delete events you own. Admins can delete any event.">
       <div className="card-grid two">
         {events.map((event) => {
-          const canDelete = user.accountType === 'ADMIN' || event.createdById === user.id || event.createdBy?.id === user.id;
+          const canDelete = user.accountType === 'ADMIN' || event.createdById === user.id || event.createdBy?.id === user.id || myOrganizations.some((org) => org.id === event.organizationId);
           return (
             <article className="event-card" key={event.id}>
               <div className="event-top"><span>Event</span>{canDelete && <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete</button>}</div>
@@ -689,9 +704,11 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, createOpportunity, updateApplication, updateRegistration }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateApplication, updateRegistration }) {
   const [orgForm, setOrgForm] = useState({ name: '', type: 'MASJID', city: '', address: '', website: '', description: '', latitude: '', longitude: '' });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
+  const [editingOrgId, setEditingOrgId] = useState('');
+  const [editOrgForm, setEditOrgForm] = useState({});
   async function deleteUser(id) {
     if (!confirm('Delete this user and their messages/events?')) return;
     await api(`/api/users/${id}`, { method: 'DELETE' });
@@ -716,6 +733,45 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
   async function approveApplication(opportunityId, applicationId) {
     const approvedHours = Number(prompt('Approved volunteer hours?', '0') || 0);
     await updateApplication(opportunityId, applicationId, { status: 'APPROVED', approvedHours });
+  }
+  function startEditOrg(org) {
+    setEditingOrgId(org.id);
+    setEditOrgForm({
+      name: org.name || '',
+      type: org.type || 'MASJID',
+      city: org.city || '',
+      address: org.address || '',
+      website: org.website || '',
+      email: org.email || '',
+      phone: org.phone || '',
+      description: org.description || '',
+      facilities: org.facilities || '',
+      imageUrl: org.imageUrl || '',
+      heroImageUrl: org.heroImageUrl || '',
+      donationUrl: org.donationUrl || '',
+      instagramUrl: org.instagramUrl || '',
+      facebookUrl: org.facebookUrl || '',
+      latitude: org.latitude || '',
+      longitude: org.longitude || '',
+      fajr: org.iqamahTimes?.Fajr || '',
+      dhuhr: org.iqamahTimes?.Dhuhr || '',
+      asr: org.iqamahTimes?.Asr || '',
+      maghrib: org.iqamahTimes?.Maghrib || '',
+      isha: org.iqamahTimes?.Isha || ''
+    });
+  }
+  async function submitEditOrg(event) {
+    event.preventDefault();
+    const iqamahTimes = {
+      Fajr: editOrgForm.fajr,
+      Dhuhr: editOrgForm.dhuhr,
+      Asr: editOrgForm.asr,
+      Maghrib: editOrgForm.maghrib,
+      Isha: editOrgForm.isha
+    };
+    await updateOrganization(editingOrgId, { ...editOrgForm, iqamahTimes });
+    setEditingOrgId('');
+    setEditOrgForm({});
   }
   return (
     <Page title="Dashboard" subtitle="Manage masjid onboarding, attendees, jobs, opportunities, volunteers, and account roles.">
@@ -759,7 +815,26 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
 
           {myOrganizations.map((org) => (
             <section className="panel" key={org.id}>
-              <div className="section-title"><h2>{org.name}</h2><span>{org.followerCount || 0} followers</span></div>
+              <div className="section-title"><h2>{org.name}</h2><button onClick={() => startEditOrg(org)}>Edit profile</button><span>{org.followerCount || 0} followers</span></div>
+              {editingOrgId === org.id && (
+                <form className="profile-form manager-edit-form" onSubmit={submitEditOrg}>
+                  <div className="form-grid">
+                    {['name', 'city', 'address', 'website', 'email', 'phone', 'imageUrl', 'heroImageUrl', 'donationUrl', 'instagramUrl', 'facebookUrl', 'latitude', 'longitude'].map((field) => (
+                      <input key={field} placeholder={field} value={editOrgForm[field] || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, [field]: event.target.value })} />
+                    ))}
+                    <select value={editOrgForm.type || 'MASJID'} onChange={(event) => setEditOrgForm({ ...editOrgForm, type: event.target.value })}><option value="MASJID">Masjid</option><option value="MSA">MSA</option></select>
+                  </div>
+                  <textarea placeholder="Description" value={editOrgForm.description || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, description: event.target.value })} />
+                  <textarea placeholder="Facilities" value={editOrgForm.facilities || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, facilities: event.target.value })} />
+                  <div className="form-grid">
+                    {['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map((field) => <input key={field} placeholder={`${field} iqamah, e.g. 05:30`} value={editOrgForm[field] || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, [field]: event.target.value })} />)}
+                  </div>
+                  <div className="profile-actions">
+                    <button className="primary-button">Save masjid profile</button>
+                    <button className="secondary-button" type="button" onClick={() => setEditingOrgId('')}>Cancel</button>
+                  </div>
+                </form>
+              )}
               <div className="stack-list">
                 {(org.events || []).map((event) => (
                   <article className="mini-row" key={event.id}>
@@ -949,6 +1024,12 @@ export default function App() {
     await Promise.all([loadMyOrganizations(), loadLocationData(location)]);
   }
 
+  async function updateOrganization(id, form) {
+    const updated = await api(`/api/organizations/${id}`, { method: 'PUT', body: JSON.stringify(form) });
+    await Promise.all([loadMyOrganizations(), loadLocationData(location)]);
+    if (selectedOrganization?.id === id) setSelectedOrganization({ ...selectedOrganization, ...updated });
+  }
+
   async function updateApplication(opportunityId, applicationId, data) {
     await api(`/api/opportunities/${opportunityId}/applications/${applicationId}`, { method: 'PUT', body: JSON.stringify(data) });
     await Promise.all([loadMyOrganizations(), loadOpportunities()]);
@@ -999,9 +1080,13 @@ export default function App() {
     }).filter(Boolean);
     const next = candidates.sort((a, b) => a.when - b.when)[0];
     if (!next) return;
-    setTimeout(() => {
-      new Notification(`${next.prayer} iqamah soon`, { body: `${org.name} congregation starts in 15 minutes.` });
+    const key = `${org.id}:${next.prayer}:${next.when.toDateString()}`;
+    if (notificationTimers.has(key)) clearTimeout(notificationTimers.get(key));
+    const timer = setTimeout(() => {
+      showPrayerNotification(`${next.prayer} iqamah soon`, `${org.name} congregation starts in 15 minutes.`, key).catch(console.error);
+      notificationTimers.delete(key);
     }, next.when.getTime() - now.getTime());
+    notificationTimers.set(key, timer);
   }
 
   async function openOrganization(id) {
@@ -1045,6 +1130,9 @@ export default function App() {
   }
 
   useEffect(() => { bootstrap().catch(() => logout()); }, []);
+  useEffect(() => {
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.error);
+  }, []);
   useEffect(() => { if (user) requestLocation(); }, [Boolean(user)]);
   useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
   useEffect(() => {
@@ -1138,7 +1226,7 @@ export default function App() {
 
   const screens = {
     home: <HomeScreen user={user} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
-    events: <EventsScreen user={user} events={events} loadEvents={loadEvents} />,
+    events: <EventsScreen user={user} events={events} loadEvents={loadEvents} myOrganizations={myOrganizations} />,
     post: <PostEventScreen setTab={setTab} loadEvents={loadEvents} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
     masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => setTab('organizations')} />,
@@ -1149,7 +1237,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} createOpportunity={createOpportunity} updateApplication={updateApplication} updateRegistration={updateRegistration} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateApplication={updateApplication} updateRegistration={updateRegistration} />
   };
 
   return (

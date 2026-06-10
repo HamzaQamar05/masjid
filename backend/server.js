@@ -320,6 +320,10 @@ function canPostEvent(req, res, next) {
   next();
 }
 
+function organizationType(value) {
+  return ['MASJID', 'MSA'].includes(String(value || '').toUpperCase()) ? String(value).toUpperCase() : 'MASJID';
+}
+
 function distanceKm(from, to) {
   const toRad = (value) => (value * Math.PI) / 180;
   const radius = 6371;
@@ -559,7 +563,7 @@ app.post('/api/organizations', auth, async (req, res) => {
   const org = await prisma.organization.create({
     data: {
       name,
-      type: type || 'MASJID',
+      type: organizationType(type),
       city,
       address,
       website,
@@ -613,6 +617,7 @@ app.put('/api/organizations/:id', auth, async (req, res) => {
   allowed.forEach((key) => {
     if (req.body[key] !== undefined) data[key] = key === 'facilities' && Array.isArray(req.body[key]) ? req.body[key].join(', ') : req.body[key];
   });
+  if (data.type !== undefined) data.type = organizationType(data.type);
   if (req.body.latitude !== undefined) data.latitude = req.body.latitude === '' ? null : Number(req.body.latitude);
   if (req.body.longitude !== undefined) data.longitude = req.body.longitude === '' ? null : Number(req.body.longitude);
   const org = await prisma.organization.update({ where: { id: req.params.id }, data });
@@ -669,7 +674,8 @@ app.post('/api/events', auth, canPostEvent, async (req, res) => {
 app.delete('/api/events/:eventId', auth, async (req, res) => {
   const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
   if (!event) return res.status(404).json({ error: 'Event not found' });
-  if (event.createdById !== req.user.id && req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Only the event creator or an admin can delete this event' });
+  const canManage = event.createdById === req.user.id || req.user.accountType === 'ADMIN' || (event.organizationId && await canManageOrganization(req.user, event.organizationId));
+  if (!canManage) return res.status(403).json({ error: 'Only event managers can delete this event' });
   await prisma.eventRegistration.deleteMany({ where: { eventId: event.id } });
   await prisma.event.delete({ where: { id: event.id } });
   res.json({ message: 'Event deleted' });
