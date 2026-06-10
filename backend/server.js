@@ -152,8 +152,67 @@ function publicUser(user) {
     languages: user.languages || [],
     hobbies: user.hobbies || [],
     availability: user.availability,
+    avatarUrl: user.avatarUrl,
     createdAt: user.createdAt
   };
+}
+
+function publicOrganization(org, viewerId) {
+  if (!org) return null;
+  const followers = org.followers || [];
+  const events = (org.events || []).map((event) => ({
+    ...event,
+    registrations: (event.registrations || []).map((registration) => ({
+      ...registration,
+      user: publicUser(registration.user)
+    }))
+  }));
+  const opportunities = (org.opportunities || []).map((opportunity) => ({
+    ...opportunity,
+    applications: (opportunity.applications || []).map((application) => ({
+      ...application,
+      applicant: publicUser(application.applicant)
+    }))
+  }));
+  const { followers: _followers, events: _events, opportunities: _opportunities, ...safeOrg } = org;
+  return {
+    ...safeOrg,
+    events,
+    opportunities,
+    followers: followers.map((follow) => ({ ...follow, user: publicUser(follow.user) })),
+    followerCount: followers.length,
+    isFollowing: viewerId ? followers.some((follow) => follow.userId === viewerId) : false,
+    notifyPrayers: viewerId ? Boolean(followers.find((follow) => follow.userId === viewerId)?.notifyPrayers) : false
+  };
+}
+
+async function canManageOrganization(user, organizationId) {
+  if (user.accountType === 'ADMIN') return true;
+  if (!organizationId) return false;
+  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
+  return Boolean(org && org.ownerId === user.id && ['MASJID', 'MSA', 'ADMIN'].includes(user.accountType));
+}
+
+async function ensureFallbackOrganizations() {
+  for (const masjid of fallbackMasjids) {
+    const existing = await prisma.organization.findFirst({ where: { name: masjid.name } });
+    if (!existing) {
+      await prisma.organization.create({
+        data: {
+          name: masjid.name,
+          type: 'MASJID',
+          city: masjid.city,
+          address: masjid.address,
+          website: masjid.website,
+          latitude: masjid.latitude,
+          longitude: masjid.longitude,
+          description: `${masjid.name} community profile. Admins can claim and customize this page during onboarding.`,
+          verified: masjid.verified,
+          facilities: 'Prayer hall, community programs, events'
+        }
+      });
+    }
+  }
 }
 
 function createToken(user) {
@@ -237,11 +296,14 @@ async function emitUnread(userId) {
   io.to(userRoom(userId)).emit('messages:unread', { unread: await unreadCount(userId) });
 }
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ error: 'No token provided' });
   try {
-    req.user = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret');
+    const decoded = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret');
+    const currentUser = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!currentUser) return res.status(401).json({ error: 'Invalid token' });
+    req.user = { id: currentUser.id, accountType: currentUser.accountType };
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid token' });
@@ -299,17 +361,16 @@ app.get('/api/health', (_, res) => res.json({ ok: true }));
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, password, accountType, city, bio } = req.body;
+    const { name, email, password, city, bio } = req.body;
     if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' });
 
-    const allowed = ['USER', 'MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'BUSINESS', 'ADMIN'];
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
       data: {
         name,
         email: email.toLowerCase(),
         passwordHash,
-        accountType: allowed.includes(accountType) ? accountType : 'USER',
+        accountType: 'USER',
         city,
         bio,
         skills: normalizeList(req.body.skills),
@@ -351,7 +412,8 @@ app.put('/api/me', auth, async (req, res) => {
     skills: normalizeList(req.body.skills),
     interests: normalizeList(req.body.interests),
     languages: normalizeList(req.body.languages),
-    hobbies: normalizeList(req.body.hobbies)
+    hobbies: normalizeList(req.body.hobbies),
+    avatarUrl: req.body.avatarUrl
   };
   Object.keys(data).forEach((key) => data[key] === undefined && delete data[key]);
   const user = await prisma.user.update({ where: { id: req.user.id }, data });
@@ -374,11 +436,20 @@ app.get('/api/users', auth, async (req, res) => {
 app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Admins cannot delete their own active session account' });
   await prisma.eventRegistration.deleteMany({ where: { userId: req.params.id } });
+  await prisma.organizationFollow.deleteMany({ where: { userId: req.params.id } });
+  await prisma.volunteerApplication.deleteMany({ where: { applicantId: req.params.id } });
   await prisma.message.deleteMany({ where: { OR: [{ senderId: req.params.id }, { receiverId: req.params.id }] } });
   await prisma.connection.deleteMany({ where: { OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] } });
   await prisma.event.deleteMany({ where: { createdById: req.params.id } });
   await prisma.user.delete({ where: { id: req.params.id } });
   res.json({ message: 'User deleted' });
+});
+
+app.put('/api/users/:id/role', auth, requireAdmin, async (req, res) => {
+  const allowed = ['USER', 'MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'BUSINESS', 'ADMIN'];
+  if (!allowed.includes(req.body.accountType)) return res.status(400).json({ error: 'Invalid account type' });
+  const user = await prisma.user.update({ where: { id: req.params.id }, data: { accountType: req.body.accountType } });
+  res.json(publicUser(user));
 });
 
 app.post('/api/connections/:userId', auth, async (req, res) => {
@@ -416,17 +487,35 @@ app.get('/api/connections', auth, async (req, res) => {
   })));
 });
 
-app.get('/api/organizations', async (_, res) => {
-  const organizations = await prisma.organization.findMany({ include: { events: true }, orderBy: { createdAt: 'desc' } });
-  res.json(organizations);
+app.get('/api/organizations', async (req, res) => {
+  await ensureFallbackOrganizations();
+  const header = req.headers.authorization;
+  let viewerId = null;
+  if (header) {
+    try {
+      viewerId = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret').id;
+    } catch {
+      viewerId = null;
+    }
+  }
+  const organizations = await prisma.organization.findMany({
+    include: {
+      events: { orderBy: { startTime: 'asc' } },
+      opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' } },
+      followers: true
+    },
+    orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
+  });
+  res.json(organizations.map((org) => publicOrganization(org, viewerId)));
 });
 
 app.post('/api/organizations', auth, async (req, res) => {
-  const { name, type, city, address, website, email, phone, description, facilities } = req.body;
+  if (!['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Admin must upgrade your account before you can create an organization' });
+  const { name, type, city, address, website, email, phone, description, facilities, latitude, longitude, imageUrl, heroImageUrl, donationUrl, instagramUrl, facebookUrl, prayerTimes, iqamahTimes } = req.body;
   const org = await prisma.organization.create({
     data: {
       name,
-      type,
+      type: type || 'MASJID',
       city,
       address,
       website,
@@ -434,6 +523,15 @@ app.post('/api/organizations', auth, async (req, res) => {
       phone,
       description,
       facilities: Array.isArray(facilities) ? facilities.join(', ') : facilities,
+      latitude: latitude == null ? null : Number(latitude),
+      longitude: longitude == null ? null : Number(longitude),
+      imageUrl,
+      heroImageUrl,
+      donationUrl,
+      instagramUrl,
+      facebookUrl,
+      prayerTimes,
+      iqamahTimes,
       ownerId: req.user.id,
       claimed: true,
       verified: req.user.accountType === 'ADMIN'
@@ -442,17 +540,72 @@ app.post('/api/organizations', auth, async (req, res) => {
   res.json(org);
 });
 
+app.get('/api/organizations/:id', async (req, res) => {
+  const header = req.headers.authorization;
+  let viewerId = null;
+  if (header) {
+    try {
+      viewerId = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret').id;
+    } catch {
+      viewerId = null;
+    }
+  }
+  const org = await prisma.organization.findUnique({
+    where: { id: req.params.id },
+    include: {
+      events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
+      opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } },
+      followers: { include: { user: true } }
+    }
+  });
+  if (!org) return res.status(404).json({ error: 'Organization not found' });
+  res.json(publicOrganization(org, viewerId));
+});
+
+app.put('/api/organizations/:id', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can update it' });
+  const allowed = ['name', 'type', 'city', 'address', 'website', 'email', 'phone', 'description', 'facilities', 'imageUrl', 'heroImageUrl', 'donationUrl', 'instagramUrl', 'facebookUrl', 'prayerTimes', 'iqamahTimes'];
+  const data = {};
+  allowed.forEach((key) => {
+    if (req.body[key] !== undefined) data[key] = key === 'facilities' && Array.isArray(req.body[key]) ? req.body[key].join(', ') : req.body[key];
+  });
+  if (req.body.latitude !== undefined) data.latitude = req.body.latitude === '' ? null : Number(req.body.latitude);
+  if (req.body.longitude !== undefined) data.longitude = req.body.longitude === '' ? null : Number(req.body.longitude);
+  const org = await prisma.organization.update({ where: { id: req.params.id }, data });
+  res.json(org);
+});
+
+app.post('/api/organizations/:id/follow', auth, async (req, res) => {
+  const notifyPrayers = Boolean(req.body.notifyPrayers);
+  if (notifyPrayers) {
+    const activeNotificationFollows = await prisma.organizationFollow.count({ where: { userId: req.user.id, notifyPrayers: true, organizationId: { not: req.params.id } } });
+    if (activeNotificationFollows >= 2) return res.status(400).json({ error: 'You can enable prayer notifications for up to 2 masjids' });
+  }
+  const follow = await prisma.organizationFollow.upsert({
+    where: { organizationId_userId: { organizationId: req.params.id, userId: req.user.id } },
+    create: { organizationId: req.params.id, userId: req.user.id, notifyPrayers },
+    update: { notifyPrayers }
+  });
+  res.json(follow);
+});
+
+app.delete('/api/organizations/:id/follow', auth, async (req, res) => {
+  await prisma.organizationFollow.deleteMany({ where: { organizationId: req.params.id, userId: req.user.id } });
+  res.json({ message: 'Unfollowed' });
+});
+
 app.get('/api/events', async (_, res) => {
   const events = await prisma.event.findMany({
-    include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: true },
+    include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } },
     orderBy: { startTime: 'asc' }
   });
-  res.json(events);
+  res.json(events.map((event) => ({ ...event, registrations: event.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) })));
 });
 
 app.post('/api/events', auth, canPostEvent, async (req, res) => {
-  const { title, description, location, startTime, endTime, organizationId } = req.body;
+  const { title, description, location, startTime, endTime, organizationId, capacity, requiresApproval } = req.body;
   if (!title || !startTime) return res.status(400).json({ error: 'Title and start time are required' });
+  if (organizationId && !(await canManageOrganization(req.user, organizationId))) return res.status(403).json({ error: 'You can only post under an organization you manage' });
   const event = await prisma.event.create({
     data: {
       title,
@@ -460,6 +613,8 @@ app.post('/api/events', auth, canPostEvent, async (req, res) => {
       location,
       startTime: new Date(startTime),
       endTime: endTime ? new Date(endTime) : null,
+      capacity: capacity ? Number(capacity) : null,
+      requiresApproval: Boolean(requiresApproval),
       organizationId,
       createdById: req.user.id
     }
@@ -478,16 +633,85 @@ app.delete('/api/events/:eventId', auth, async (req, res) => {
 
 app.post('/api/events/:eventId/register', auth, async (req, res) => {
   try {
-    const registration = await prisma.eventRegistration.create({ data: { userId: req.user.id, eventId: req.params.eventId } });
+    const event = await prisma.event.findUnique({ where: { id: req.params.eventId }, include: { registrations: true } });
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+    if (event.capacity && event.registrations.filter((registration) => registration.status !== 'DENIED').length >= event.capacity) return res.status(400).json({ error: 'Event is full' });
+    const registration = await prisma.eventRegistration.create({ data: { userId: req.user.id, eventId: req.params.eventId, status: event.requiresApproval ? 'PENDING' : 'APPROVED' } });
     res.json(registration);
   } catch {
     res.status(400).json({ error: 'Already registered or event not found' });
   }
 });
 
+app.put('/api/events/:eventId/registrations/:registrationId', auth, async (req, res) => {
+  const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const canManage = event.createdById === req.user.id || req.user.accountType === 'ADMIN' || (event.organizationId && await canManageOrganization(req.user, event.organizationId));
+  if (!canManage) return res.status(403).json({ error: 'Only event managers can update attendance' });
+  const status = ['APPROVED', 'DENIED', 'ATTENDED'].includes(req.body.status) ? req.body.status : 'APPROVED';
+  const registration = await prisma.eventRegistration.update({ where: { id: req.params.registrationId }, data: { status } });
+  res.json(registration);
+});
+
 app.delete('/api/events/:eventId/register', auth, async (req, res) => {
   await prisma.eventRegistration.deleteMany({ where: { userId: req.user.id, eventId: req.params.eventId } });
   res.json({ message: 'Registration removed' });
+});
+
+app.get('/api/opportunities', auth, async (req, res) => {
+  const where = { isActive: true };
+  if (req.query.type) where.type = String(req.query.type).toUpperCase();
+  if (req.query.organizationId) where.organizationId = String(req.query.organizationId);
+  const opportunities = await prisma.opportunity.findMany({
+    where,
+    include: { organization: true, applications: { where: { applicantId: req.user.id } } },
+    orderBy: { createdAt: 'desc' }
+  });
+  res.json(opportunities);
+});
+
+app.post('/api/organizations/:id/opportunities', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this masjid or admin can create opportunities' });
+  const type = ['JOB', 'VOLUNTEER', 'OPPORTUNITY'].includes(String(req.body.type || '').toUpperCase()) ? String(req.body.type).toUpperCase() : 'OPPORTUNITY';
+  const opportunity = await prisma.opportunity.create({
+    data: {
+      organizationId: req.params.id,
+      title: req.body.title,
+      description: req.body.description,
+      type,
+      location: req.body.location,
+      skills: normalizeList(req.body.skills),
+      hours: req.body.hours == null || req.body.hours === '' ? null : Number(req.body.hours)
+    }
+  });
+  res.json(opportunity);
+});
+
+app.post('/api/opportunities/:id/apply', auth, async (req, res) => {
+  const application = await prisma.volunteerApplication.upsert({
+    where: { opportunityId_applicantId: { opportunityId: req.params.id, applicantId: req.user.id } },
+    create: { opportunityId: req.params.id, applicantId: req.user.id },
+    update: {}
+  });
+  res.json(application);
+});
+
+app.put('/api/opportunities/:id/applications/:applicationId', auth, async (req, res) => {
+  const opportunity = await prisma.opportunity.findUnique({ where: { id: req.params.id } });
+  if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
+  if (!(await canManageOrganization(req.user, opportunity.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can manage applications' });
+  const status = ['PENDING', 'APPROVED', 'DENIED', 'COMPLETED'].includes(req.body.status) ? req.body.status : 'APPROVED';
+  const application = await prisma.volunteerApplication.update({
+    where: { id: req.params.applicationId },
+    data: {
+      status,
+      approvedHours: req.body.approvedHours == null ? undefined : Number(req.body.approvedHours),
+      checkedInAt: req.body.checkedInAt === true ? new Date() : undefined,
+      checkedOutAt: req.body.checkedOutAt === true ? new Date() : undefined,
+      approvedById: req.user.id
+    }
+  });
+  res.json(application);
 });
 
 app.get('/api/messages/threads', auth, async (req, res) => {
@@ -603,6 +827,13 @@ app.get('/api/location/masjids', async (req, res) => {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ error: 'lat and lng query parameters are required' });
 
   try {
+    await ensureFallbackOrganizations();
+    const sqlMasjids = await prisma.organization.findMany({
+      where: { type: { in: ['MASJID', 'MSA'] }, latitude: { not: null }, longitude: { not: null } },
+      include: { followers: true, events: true, opportunities: { where: { isActive: true } } }
+    });
+    if (sqlMasjids.length) return res.json(withDistance(sqlMasjids.map((org) => publicOrganization(org, null)), latitude, longitude));
+
     const query = `
       [out:json][timeout:12];
       (

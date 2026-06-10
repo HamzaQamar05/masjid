@@ -33,6 +33,7 @@ model User {
   languages    String[]    @default([])
   hobbies      String[]    @default([])
   availability String?
+  avatarUrl    String?
   createdAt    DateTime    @default(now())
 
   eventsCreated    Event[]             @relation("EventCreator")
@@ -42,24 +43,40 @@ model User {
   messageReactions MessageReaction[]
   connectionsSent  Connection[]        @relation("ConnectionRequester")
   connectionsGot   Connection[]        @relation("ConnectionReceiver")
+  organizationFollows OrganizationFollow[]
+  volunteerApplications VolunteerApplication[] @relation("VolunteerApplicant")
+  volunteerApprovals    VolunteerApplication[] @relation("VolunteerApprover")
 }
 
 model Organization {
-  id          String   @id @default(cuid())
-  name        String
-  type        String
-  city        String?
-  address     String?
-  website     String?
-  email       String?
-  phone       String?
-  description String?
-  facilities  String?
-  claimed     Boolean  @default(false)
-  verified    Boolean  @default(false)
-  ownerId     String?
-  createdAt   DateTime @default(now())
-  events      Event[]
+  id             String   @id @default(cuid())
+  name           String
+  type           String
+  city           String?
+  address        String?
+  website        String?
+  email          String?
+  phone          String?
+  description    String?
+  facilities     String?
+  imageUrl       String?
+  heroImageUrl   String?
+  latitude       Float?
+  longitude      Float?
+  donationUrl    String?
+  instagramUrl   String?
+  facebookUrl    String?
+  prayerTimes    Json?
+  iqamahTimes    Json?
+  claimed        Boolean  @default(false)
+  verified       Boolean  @default(false)
+  ownerId        String?
+  createdAt      DateTime @default(now())
+  events         Event[]
+  opportunities  Opportunity[]
+  followers      OrganizationFollow[]
+
+  @@index([type, city])
 }
 
 model Event {
@@ -69,6 +86,8 @@ model Event {
   location       String?
   startTime      DateTime
   endTime        DateTime?
+  capacity       Int?
+  requiresApproval Boolean @default(false)
   createdById    String
   organizationId String?
   createdAt      DateTime  @default(now())
@@ -96,6 +115,7 @@ model EventRegistration {
   id        String   @id @default(cuid())
   userId    String
   eventId   String
+  status    String   @default("APPROVED")
   createdAt DateTime @default(now())
 
   user  User  @relation(fields: [userId], references: [id])
@@ -119,6 +139,58 @@ model Message {
 
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, readAt])
+}
+
+model OrganizationFollow {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  notifyPrayers  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId, notifyPrayers])
+}
+
+model Opportunity {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  description    String?
+  type           String
+  location       String?
+  skills         String[] @default([])
+  hours          Float?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  applications VolunteerApplication[]
+
+  @@index([organizationId, type, isActive])
+}
+
+model VolunteerApplication {
+  id            String   @id @default(cuid())
+  opportunityId String
+  applicantId   String
+  status        String   @default("PENDING")
+  approvedHours Float    @default(0)
+  checkedInAt   DateTime?
+  checkedOutAt  DateTime?
+  approvedById  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  applicant   User        @relation("VolunteerApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  approvedBy  User?       @relation("VolunteerApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([opportunityId, applicantId])
+  @@index([applicantId, status])
 }
 
 model MessageReaction {

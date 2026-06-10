@@ -4,7 +4,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function AuthScreen({ onLogin }) {
   const [mode, setMode] = useState('login');
-  const [form, setForm] = useState({ name: '', email: '', password: '', accountType: 'USER', city: '', bio: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', city: '', bio: '' });
 
   async function submit(e) {
     e.preventDefault();
@@ -38,15 +38,6 @@ export default function AuthScreen({ onLogin }) {
         {mode === 'register' && (
           <>
             <input required placeholder="Name / organization" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-            <select value={form.accountType} onChange={e => setForm({ ...form, accountType: e.target.value })}>
-              <option value="USER">Regular user</option>
-              <option value="IMAM">Imam</option>
-              <option value="STUDENT_OF_KNOWLEDGE">Student of knowledge</option>
-              <option value="MASJID">Masjid account</option>
-              <option value="MSA">MSA account</option>
-              <option value="BUSINESS">Business / founder</option>
-              <option value="ADMIN">Admin</option>
-            </select>
             <input placeholder="City" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
             <textarea placeholder="Short bio" value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} />
           </>

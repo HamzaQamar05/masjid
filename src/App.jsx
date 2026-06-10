@@ -162,7 +162,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, masjids, locationStatus, requestLocation, prayerTimes, setTab }) {
+function HomeScreen({ user, masjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization }) {
   return (
     <div className="content-grid">
       <section className="feed-column">
@@ -176,7 +176,7 @@ function HomeScreen({ user, masjids, locationStatus, requestLocation, prayerTime
             <button onClick={() => setTab('messages')}><Mail size={18} />Messages</button>
           </div>
         </section>
-        <NearbyMasjids masjids={masjids.slice(0, 5)} locationStatus={locationStatus} requestLocation={requestLocation} />
+        <NearbyMasjids masjids={masjids.slice(0, 5)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
       </section>
       <aside className="right-rail">
         <PrayerWidget prayerTimes={prayerTimes} />
@@ -202,7 +202,7 @@ function PrayerWidget({ prayerTimes }) {
   );
 }
 
-function NearbyMasjids({ masjids, locationStatus, requestLocation }) {
+function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganization }) {
   return (
     <section className="panel nearby-panel">
       <div className="section-title">
@@ -217,8 +217,10 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation }) {
               <h3>{masjid.name}</h3>
               <p>{masjid.address || masjid.city || 'Address unavailable'}</p>
               <p>{distanceText(masjid)}{masjid.walkingMinutes ? ` - ${masjid.walkingMinutes} min walk - ${masjid.drivingMinutes} min drive` : ''}</p>
+              <p>{masjid.followerCount || 0} followers - {(masjid.events || []).length} events - {(masjid.opportunities || []).length} opportunities</p>
             </div>
             <div className="nearby-actions">
+              {openOrganization && <button className="secondary-button" onClick={() => openOrganization(masjid.id)}>Profile</button>}
               <a className="secondary-button" href={directionsUrl(masjid)} target="_blank" rel="noreferrer">Directions</a>
             </div>
           </article>
@@ -276,10 +278,10 @@ function PostEventScreen({ setTab, loadEvents }) {
   );
 }
 
-function OrganizationsScreen({ masjids, locationStatus, requestLocation }) {
+function OrganizationsScreen({ masjids, locationStatus, requestLocation, openOrganization }) {
   return (
-    <Page title="Masjid Discovery" subtitle="Actual nearby masjids from OpenStreetMap, sorted by your browser location.">
-      <NearbyMasjids masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} />
+    <Page title="Masjid Discovery" subtitle="SQL-backed masjid profiles sorted by your browser location.">
+      <NearbyMasjids masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
     </Page>
   );
 }
@@ -417,7 +419,7 @@ function MessagesScreen({
                     {!!message.reactions?.length && <div className="reaction-row">{message.reactions.map((reaction) => <span key={reaction.id}>{reaction.emoji}</span>)}</div>}
                     {!message.isDeleted && (
                       <div className="message-actions">
-                        {['❤️', '😂', '🙏', '👍'].map((emoji) => <button key={emoji} onClick={() => reactToMessage(message.id, emoji)}>{emoji}</button>)}
+                        {['heart', 'smile', 'dua', 'like'].map((emoji) => <button key={emoji} onClick={() => reactToMessage(message.id, emoji)}>{emoji}</button>)}
                         {message.senderId !== selectedUser.id ? null : <button onClick={() => unsendMessage(message.id)}>Unsend</button>}
                       </div>
                     )}
@@ -465,6 +467,76 @@ function BusinessDirectoryScreen() {
             <div className="card-footer"><span>{business.rating} rating</span><span>Sponsored: {business.sponsor}</span></div>
           </article>
         ))}
+      </div>
+    </Page>
+  );
+}
+
+function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
+  if (!organization) return <Page title="Masjid Profile" subtitle="Choose a masjid to view its profile."><button className="secondary-button" onClick={onBack}>Back to masjids</button></Page>;
+  const events = organization.events || [];
+  const opportunities = organization.opportunities || [];
+  const jobs = opportunities.filter((item) => item.type === 'JOB');
+  const volunteer = opportunities.filter((item) => item.type !== 'JOB');
+  const iqamah = organization.iqamahTimes || {};
+  return (
+    <Page title={organization.name} subtitle={organization.description || 'Masjid profile with events, opportunities, jobs, prayer times, location, and links.'}>
+      <section className="panel masjid-profile">
+        <div className="masjid-hero" style={{ backgroundImage: organization.heroImageUrl ? `url(${organization.heroImageUrl})` : undefined }}>
+          <div className="org-logo">{organization.imageUrl ? <img src={organization.imageUrl} alt="" /> : initials(organization.name)}</div>
+          <div>
+            <h2>{organization.name}</h2>
+            <p>{organization.address || organization.city || 'Location not added yet'}</p>
+            <p>{organization.followerCount || 0} followers</p>
+          </div>
+        </div>
+        <div className="profile-actions">
+          <button className="primary-button" onClick={() => onFollow(organization.id, false)}>{organization.isFollowing ? 'Following' : 'Follow masjid'}</button>
+          <button className="secondary-button" onClick={() => onFollow(organization.id, true)}>{organization.notifyPrayers ? 'Prayer notifications on' : 'Enable prayer notifications'}</button>
+          <a className="secondary-button" href={directionsUrl(organization)} target="_blank" rel="noreferrer">Directions</a>
+          {organization.website && <a className="secondary-button" href={organization.website} target="_blank" rel="noreferrer">Website</a>}
+          {organization.donationUrl && <a className="secondary-button" href={organization.donationUrl} target="_blank" rel="noreferrer">Donate</a>}
+        </div>
+      </section>
+
+      <div className="content-grid">
+        <section className="feed-column">
+          <section className="panel">
+            <div className="section-title"><h2>Events</h2><span>{events.length}</span></div>
+            <div className="stack-list">
+              {events.map((event) => <article className="mini-row" key={event.id}><strong>{event.title}</strong><span>{new Date(event.startTime).toLocaleString()}</span><p>{event.description || event.location || 'No details yet.'}</p></article>)}
+              {!events.length && <p className="helper-text">No events yet.</p>}
+            </div>
+          </section>
+          <section className="panel">
+            <div className="section-title"><h2>Opportunities</h2><span>{volunteer.length}</span></div>
+            <div className="stack-list">
+              {volunteer.map((item) => <article className="mini-row" key={item.id}><strong>{item.title}</strong><span>{item.type}</span><p>{item.description || item.location || 'No details yet.'}</p></article>)}
+              {!volunteer.length && <p className="helper-text">No opportunities yet.</p>}
+            </div>
+          </section>
+          <section className="panel">
+            <div className="section-title"><h2>Jobs</h2><span>{jobs.length}</span></div>
+            <div className="stack-list">
+              {jobs.map((item) => <article className="mini-row" key={item.id}><strong>{item.title}</strong><span>{item.location || 'Location TBD'}</span><p>{item.description || 'No details yet.'}</p></article>)}
+              {!jobs.length && <p className="helper-text">No jobs posted yet.</p>}
+            </div>
+          </section>
+        </section>
+        <aside className="right-rail">
+          <section className="panel">
+            <div className="section-title"><h2>Iqamah Times</h2><ShieldCheck size={20} /></div>
+            <div className="prayer-grid detailed">
+              {prayers.map((prayer) => <div key={prayer.name}><span>{prayer.name}</span><strong>{iqamah[prayer.name] || prayer.iqamah || 'TBD'}</strong></div>)}
+            </div>
+          </section>
+          <section className="panel">
+            <div className="section-title"><h2>Links</h2></div>
+            <p>{organization.phone || 'Phone not added'}</p>
+            <p>{organization.email || 'Email not added'}</p>
+            <p>{organization.facilities || 'Facilities not added'}</p>
+          </section>
+        </aside>
       </div>
     </Page>
   );
@@ -522,6 +594,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave }) {
     education: profile.education || '',
     experience: profile.experience || '',
     availability: profile.availability || '',
+    avatarUrl: profile.avatarUrl || '',
     skills: listToText(profile.skills),
     interests: listToText(profile.interests),
     languages: listToText(profile.languages),
@@ -537,6 +610,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave }) {
       education: profile.education || '',
       experience: profile.experience || '',
       availability: profile.availability || '',
+      avatarUrl: profile.avatarUrl || '',
       skills: listToText(profile.skills),
       interests: listToText(profile.interests),
       languages: listToText(profile.languages),
@@ -557,10 +631,12 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave }) {
     <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="Community profile with education, experience, skills, languages, interests, and hobbies.">
       {!editingSelf && <button className="secondary-button" onClick={onCloseViewed}>Back to your profile</button>}
       <section className="panel profile-detail">
-        <div className="profile-hero"><div className="profile-avatar">{initials(profile.name)}</div><div><h2>{profile.name}</h2><p>{profile.accountType} - {profile.city || 'No city yet'}</p></div></div>
+        <div className="profile-hero"><div className="profile-avatar">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : initials(profile.name)}</div><div><h2>{profile.name}</h2><p>{profile.accountType} - {profile.city || 'No city yet'}</p></div></div>
         {editingSelf ? (
           <form className="profile-form" onSubmit={submit}>
-            {['name', 'city', 'location', 'availability'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
+            <div className="form-grid">
+              {['name', 'city', 'location', 'availability', 'avatarUrl'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
+            </div>
             <textarea placeholder="Bio" value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} />
             <textarea placeholder="Experience" value={form.experience} onChange={(event) => setForm({ ...form, experience: event.target.value })} />
             <textarea placeholder="Education" value={form.education} onChange={(event) => setForm({ ...form, education: event.target.value })} />
@@ -601,11 +677,22 @@ function AdminScreen({ user, users, loadNetwork }) {
     await api(`/api/users/${id}`, { method: 'DELETE' });
     await loadNetwork();
   }
+  async function updateRole(id, accountType) {
+    await api(`/api/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ accountType }) });
+    await loadNetwork();
+  }
   return (
-    <Page title="Admin" subtitle="Admin-only user cleanup for test accounts.">
+    <Page title="Admin" subtitle="Admin-only user cleanup and role assignment. Public registration always creates regular user accounts.">
       <div className="card-grid two">
         {users.filter((person) => person.id !== user.id).map((person) => (
-          <article className="person-card" key={person.id}><h3>{person.name}</h3><p>{person.email}</p><p>{person.accountType}</p><button className="secondary-button danger" onClick={() => deleteUser(person.id)}>Delete user</button></article>
+          <article className="person-card" key={person.id}>
+            <h3>{person.name}</h3>
+            <p>{person.email}</p>
+            <select value={person.accountType} onChange={(event) => updateRole(person.id, event.target.value)}>
+              {['USER', 'MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'BUSINESS', 'ADMIN'].map((role) => <option key={role} value={role}>{role}</option>)}
+            </select>
+            <button className="secondary-button danger" onClick={() => deleteUser(person.id)}>Delete user</button>
+          </article>
         ))}
       </div>
     </Page>
@@ -639,6 +726,7 @@ export default function App() {
   const [selectedUser, setSelectedUser] = useState(null);
   const selectedUserIdRef = useRef(null);
   const [viewedUser, setViewedUser] = useState(null);
+  const [selectedOrganization, setSelectedOrganization] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState(defaultLocation);
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
@@ -736,6 +824,44 @@ export default function App() {
       setMasjids(seedOrganizations);
       setPrayerTimes(prayers);
     }
+  }
+
+  function schedulePrayerNotification(org) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const iqamah = org.iqamahTimes || {};
+    const now = new Date();
+    const candidates = prayers.map((prayer) => {
+      const time = iqamah[prayer.name] || prayer.iqamah;
+      if (!time) return null;
+      const [hour, minute] = String(time).split(':').map(Number);
+      if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+      const when = new Date();
+      when.setHours(hour, minute - 15, 0, 0);
+      return when > now ? { prayer: prayer.name, when } : null;
+    }).filter(Boolean);
+    const next = candidates.sort((a, b) => a.when - b.when)[0];
+    if (!next) return;
+    setTimeout(() => {
+      new Notification(`${next.prayer} iqamah soon`, { body: `${org.name} congregation starts in 15 minutes.` });
+    }, next.when.getTime() - now.getTime());
+  }
+
+  async function openOrganization(id) {
+    const org = await api(`/api/organizations/${id}`);
+    setSelectedOrganization(org);
+    setTab('masjidProfile');
+  }
+
+  async function followOrganization(id, notifyPrayers = false) {
+    if (notifyPrayers && 'Notification' in window && Notification.permission !== 'granted') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return alert('Notifications were not enabled.');
+    }
+    await api(`/api/organizations/${id}/follow`, { method: 'POST', body: JSON.stringify({ notifyPrayers }) });
+    const org = await api(`/api/organizations/${id}`);
+    setSelectedOrganization(org);
+    if (notifyPrayers) schedulePrayerNotification(org);
+    await loadLocationData(location);
   }
 
   function requestLocation() {
@@ -852,10 +978,11 @@ export default function App() {
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} />,
+    home: <HomeScreen user={user} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
     events: <EventsScreen user={user} events={events} loadEvents={loadEvents} />,
     post: <PostEventScreen setTab={setTab} loadEvents={loadEvents} />,
-    organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} />,
+    organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
+    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => setTab('organizations')} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
     volunteers: <VolunteersScreen roles={volunteerShifts} updateVolunteerRole={updateVolunteerRole} />,
     library: <LibraryScreen />,
