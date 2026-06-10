@@ -5,9 +5,10 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node node_modules/prisma/build/index.js migrate deploy && node node_modules/prisma/build/index.js generate && node server.js",
+    "start": "node node_modules/prisma/build/index.js db push --skip-generate && node node_modules/prisma/build/index.js generate && node server.js",
     "serve": "node server.js",
     "generate": "node node_modules/prisma/build/index.js generate",
+    "db:push": "node node_modules/prisma/build/index.js db push",
     "migrate:deploy": "node node_modules/prisma/build/index.js migrate deploy",
     "prisma": "prisma"
   },
