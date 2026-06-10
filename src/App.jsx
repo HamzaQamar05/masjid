@@ -144,8 +144,13 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         <div className="top-actions">
           <button className="icon-button" aria-label="Notifications"><Bell size={20} /></button>
           <button className="post-button" onClick={() => navigate(canPost(user) ? 'post' : 'events')}><Plus size={18} /><span>Event</span></button>
+          <button className="dm-top-button" onClick={() => navigate('messages')} aria-label="Open messages">
+  <Mail size={22} />
+  <span className="dm-dot"></span>
+</button>
           <button className="profile-chip" onClick={() => navigate('profile')}><span>{initials(user.name)}</span><strong>{user.name}</strong></button>
         </div>
+        
       </header>
       <div className={navOpen ? 'mobile-drawer open' : 'mobile-drawer'}>
         <div className="drawer-head"><strong>Menu</strong><button className="icon-button" onClick={() => setNavOpen(false)}><X size={20} /></button></div>
