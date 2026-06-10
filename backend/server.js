@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import Redis from 'ioredis';
 import { createServer } from 'http';
+import { randomBytes } from 'crypto';
 import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
 
@@ -500,6 +501,7 @@ app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
   await prisma.connection.deleteMany({ where: { OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] } });
   await prisma.post.deleteMany({ where: { authorId: req.params.id } });
   await prisma.event.deleteMany({ where: { createdById: req.params.id } });
+  await prisma.organization.updateMany({ where: { ownerId: req.params.id }, data: { ownerId: null, claimed: false } });
   await prisma.user.delete({ where: { id: req.params.id } });
   res.json({ message: 'User deleted' });
 });
@@ -595,12 +597,37 @@ app.get('/api/organizations', async (req, res) => {
 });
 
 app.post('/api/organizations', auth, async (req, res) => {
-  if (!['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Admin must upgrade your account before you can create an organization' });
-  const { name, type, city, address, website, email, phone, description, facilities, latitude, longitude, imageUrl, heroImageUrl, donationUrl, instagramUrl, facebookUrl, prayerTimes, iqamahTimes } = req.body;
+  if (req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Only platform admins can create masjid or MSA profiles' });
+  const { name, type, city, address, website, email, phone, description, facilities, latitude, longitude, imageUrl, heroImageUrl, donationUrl, instagramUrl, facebookUrl, prayerTimes, iqamahTimes, ownerEmail } = req.body;
+  const orgType = organizationType(type);
+  let ownerId = req.user.id;
+  let temporaryPassword = null;
+  const loginEmail = String(ownerEmail || email || '').trim().toLowerCase();
+  if (loginEmail) {
+    const accountType = orgType === 'MSA' ? 'MSA' : 'MASJID';
+    const existingOwner = await prisma.user.findUnique({ where: { email: loginEmail } });
+    if (existingOwner) {
+      const updatedOwner = await prisma.user.update({ where: { id: existingOwner.id }, data: { accountType } });
+      ownerId = updatedOwner.id;
+    } else {
+      temporaryPassword = `Ummah-${randomBytes(4).toString('hex')}`;
+      const owner = await prisma.user.create({
+        data: {
+          name: `${name} Admin`,
+          email: loginEmail,
+          passwordHash: await bcrypt.hash(temporaryPassword, 10),
+          accountType,
+          city,
+          location: address
+        }
+      });
+      ownerId = owner.id;
+    }
+  }
   const org = await prisma.organization.create({
     data: {
       name,
-      type: organizationType(type),
+      type: orgType,
       city,
       address,
       website,
@@ -617,12 +644,12 @@ app.post('/api/organizations', auth, async (req, res) => {
       facebookUrl,
       prayerTimes,
       iqamahTimes,
-      ownerId: req.user.id,
+      ownerId,
       claimed: true,
       verified: req.user.accountType === 'ADMIN'
     }
   });
-  res.json(org);
+  res.json({ ...org, temporaryPassword });
 });
 
 app.get('/api/organizations/:id', async (req, res) => {
