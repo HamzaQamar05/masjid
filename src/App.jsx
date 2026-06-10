@@ -325,12 +325,11 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
   );
 }
 
-function PostEventScreen({ setTab, loadEvents, loadMyOrganizations, myOrganizations }) {
+function PostEventScreen({ setTab, createEvent, myOrganizations }) {
   const [form, setForm] = useState({ title: '', description: '', location: '', startTime: '', organizationId: '', capacity: '', requiresApproval: false });
   async function submit(event) {
     event.preventDefault();
-    await api('/api/events', { method: 'POST', body: JSON.stringify(form) });
-    await Promise.all([loadEvents(), loadMyOrganizations()]);
+    await createEvent(form);
     setTab('events');
   }
   return (
@@ -835,16 +834,28 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, createPost, deletePost, updateApplication, updateRegistration, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, openProfile, startMessage }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, createPost, createEvent, deletePost, deleteEvent, updateApplication, updateRegistration, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, openProfile, startMessage }) {
   const [orgForm, setOrgForm] = useState({ name: '', type: 'MASJID', city: '', address: '', website: '', ownerEmail: '', description: '', latitude: '', longitude: '' });
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
+  const [eventForm, setEventForm] = useState({ organizationId: '', title: '', description: '', location: '', startTime: '', capacity: '', requiresApproval: false });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
   const [peopleForm, setPeopleForm] = useState({ organizationId: '', userId: '', roleLabel: 'Imam' });
   const [editingOrgId, setEditingOrgId] = useState('');
   const [editOrgForm, setEditOrgForm] = useState({});
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [dashboardQuery, setDashboardQuery] = useState('');
+  const [activeSection, setActiveSection] = useState('all');
   const query = dashboardQuery.trim().toLowerCase();
+  const dashboardSections = [
+    ['all', 'All'],
+    ['posts', 'Posts'],
+    ['events', 'Events'],
+    ['volunteers', 'Volunteers'],
+    ['jobs', 'Jobs'],
+    ['team', 'Team'],
+    ['followers', 'Followers']
+  ];
+  const showSection = (section) => activeSection === 'all' || activeSection === section;
   const scopedOrganizations = myOrganizations
     .filter((org) => !selectedOrgId || org.id === selectedOrgId)
     .filter((org) => {
@@ -869,6 +880,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
   const metrics = {
     followers: scopedOrganizations.reduce((sum, org) => sum + (org.followerCount || 0), 0),
     posts: scopedOrganizations.reduce((sum, org) => sum + (org.posts || []).length, 0),
+    events: scopedOrganizations.reduce((sum, org) => sum + (org.events || []).length, 0),
     pendingApplications: pendingApplications.length,
     pendingRegistrations: pendingRegistrations.length,
     jobs: scopedOrganizations.reduce((sum, org) => sum + (org.opportunities || []).filter((item) => item.type === 'JOB').length, 0),
@@ -902,6 +914,14 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     if (!organizationId) return alert('Create or select a masjid first.');
     await createPost(organizationId, postForm);
     setPostForm({ organizationId, type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
+  }
+  async function submitEvent(event) {
+    event.preventDefault();
+    const organizationId = eventForm.organizationId || myOrganizations[0]?.id;
+    if (!organizationId) return alert('Create or select a masjid first.');
+    await createEvent({ ...eventForm, organizationId });
+    setEventForm({ organizationId, title: '', description: '', location: '', startTime: '', capacity: '', requiresApproval: false });
+    setActiveSection('events');
   }
   async function submitPerson(event) {
     event.preventDefault();
@@ -967,12 +987,17 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
               <input placeholder="Search posts, volunteers, jobs, imams, followers, events" value={dashboardQuery} onChange={(event) => setDashboardQuery(event.target.value)} />
             </div>
             <div className="metric-grid compact">
-              <article className="metric-card"><span>Followers</span><strong>{metrics.followers}</strong><em>People following managed profiles</em></article>
-              <article className="metric-card"><span>Posts</span><strong>{metrics.posts}</strong><em>Announcements and updates</em></article>
-              <article className="metric-card"><span>Volunteer requests</span><strong>{metrics.pendingApplications}</strong><em>Waiting for review</em></article>
-              <article className="metric-card"><span>Event approvals</span><strong>{metrics.pendingRegistrations}</strong><em>Pending entry decisions</em></article>
-              <article className="metric-card"><span>Jobs</span><strong>{metrics.jobs}</strong><em>Active job posts</em></article>
-              <article className="metric-card"><span>Volunteer roles</span><strong>{metrics.volunteers}</strong><em>Active service roles</em></article>
+              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('followers')}><span>Followers</span><strong>{metrics.followers}</strong><em>People following managed profiles</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('posts')}><span>Posts</span><strong>{metrics.posts}</strong><em>Announcements and updates</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('volunteers')}><span>Volunteer requests</span><strong>{metrics.pendingApplications}</strong><em>Waiting for review</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('events')}><span>Event approvals</span><strong>{metrics.pendingRegistrations}</strong><em>{metrics.events} events total</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('jobs')}><span>Jobs</span><strong>{metrics.jobs}</strong><em>Active job posts</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('volunteers')}><span>Volunteer roles</span><strong>{metrics.volunteers}</strong><em>Active service roles</em></button>
+            </div>
+            <div className="filter-bar dashboard-filter">
+              {dashboardSections.map(([key, label]) => (
+                <button key={key} className={activeSection === key ? 'active' : ''} type="button" onClick={() => setActiveSection(key)}>{label}</button>
+              ))}
             </div>
           </section>
 
@@ -1053,6 +1078,25 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
           </section>
 
           <section className="panel">
+            <div className="section-title"><h2>Create Event</h2></div>
+            <form className="profile-form" onSubmit={submitEvent}>
+              <div className="form-grid">
+                <select value={eventForm.organizationId} onChange={(event) => setEventForm({ ...eventForm, organizationId: event.target.value })}>
+                  <option value="">Select organization</option>
+                  {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                </select>
+                <input required placeholder="Event title" value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} />
+                <input placeholder="Location" value={eventForm.location} onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })} />
+                <input required type="datetime-local" value={eventForm.startTime} onChange={(event) => setEventForm({ ...eventForm, startTime: event.target.value })} />
+                <input placeholder="Capacity" value={eventForm.capacity} onChange={(event) => setEventForm({ ...eventForm, capacity: event.target.value })} />
+                <label className="check-toggle"><input type="checkbox" checked={eventForm.requiresApproval} onChange={(event) => setEventForm({ ...eventForm, requiresApproval: event.target.checked })} />Requires approval</label>
+              </div>
+              <textarea placeholder="Description" value={eventForm.description} onChange={(event) => setEventForm({ ...eventForm, description: event.target.value })} />
+              <button className="primary-button">Post event</button>
+            </form>
+          </section>
+
+          <section className="panel">
             <div className="section-title"><h2>Post Job or Opportunity</h2></div>
             <form className="profile-form" onSubmit={submitOpp}>
               <div className="form-grid">
@@ -1111,64 +1155,137 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                   </div>
                 </form>
               )}
-              <div className="stack-list">
-                <article className="mini-row">
-                  <strong>Profile team</strong>
-                  {(org.people || []).length ? (org.people || []).map((person) => (
-                    <div className="manager-row" key={person.id}>
-                      <span>{person.user?.name || 'Person'} - {person.roleLabel}</span>
-                      {person.user && <button onClick={() => startMessage(person.user)}>Message</button>}
-                      {person.user && <button onClick={() => openProfile(person.user)}>Profile</button>}
-                      <button onClick={() => removeOrganizationPerson(org.id, person.userId)}>Remove</button>
-                    </div>
-                  )) : <p className="helper-text">No imams or team members attached yet.</p>}
-                </article>
-              </div>
-              <div className="stack-list">
-                {(org.posts || []).map((post) => (
-                  <article className="mini-row" key={post.id}>
-                    <strong>{post.title}</strong>
-                    <span>{post.type} - {new Date(post.createdAt).toLocaleString()}</span>
-                    <p>{post.content}</p>
-                    <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
-                  </article>
-                ))}
-                {(org.events || []).map((event) => (
-                  <article className="mini-row" key={event.id}>
-                    <strong>{event.title}</strong>
-                    <span>{(event.registrations || []).length} attendees</span>
-                    {(event.registrations || []).map((registration) => (
-                      <div className="manager-row" key={registration.id}>
-                        <span>{registration.user?.name || 'User'} - {registration.status}</span>
-                        <button onClick={() => updateRegistration(event.id, registration.id, 'APPROVED')}>Approve</button>
-                        <button onClick={() => updateRegistration(event.id, registration.id, 'DENIED')}>Deny</button>
-                        <button onClick={() => updateRegistration(event.id, registration.id, 'ATTENDED')}>Attended</button>
-                        {registration.user && <button onClick={() => startMessage(registration.user)}>Message</button>}
-                        {registration.user && <button onClick={() => openProfile(registration.user)}>Profile</button>}
-                      </div>
-                    ))}
-                  </article>
-                ))}
-                {(org.opportunities || []).map((opportunity) => (
-                  <article className="mini-row" key={opportunity.id}>
-                    <strong>{opportunity.title}</strong>
-                    <span>{opportunity.type} - {(opportunity.applications || []).length} applicants</span>
-                    <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete post</button>
-                    {(opportunity.applications || []).map((application) => (
-                      <div className="manager-row" key={application.id}>
-                        <span>{application.applicant?.name || 'Applicant'} - {application.status} - {application.approvedHours || 0} hrs{application.contactPhone ? ` - ${application.contactPhone}` : ''}</span>
-                        {application.note && <p>{application.note}</p>}
-                        <button onClick={() => approveApplication(opportunity.id, application.id)}>Approve hours</button>
-                        <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'DENIED' })}>Deny</button>
-                        <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'COMPLETED', checkedOutAt: true })}>Complete</button>
-                        {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
-                        {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
-                        {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
-                      </div>
-                    ))}
-                  </article>
-                ))}
-              </div>
+              {showSection('team') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Team</h3><span>{(org.people || []).length}</span></div>
+                  <div className="stack-list">
+                    {(org.people || []).length ? (org.people || []).map((person) => (
+                      <article className="mini-row" key={person.id}>
+                        <strong>{person.user?.name || 'Person'}</strong>
+                        <span>{person.roleLabel}</span>
+                        <div className="manager-row">
+                          {person.user && <button onClick={() => startMessage(person.user)}>Message</button>}
+                          {person.user && <button onClick={() => openProfile(person.user)}>Profile</button>}
+                          <button onClick={() => removeOrganizationPerson(org.id, person.userId)}>Remove</button>
+                        </div>
+                      </article>
+                    )) : <p className="helper-text">No imams or team members attached yet.</p>}
+                  </div>
+                </div>
+              )}
+
+              {showSection('posts') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Posts</h3><span>{(org.posts || []).length}</span></div>
+                  <div className="stack-list">
+                    {(org.posts || []).length ? (org.posts || []).map((post) => (
+                      <article className="mini-row" key={post.id}>
+                        <strong>{post.title}</strong>
+                        <span>{post.type} - {new Date(post.createdAt).toLocaleString()}</span>
+                        <p>{post.content}</p>
+                        <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
+                      </article>
+                    )) : <p className="helper-text">No posts match this dashboard filter yet.</p>}
+                  </div>
+                </div>
+              )}
+
+              {showSection('events') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Events</h3><span>{(org.events || []).length}</span></div>
+                  <div className="stack-list">
+                    {(org.events || []).length ? (org.events || []).map((event) => (
+                      <article className="mini-row" key={event.id}>
+                        <strong>{event.title}</strong>
+                        <span>{new Date(event.startTime).toLocaleString()} - {(event.registrations || []).length} attendees</span>
+                        <p>{event.location || 'Location TBA'}</p>
+                        <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
+                        {(event.registrations || []).map((registration) => (
+                          <div className="manager-row" key={registration.id}>
+                            <span>{registration.user?.name || 'User'} - {registration.status}</span>
+                            <button onClick={() => updateRegistration(event.id, registration.id, 'APPROVED')}>Approve</button>
+                            <button onClick={() => updateRegistration(event.id, registration.id, 'DENIED')}>Deny</button>
+                            <button onClick={() => updateRegistration(event.id, registration.id, 'ATTENDED')}>Attended</button>
+                            {registration.user && <button onClick={() => startMessage(registration.user)}>Message</button>}
+                            {registration.user && <button onClick={() => openProfile(registration.user)}>Profile</button>}
+                          </div>
+                        ))}
+                      </article>
+                    )) : <p className="helper-text">No events match this dashboard filter yet.</p>}
+                  </div>
+                </div>
+              )}
+
+              {showSection('volunteers') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Volunteers</h3><span>{(org.opportunities || []).filter((item) => item.type !== 'JOB').length}</span></div>
+                  <div className="stack-list">
+                    {(org.opportunities || []).filter((item) => item.type !== 'JOB').length ? (org.opportunities || []).filter((item) => item.type !== 'JOB').map((opportunity) => (
+                      <article className="mini-row" key={opportunity.id}>
+                        <strong>{opportunity.title}</strong>
+                        <span>{opportunity.type} - {(opportunity.applications || []).length} applicants</span>
+                        <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete post</button>
+                        {(opportunity.applications || []).map((application) => (
+                          <div className="manager-row" key={application.id}>
+                            <span>{application.applicant?.name || 'Applicant'} - {application.status} - {application.approvedHours || 0} hrs{application.contactPhone ? ` - ${application.contactPhone}` : ''}</span>
+                            {application.note && <p>{application.note}</p>}
+                            <button onClick={() => approveApplication(opportunity.id, application.id)}>Approve hours</button>
+                            <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'DENIED' })}>Deny</button>
+                            <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'COMPLETED', checkedOutAt: true })}>Complete</button>
+                            {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
+                            {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
+                            {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
+                          </div>
+                        ))}
+                      </article>
+                    )) : <p className="helper-text">No volunteer opportunities match this dashboard filter yet.</p>}
+                  </div>
+                </div>
+              )}
+
+              {showSection('jobs') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Jobs</h3><span>{(org.opportunities || []).filter((item) => item.type === 'JOB').length}</span></div>
+                  <div className="stack-list">
+                    {(org.opportunities || []).filter((item) => item.type === 'JOB').length ? (org.opportunities || []).filter((item) => item.type === 'JOB').map((opportunity) => (
+                      <article className="mini-row" key={opportunity.id}>
+                        <strong>{opportunity.title}</strong>
+                        <span>{(opportunity.applications || []).length} applicants</span>
+                        <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete job</button>
+                        {(opportunity.applications || []).map((application) => (
+                          <div className="manager-row" key={application.id}>
+                            <span>{application.applicant?.name || 'Applicant'} - {application.status}{application.contactPhone ? ` - ${application.contactPhone}` : ''}</span>
+                            {application.note && <p>{application.note}</p>}
+                            <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'APPROVED' })}>Approve</button>
+                            <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'DENIED' })}>Deny</button>
+                            {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
+                            {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
+                            {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
+                          </div>
+                        ))}
+                      </article>
+                    )) : <p className="helper-text">No jobs match this dashboard filter yet.</p>}
+                  </div>
+                </div>
+              )}
+
+              {showSection('followers') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Followers</h3><span>{(org.followers || []).length}</span></div>
+                  <div className="stack-list">
+                    {(org.followers || []).length ? (org.followers || []).map((follow) => (
+                      <article className="mini-row" key={follow.id}>
+                        <strong>{follow.user?.name || 'Follower'}</strong>
+                        <span>{follow.user?.email || org.name}</span>
+                        <div className="manager-row">
+                          {follow.user && <button onClick={() => startMessage(follow.user)}>Message</button>}
+                          {follow.user && <button onClick={() => openProfile(follow.user)}>Profile</button>}
+                        </div>
+                      </article>
+                    )) : <p className="helper-text">No followers match this dashboard filter yet.</p>}
+                  </div>
+                </div>
+              )}
             </section>
           ))}
           {!scopedOrganizations.length && <section className="panel"><p className="helper-text">No managed masjids match this search.</p></section>}
@@ -1370,10 +1487,21 @@ export default function App() {
     await Promise.all([loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
+  async function createEvent(form) {
+    await api('/api/events', { method: 'POST', body: JSON.stringify(form) });
+    await Promise.all([loadEvents(), loadMyOrganizations(), loadLocationData(location)]);
+  }
+
   async function deletePost(id) {
     if (!confirm('Delete this post?')) return;
     await api(`/api/posts/${id}`, { method: 'DELETE' });
     await Promise.all([loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
+  }
+
+  async function deleteEvent(id) {
+    if (!confirm('Delete this event?')) return;
+    await api(`/api/events/${id}`, { method: 'DELETE' });
+    await Promise.all([loadEvents(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
   async function deleteOpportunity(id) {
@@ -1622,7 +1750,7 @@ export default function App() {
   const screens = {
     home: <HomeScreen user={user} posts={posts} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
     events: <EventsScreen user={user} events={events} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
-    post: <PostEventScreen setTab={setTab} loadEvents={loadEvents} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} />,
+    post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
     masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => setTab('organizations')} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
@@ -1632,7 +1760,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} createPost={createPost} deletePost={deletePost} updateApplication={updateApplication} updateRegistration={updateRegistration} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} openProfile={openProfile} startMessage={startMessage} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} createPost={createPost} createEvent={createEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} updateRegistration={updateRegistration} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} openProfile={openProfile} startMessage={startMessage} />
   };
 
   return (

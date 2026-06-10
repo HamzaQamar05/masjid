@@ -830,6 +830,10 @@ a {
   border-color: #0f766e;
 }
 
+.dashboard-filter {
+  margin-top: 12px;
+}
+
 .card-grid,
 .organization-grid,
 .metric-grid,
@@ -1417,6 +1421,33 @@ a {
 .metric-card {
   min-height: 132px;
   align-content: end;
+}
+
+.metric-button {
+  text-align: left;
+  border: 1px solid #dbe4e2;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.metric-button:hover,
+.metric-button:focus-visible {
+  border-color: #0f766e;
+  box-shadow: 0 10px 22px rgba(15, 118, 110, 0.12);
+}
+
+.manager-section {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #e0e8e6;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.compact-title h3 {
+  margin: 0;
+  font-size: 18px;
 }
 
 .campaign-row {
