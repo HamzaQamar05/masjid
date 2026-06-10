@@ -39,12 +39,11 @@ const navItems = [
   { key: 'jobs', label: 'Jobs', icon: Briefcase },
   { key: 'library', label: 'Library', icon: Library },
   { key: 'businesses', label: 'Business', icon: Briefcase },
-  { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'profile', label: 'Profile', icon: UserCheck },
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
 ];
 
-const mobileNavKeys = ['home', 'organizations', 'network', 'volunteers', 'messages', 'profile'];
+const mobileNavKeys = ['home', 'organizations', 'network', 'volunteers', 'profile'];
 
 function token() {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
