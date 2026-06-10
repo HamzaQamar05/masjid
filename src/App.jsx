@@ -196,8 +196,8 @@ function HomeScreen({ user, masjids, locationStatus, requestLocation, prayerTime
             <button onClick={() => setTab('messages')}><Mail size={18} />Messages</button>
           </div>
         </section>
-        <NearbyMasjids masjids={masjids.slice(0, 5)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
-      </section>
+        {/* <NearbyMasjids masjids={masjids.slice(0, 5)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
+      </section> */}
       <aside className="right-rail">
         <PrayerWidget prayerTimes={prayerTimes} />
         <section className="panel">
