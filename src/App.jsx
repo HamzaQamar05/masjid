@@ -835,13 +835,14 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
   const [eventForm, setEventForm] = useState({ organizationId: '', title: '', description: '', location: '', startTime: '', capacity: '', requiresApproval: false });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
   const [peopleForm, setPeopleForm] = useState({ organizationId: '', userId: '', roleLabel: 'Imam' });
+  const [inviteForm, setInviteForm] = useState({ organizationId: '', name: '', email: '', accountType: 'IMAM', roleLabel: 'Imam' });
   const [peopleQuery, setPeopleQuery] = useState('');
   const [editingOrgId, setEditingOrgId] = useState('');
   const [editOrgForm, setEditOrgForm] = useState({});
@@ -937,6 +938,15 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     if (!organizationId || !peopleForm.userId) return alert('Select a masjid and person first.');
     await addOrganizationPerson(organizationId, { userId: peopleForm.userId, roleLabel: peopleForm.roleLabel });
     setPeopleForm({ organizationId, userId: '', roleLabel: 'Imam' });
+  }
+  async function submitInvite(event) {
+    event.preventDefault();
+    const organizationId = inviteForm.organizationId || myOrganizations[0]?.id;
+    if (!organizationId || !inviteForm.email.trim()) return alert('Select a masjid and enter an email first.');
+    const invited = await inviteOrganizationPerson(organizationId, inviteForm);
+    if (invited?.temporaryPassword) alert(`Login created for ${inviteForm.email}. Temporary password: ${invited.temporaryPassword}`);
+    setInviteForm({ organizationId, name: '', email: '', accountType: 'IMAM', roleLabel: 'Imam' });
+    setActiveSection('team');
   }
   async function quickAddTeam(organizationId, person, roleLabel = 'Team member') {
     if (!person?.id) return;
@@ -1188,6 +1198,26 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
 
           <section className="panel">
             <div className="section-title"><h2>Masjid Team</h2></div>
+            <form className="profile-form" onSubmit={submitInvite}>
+              <div className="form-grid">
+                <select value={inviteForm.organizationId} onChange={(event) => setInviteForm({ ...inviteForm, organizationId: event.target.value })}>
+                  <option value="">Select organization</option>
+                  {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                </select>
+                <input placeholder="Name" value={inviteForm.name} onChange={(event) => setInviteForm({ ...inviteForm, name: event.target.value })} />
+                <input required placeholder="Email" value={inviteForm.email} onChange={(event) => setInviteForm({ ...inviteForm, email: event.target.value })} />
+                <select value={inviteForm.accountType} onChange={(event) => setInviteForm({ ...inviteForm, accountType: event.target.value })}>
+                  <option value="IMAM">Imam</option>
+                  <option value="STUDENT_OF_KNOWLEDGE">Student of Knowledge</option>
+                  <option value="USER">User</option>
+                  <option value="MASJID">Masjid Staff</option>
+                  <option value="MSA">MSA Staff</option>
+                </select>
+                <input placeholder="Role, e.g. Imam, Volunteer Coordinator" value={inviteForm.roleLabel} onChange={(event) => setInviteForm({ ...inviteForm, roleLabel: event.target.value })} />
+              </div>
+              <p className="helper-text">Creates a login if the email is new, or attaches the existing account if it already exists.</p>
+              <button className="primary-button">Invite or create team login</button>
+            </form>
             <form className="profile-form" onSubmit={submitPerson}>
               <div className="form-grid">
                 <select value={peopleForm.organizationId} onChange={(event) => setPeopleForm({ ...peopleForm, organizationId: event.target.value })}>
@@ -1645,6 +1675,14 @@ export default function App() {
     if (selectedOrganization?.id === id) setSelectedOrganization(refreshed);
   }
 
+  async function inviteOrganizationPerson(id, form) {
+    const invited = await api(`/api/organizations/${id}/people/invite`, { method: 'POST', body: JSON.stringify(form) });
+    const refreshed = await api(`/api/organizations/${id}`);
+    await Promise.all([loadNetwork(), loadMyOrganizations(), loadLocationData(location), loadProfileSocial(user.id)]);
+    if (selectedOrganization?.id === id) setSelectedOrganization(refreshed);
+    return invited;
+  }
+
   async function removeOrganizationPerson(id, userId) {
     await api(`/api/organizations/${id}/people/${userId}`, { method: 'DELETE' });
     const refreshed = await api(`/api/organizations/${id}`).catch(() => null);
@@ -1894,7 +1932,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
   };
 
   return (

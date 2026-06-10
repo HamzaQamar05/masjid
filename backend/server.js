@@ -807,6 +807,38 @@ app.post('/api/organizations/:id/people', auth, async (req, res) => {
   res.json({ ...person, user: publicUser(person.user) });
 });
 
+app.post('/api/organizations/:id/people/invite', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can invite team members' });
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const name = String(req.body.name || '').trim();
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  const roleLabel = String(req.body.roleLabel || 'Team member').trim().slice(0, 80) || 'Team member';
+  const requestedType = String(req.body.accountType || 'USER').toUpperCase();
+  const accountType = ['IMAM', 'STUDENT_OF_KNOWLEDGE', 'USER', 'MASJID', 'MSA'].includes(requestedType) ? requestedType : 'USER';
+  let temporaryPassword = null;
+  let memberUser = await prisma.user.findUnique({ where: { email } });
+  if (!memberUser) {
+    temporaryPassword = `Ummah-${randomBytes(4).toString('hex')}`;
+    memberUser = await prisma.user.create({
+      data: {
+        name: name || email.split('@')[0],
+        email,
+        passwordHash: await bcrypt.hash(temporaryPassword, 10),
+        accountType
+      }
+    });
+  } else if (memberUser.accountType === 'USER' && accountType !== 'USER') {
+    memberUser = await prisma.user.update({ where: { id: memberUser.id }, data: { accountType } });
+  }
+  const person = await prisma.organizationPerson.upsert({
+    where: { organizationId_userId: { organizationId: req.params.id, userId: memberUser.id } },
+    create: { organizationId: req.params.id, userId: memberUser.id, roleLabel },
+    update: { roleLabel },
+    include: { user: true }
+  });
+  res.json({ ...person, user: publicUser(person.user), temporaryPassword, existingUser: !temporaryPassword });
+});
+
 app.delete('/api/organizations/:id/people/:userId', auth, async (req, res) => {
   if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can manage team members' });
   await prisma.organizationPerson.deleteMany({ where: { organizationId: req.params.id, userId: req.params.userId } });
