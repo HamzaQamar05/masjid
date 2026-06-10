@@ -760,11 +760,12 @@ app.get('/api/opportunities', auth, async (req, res) => {
 
 app.post('/api/organizations/:id/opportunities', auth, async (req, res) => {
   if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this masjid or admin can create opportunities' });
+  if (!req.body.title?.trim()) return res.status(400).json({ error: 'Title is required' });
   const type = ['JOB', 'VOLUNTEER', 'OPPORTUNITY'].includes(String(req.body.type || '').toUpperCase()) ? String(req.body.type).toUpperCase() : 'OPPORTUNITY';
   const opportunity = await prisma.opportunity.create({
     data: {
       organizationId: req.params.id,
-      title: req.body.title,
+      title: req.body.title.trim(),
       description: req.body.description,
       type,
       location: req.body.location,
@@ -773,6 +774,15 @@ app.post('/api/organizations/:id/opportunities', auth, async (req, res) => {
     }
   });
   res.json(opportunity);
+});
+
+app.delete('/api/opportunities/:id', auth, async (req, res) => {
+  const opportunity = await prisma.opportunity.findUnique({ where: { id: req.params.id } });
+  if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
+  if (!(await canManageOrganization(req.user, opportunity.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can delete opportunities' });
+  await prisma.volunteerApplication.deleteMany({ where: { opportunityId: opportunity.id } });
+  await prisma.opportunity.delete({ where: { id: opportunity.id } });
+  res.json({ message: 'Opportunity deleted' });
 });
 
 app.post('/api/opportunities/:id/apply', auth, async (req, res) => {
@@ -788,6 +798,8 @@ app.put('/api/opportunities/:id/applications/:applicationId', auth, async (req, 
   const opportunity = await prisma.opportunity.findUnique({ where: { id: req.params.id } });
   if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
   if (!(await canManageOrganization(req.user, opportunity.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can manage applications' });
+  const existingApplication = await prisma.volunteerApplication.findUnique({ where: { id: req.params.applicationId } });
+  if (!existingApplication || existingApplication.opportunityId !== opportunity.id) return res.status(404).json({ error: 'Application not found for this opportunity' });
   const status = ['PENDING', 'APPROVED', 'DENIED', 'COMPLETED'].includes(req.body.status) ? req.body.status : 'APPROVED';
   const application = await prisma.volunteerApplication.update({
     where: { id: req.params.applicationId },

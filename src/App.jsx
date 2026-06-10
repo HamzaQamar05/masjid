@@ -70,6 +70,16 @@ function textToList(value) {
   return value.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+function normalizeList(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  return String(value).split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+}
+
 function directionsUrl(item) {
   const query = item.latitude && item.longitude ? `${item.latitude},${item.longitude}` : encodeURIComponent(item.address || item.location || item.name);
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
@@ -250,7 +260,7 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
   );
 }
 
-function EventsScreen({ user, events, loadEvents, myOrganizations }) {
+function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent, unregisterEvent }) {
   async function deleteEvent(id) {
     if (!confirm('Delete this event?')) return;
     await api(`/api/events/${id}`, { method: 'DELETE' });
@@ -261,6 +271,9 @@ function EventsScreen({ user, events, loadEvents, myOrganizations }) {
       <div className="card-grid two">
         {events.map((event) => {
           const canDelete = user.accountType === 'ADMIN' || event.createdById === user.id || event.createdBy?.id === user.id || myOrganizations.some((org) => org.id === event.organizationId);
+          const registration = (event.registrations || []).find((item) => item.userId === user.id);
+          const registeredCount = (event.registrations || []).filter((item) => item.status !== 'DENIED').length;
+          const remaining = event.capacity ? Math.max(0, event.capacity - registeredCount) : null;
           return (
             <article className="event-card" key={event.id}>
               <div className="event-top"><span>Event</span>{canDelete && <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete</button>}</div>
@@ -268,7 +281,13 @@ function EventsScreen({ user, events, loadEvents, myOrganizations }) {
               <p>{event.description || 'No description yet.'}</p>
               <div className="meta-line"><CalendarDays size={16} />{event.startTime ? new Date(event.startTime).toLocaleString() : event.time || 'Time TBA'}</div>
               <div className="meta-line"><MapPin size={16} />{event.location || event.place || 'Location TBA'}</div>
-              <div className="card-footer"><span>{event.createdBy?.name ? `By ${event.createdBy.name}` : 'Community event'}</span></div>
+              <div className="check-row"><span>Seats</span><strong>{event.capacity ? `${registeredCount}/${event.capacity} registered - ${remaining} left` : `${registeredCount} registered`}</strong></div>
+              {event.requiresApproval && <div className="check-row"><span>Entry</span><strong>Approval required</strong></div>}
+              {registration && <div className="check-row"><span>Your status</span><strong>{registration.status}</strong></div>}
+              <div className="card-footer">
+                <span>{event.organization?.name || (event.createdBy?.name ? `By ${event.createdBy.name}` : 'Community event')}</span>
+                {registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
+              </div>
             </article>
           );
         })}
@@ -581,7 +600,48 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
   );
 }
 
-function OpportunitiesScreen({ opportunities, type = 'VOLUNTEER', applyToOpportunity, title, subtitle }) {
+function printableHoursReport(user, visible) {
+  const rows = visible
+    .map((item) => ({ item, application: item.applications?.[0] }))
+    .filter(({ application }) => application && Number(application.approvedHours || 0) > 0)
+    .map(({ item, application }) => `
+      <tr>
+        <td>${escapeHtml(item.title)}</td>
+        <td>${escapeHtml(item.organization?.name || 'Community organization')}</td>
+        <td>${escapeHtml(application.status)}</td>
+        <td>${escapeHtml(application.approvedHours || 0)}</td>
+      </tr>
+    `).join('');
+  const total = visible.reduce((sum, item) => sum + (item.applications?.[0]?.approvedHours || 0), 0);
+  const report = window.open('', '_blank');
+  if (!report) return alert('Allow popups to print or save your volunteer hours report.');
+  report.document.write(`
+    <html>
+      <head>
+        <title>Verified Volunteer Hours</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 32px; color: #17212b; }
+          h1 { margin-bottom: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+          th, td { border: 1px solid #d7dee8; padding: 10px; text-align: left; }
+          th { background: #f3f6f8; }
+          .total { margin-top: 20px; font-size: 20px; font-weight: 700; }
+        </style>
+      </head>
+      <body>
+        <h1>Verified Volunteer Hours</h1>
+        <p>${escapeHtml(user.name)} - Generated ${escapeHtml(new Date().toLocaleString())}</p>
+        <table><thead><tr><th>Opportunity</th><th>Masjid</th><th>Status</th><th>Hours</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No approved hours yet.</td></tr>'}</tbody></table>
+        <p class="total">Total verified hours: ${total}</p>
+      </body>
+    </html>
+  `);
+  report.document.close();
+  report.focus();
+  report.print();
+}
+
+function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToOpportunity, title, subtitle }) {
   const visible = opportunities.filter((item) => item.type === type || (type === 'VOLUNTEER' && item.type === 'OPPORTUNITY'));
   const verifiedTotal = visible.reduce((sum, item) => sum + (item.applications?.[0]?.approvedHours || 0), 0);
   return (
@@ -593,7 +653,7 @@ function OpportunitiesScreen({ opportunities, type = 'VOLUNTEER', applyToOpportu
             <h2>{verifiedTotal}</h2>
             <p>Hours only count after the masjid approves them.</p>
           </div>
-          <button className="secondary-button">Download PDF</button>
+          <button className="secondary-button" onClick={() => printableHoursReport(user, visible)}>Download PDF</button>
         </section>
       )}
       <div className="card-grid two">
@@ -605,7 +665,7 @@ function OpportunitiesScreen({ opportunities, type = 'VOLUNTEER', applyToOpportu
             <div>
               <h3>{item.title}</h3>
               <p>{item.organization?.name || 'Community organization'}</p>
-              <TagRow tags={[item.location || 'Location TBD', item.hours ? `${item.hours} hours` : item.type, ...(item.skills || [])]} />
+              <TagRow tags={[item.location || 'Location TBD', item.hours ? `${item.hours} hours` : item.type, ...(Array.isArray(item.skills) ? item.skills : normalizeList(item.skills))]} />
             </div>
             <p>{item.description || 'No description yet.'}</p>
             <div className="check-row"><span>Status</span><strong>{application?.status || 'Not applied'}</strong></div>
@@ -722,7 +782,7 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateApplication, updateRegistration, addOrganizationPerson, removeOrganizationPerson }) {
+function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateApplication, updateRegistration, deleteOpportunity, addOrganizationPerson, removeOrganizationPerson }) {
   const [orgForm, setOrgForm] = useState({ name: '', type: 'MASJID', city: '', address: '', website: '', description: '', latitude: '', longitude: '' });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
   const [peopleForm, setPeopleForm] = useState({ organizationId: '', userId: '', roleLabel: 'Imam' });
@@ -909,6 +969,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                   <article className="mini-row" key={opportunity.id}>
                     <strong>{opportunity.title}</strong>
                     <span>{opportunity.type} - {(opportunity.applications || []).length} applicants</span>
+                    <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete post</button>
                     {(opportunity.applications || []).map((application) => (
                       <div className="manager-row" key={application.id}>
                         <span>{application.applicant?.name || 'Applicant'} - {application.status} - {application.approvedHours || 0} hrs</span>
@@ -1069,9 +1130,25 @@ export default function App() {
     await loadOpportunities();
   }
 
+  async function registerEvent(id) {
+    await api(`/api/events/${id}/register`, { method: 'POST' });
+    await Promise.all([loadEvents(), loadMyOrganizations()]);
+  }
+
+  async function unregisterEvent(id) {
+    await api(`/api/events/${id}/register`, { method: 'DELETE' });
+    await Promise.all([loadEvents(), loadMyOrganizations()]);
+  }
+
   async function createOpportunity(organizationId, form) {
     await api(`/api/organizations/${organizationId}/opportunities`, { method: 'POST', body: JSON.stringify(form) });
     await Promise.all([loadMyOrganizations(), loadOpportunities()]);
+  }
+
+  async function deleteOpportunity(id) {
+    if (!confirm('Delete this job or opportunity?')) return;
+    await api(`/api/opportunities/${id}`, { method: 'DELETE' });
+    await Promise.all([loadMyOrganizations(), loadOpportunities(), loadLocationData(location)]);
   }
 
   async function createOrganization(form) {
@@ -1307,18 +1384,18 @@ export default function App() {
 
   const screens = {
     home: <HomeScreen user={user} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
-    events: <EventsScreen user={user} events={events} loadEvents={loadEvents} myOrganizations={myOrganizations} />,
+    events: <EventsScreen user={user} events={events} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
     post: <PostEventScreen setTab={setTab} loadEvents={loadEvents} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
     masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => setTab('organizations')} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
-    volunteers: <OpportunitiesScreen opportunities={opportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
-    jobs: <OpportunitiesScreen opportunities={opportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
+    volunteers: <OpportunitiesScreen user={user} opportunities={opportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
+    jobs: <OpportunitiesScreen user={user} opportunities={opportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateApplication={updateApplication} updateRegistration={updateRegistration} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} />
+    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateApplication={updateApplication} updateRegistration={updateRegistration} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} />
   };
 
   return (
