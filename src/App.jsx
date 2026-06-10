@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { io } from 'socket.io-client';
 import {
   BarChart3,
   Bell,
@@ -24,7 +25,7 @@ import {
   X
 } from 'lucide-react';
 import AuthScreen from './components/AuthScreen.jsx';
-import { defaultLocation, prayers, seedEvents, seedOrganizations, volunteerRoles } from './data/seedData.js';
+import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganizations, volunteerRoles } from './data/seedData.js';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -34,6 +35,8 @@ const navItems = [
   { key: 'organizations', label: 'Masjids', icon: Building2 },
   { key: 'network', label: 'Network', icon: Users },
   { key: 'volunteers', label: 'Volunteer', icon: HeartHandshake },
+  { key: 'library', label: 'Library', icon: Library },
+  { key: 'businesses', label: 'Business', icon: Briefcase },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'profile', label: 'Profile', icon: UserCheck },
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
@@ -320,8 +323,25 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
   );
 }
 
-function MessagesScreen({ users, selectedUser, setSelectedUser, messages, loadMessages, loadThreads }) {
+function MessagesScreen({
+  users,
+  selectedUser,
+  setSelectedUser,
+  messages,
+  threads,
+  loadMessages,
+  loadOlderMessages,
+  loadThreads,
+  messagePage,
+  sendTyping,
+  onlineUserIds,
+  typingUserIds,
+  reactToMessage,
+  unsendMessage
+}) {
   const [draft, setDraft] = useState('');
+  const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
+
   useEffect(() => {
     if (!selectedUser?.id) return undefined;
     let active = true;
@@ -343,6 +363,13 @@ function MessagesScreen({ users, selectedUser, setSelectedUser, messages, loadMe
     };
   }, [selectedUser?.id]);
 
+  useEffect(() => {
+    if (!selectedUser?.id) return undefined;
+    sendTyping(selectedUser.id, Boolean(draft.trim()));
+    const timer = setTimeout(() => sendTyping(selectedUser.id, false), 900);
+    return () => clearTimeout(timer);
+  }, [draft, selectedUser?.id]);
+
   async function chooseUser(person) {
     setSelectedUser(person);
     await loadMessages(person.id);
@@ -354,24 +381,90 @@ function MessagesScreen({ users, selectedUser, setSelectedUser, messages, loadMe
     await loadMessages(selectedUser.id);
     await loadThreads();
   }
+
+  function onMessageScroll(event) {
+    if (event.currentTarget.scrollTop < 24 && messagePage.hasMore && !messagePage.loadingOlder) {
+      loadOlderMessages(selectedUser.id);
+    }
+  }
+
   return (
     <Page title="Messages" subtitle="Start a conversation with any registered user and send backend-backed messages.">
       <div className="messaging-layout">
         <section className="panel inbox-list">
-          {users.map((person) => <button key={person.id} className={selectedUser?.id === person.id ? 'active' : ''} onClick={() => chooseUser(person)}><strong>{person.name}</strong><span>{person.accountType}</span><p>{person.city || 'No city'}</p></button>)}
+          {users.map((person) => {
+            const thread = threads.find((item) => item.user.id === person.id);
+            const isOnline = onlineUserIds.includes(person.id);
+            return (
+              <button key={person.id} className={selectedUser?.id === person.id ? 'active' : ''} onClick={() => chooseUser(person)}>
+                <strong>{person.name}</strong>
+                <span>{isOnline ? 'Online' : person.accountType}</span>
+                <p>{thread?.lastMessage || person.city || 'No messages yet'}</p>
+                {thread?.unread > 0 && <em>{thread.unread}</em>}
+              </button>
+            );
+          })}
         </section>
         <section className="panel message-thread">
           {selectedUser ? (
             <>
-              <div className="thread-head"><div className="org-logo">{initials(selectedUser.name)}</div><div><h2>{selectedUser.name}</h2><p>Conversation</p></div></div>
-              <div className="message-list">
-                {messages.map((message) => <div className={message.senderId === selectedUser.id ? 'chat-bubble received' : 'chat-bubble sent'} key={message.id}>{message.content}</div>)}
+              <div className="thread-head"><div className="org-logo">{initials(selectedUser.name)}</div><div><h2>{selectedUser.name}</h2><p>{onlineUserIds.includes(selectedUser.id) ? 'Online now' : selectedThread?.lastMessageAt ? `Last message ${new Date(selectedThread.lastMessageAt).toLocaleString()}` : 'Conversation'}</p></div></div>
+              <div className="message-list" onScroll={onMessageScroll}>
+                {messagePage.hasMore && <button className="load-more" onClick={() => loadOlderMessages(selectedUser.id)}>{messagePage.loadingOlder ? 'Loading...' : 'Load older messages'}</button>}
+                {messages.map((message) => (
+                  <div className={message.senderId === selectedUser.id ? 'chat-bubble received' : 'chat-bubble sent'} key={message.id}>
+                    <p>{message.content}</p>
+                    {!!message.reactions?.length && <div className="reaction-row">{message.reactions.map((reaction) => <span key={reaction.id}>{reaction.emoji}</span>)}</div>}
+                    {!message.isDeleted && (
+                      <div className="message-actions">
+                        {['❤️', '😂', '🙏', '👍'].map((emoji) => <button key={emoji} onClick={() => reactToMessage(message.id, emoji)}>{emoji}</button>)}
+                        {message.senderId !== selectedUser.id ? null : <button onClick={() => unsendMessage(message.id)}>Unsend</button>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {typingUserIds.includes(selectedUser.id) && <div className="typing-indicator">{selectedUser.name} is typing...</div>}
               </div>
               <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${selectedUser.name}`} />
               <button className="primary-button" onClick={sendMessage}><Send size={18} />Send message</button>
             </>
           ) : <p className="helper-text">Choose a person to start messaging.</p>}
         </section>
+      </div>
+    </Page>
+  );
+}
+
+function LibraryScreen() {
+  return (
+    <Page title="Lecture Library" subtitle="Save and browse community lectures, notes, videos, and audio.">
+      <div className="card-grid three">
+        {lectures.map((lecture) => (
+          <article className="library-card" key={lecture.id}>
+            <div className="library-icon"><Library size={24} /></div>
+            <span>{lecture.category}</span>
+            <h3>{lecture.title}</h3>
+            <p>{lecture.speaker}</p>
+            <div className="card-footer"><span>{lecture.format}</span><button className="secondary-button">{lecture.saved ? 'Saved' : 'Save'}</button></div>
+          </article>
+        ))}
+      </div>
+    </Page>
+  );
+}
+
+function BusinessDirectoryScreen() {
+  return (
+    <Page title="Business Directory" subtitle="Browse Muslim-owned businesses and event sponsors.">
+      <div className="card-grid three">
+        {businesses.map((business) => (
+          <article className="business-card" key={business.id}>
+            <Briefcase size={24} />
+            <h3>{business.name}</h3>
+            <p>{business.category} - {business.city}</p>
+            <div className="card-footer"><span>{business.rating} rating</span><span>Sponsored: {business.sponsor}</span></div>
+          </article>
+        ))}
       </div>
     </Page>
   );
@@ -538,7 +631,13 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [connections, setConnections] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [threads, setThreads] = useState([]);
+  const [messagePage, setMessagePage] = useState({ nextCursor: null, hasMore: false, loadingOlder: false });
+  const [socket, setSocket] = useState(null);
+  const [onlineUserIds, setOnlineUserIds] = useState([]);
+  const [typingUserIds, setTypingUserIds] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
+  const selectedUserIdRef = useRef(null);
   const [viewedUser, setViewedUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState(defaultLocation);
@@ -552,7 +651,7 @@ export default function App() {
     const me = await api('/api/me');
     sessionStorage.setItem('user', JSON.stringify(me));
     setUser(me);
-    await Promise.all([loadNetwork(), loadEvents()]);
+    await Promise.all([loadNetwork(), loadEvents(), loadThreads()]);
   }
 
   async function loadNetwork() {
@@ -569,12 +668,47 @@ export default function App() {
 
   async function loadMessages(userId) {
     if (!userId) return;
-    const loaded = await api(`/api/messages/${userId}`);
-    setMessages(loaded);
+    const loaded = await api(`/api/messages/${userId}?limit=30`);
+    setMessages(loaded.messages || loaded);
+    setMessagePage({ nextCursor: loaded.nextCursor || null, hasMore: Boolean(loaded.hasMore), loadingOlder: false });
   }
 
   async function loadThreads() {
-    await api('/api/messages/threads').catch(() => []);
+    const loaded = await api('/api/messages/threads').catch(() => ({ threads: [] }));
+    setThreads(Array.isArray(loaded) ? loaded : loaded.threads || []);
+    if (loaded.onlineUserIds) setOnlineUserIds(loaded.onlineUserIds);
+  }
+
+  async function loadOlderMessages(userId) {
+    if (!userId || !messagePage.hasMore || messagePage.loadingOlder) return;
+    setMessagePage((page) => ({ ...page, loadingOlder: true }));
+    const loaded = await api(`/api/messages/${userId}?limit=30&before=${encodeURIComponent(messagePage.nextCursor)}`);
+    setMessages((current) => [...(loaded.messages || []), ...current]);
+    setMessagePage({ nextCursor: loaded.nextCursor || null, hasMore: Boolean(loaded.hasMore), loadingOlder: false });
+  }
+
+  function mergeMessage(message) {
+    setMessages((current) => {
+      const exists = current.some((item) => item.id === message.id);
+      if (exists) return current.map((item) => (item.id === message.id ? message : item));
+      const inCurrentThread = selectedUserIdRef.current && [message.senderId, message.receiverId].includes(selectedUserIdRef.current);
+      return inCurrentThread ? [...current, message] : current;
+    });
+  }
+
+  async function reactToMessage(messageId, emoji) {
+    const updated = await api(`/api/messages/${messageId}/reactions`, { method: 'POST', body: JSON.stringify({ emoji }) });
+    mergeMessage(updated);
+  }
+
+  async function unsendMessage(messageId) {
+    const updated = await api(`/api/messages/${messageId}`, { method: 'DELETE' });
+    mergeMessage(updated);
+  }
+
+  function sendTyping(receiverId, isTyping) {
+    if (!socket || !receiverId) return;
+    socket.emit(isTyping ? 'typing:start' : 'typing:stop', { receiverId });
   }
 
   function updateVolunteerRole(roleId, action) {
@@ -628,6 +762,7 @@ export default function App() {
 
   useEffect(() => { bootstrap().catch(() => logout()); }, []);
   useEffect(() => { if (user) requestLocation(); }, [Boolean(user)]);
+  useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
   useEffect(() => {
     function refreshOnFocus() {
       if (document.visibilityState === 'visible') loadLocationData(location);
@@ -635,6 +770,34 @@ export default function App() {
     document.addEventListener('visibilitychange', refreshOnFocus);
     return () => document.removeEventListener('visibilitychange', refreshOnFocus);
   }, [location]);
+
+  useEffect(() => {
+    if (!user || !token()) return undefined;
+    const nextSocket = io(API, { auth: { token: token() }, transports: ['websocket', 'polling'] });
+    setSocket(nextSocket);
+    nextSocket.on('message:new', (message) => {
+      mergeMessage(message);
+      loadThreads().catch(console.error);
+    });
+    nextSocket.on('message:update', (message) => {
+      mergeMessage(message);
+      loadThreads().catch(console.error);
+    });
+    nextSocket.on('presence:update', ({ onlineUserIds: ids = [] }) => setOnlineUserIds(ids));
+    nextSocket.on('typing:update', ({ userId, isTyping }) => {
+      setTypingUserIds((current) => {
+        const filtered = current.filter((id) => id !== userId);
+        return isTyping ? [...filtered, userId] : filtered;
+      });
+    });
+    return () => nextSocket.disconnect();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!socket || !selectedUser?.id) return undefined;
+    socket.emit('thread:join', { otherUserId: selectedUser.id });
+    return () => socket.emit('thread:leave', { otherUserId: selectedUser.id });
+  }, [socket, selectedUser?.id]);
 
   function logout() {
     localStorage.removeItem('token');
@@ -645,6 +808,13 @@ export default function App() {
     setUsers([]);
     setConnections([]);
     setMessages([]);
+    setThreads([]);
+    setSocket((activeSocket) => {
+      activeSocket?.disconnect();
+      return null;
+    });
+    setOnlineUserIds([]);
+    setTypingUserIds([]);
   }
 
   function afterLogin(nextUser) {
@@ -672,7 +842,9 @@ export default function App() {
     const index = [
       ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`, tab: 'network' })),
       ...masjids.map((masjid) => ({ id: masjid.id, kind: 'Masjid', title: masjid.name, subtitle: `${masjid.address || ''} ${masjid.city || ''}`, tab: 'organizations' })),
-      ...events.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' }))
+      ...events.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' })),
+      ...lectures.map((lecture) => ({ id: lecture.id, kind: 'Lecture', title: lecture.title, subtitle: `${lecture.speaker} ${lecture.category}`, tab: 'library' })),
+      ...businesses.map((business) => ({ id: business.id, kind: 'Business', title: business.name, subtitle: `${business.category} ${business.city}`, tab: 'businesses' }))
     ];
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
   }, [searchQuery, users, masjids, events]);
@@ -686,7 +858,9 @@ export default function App() {
     organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
     volunteers: <VolunteersScreen roles={volunteerShifts} updateVolunteerRole={updateVolunteerRole} />,
-    messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} loadMessages={loadMessages} loadThreads={loadThreads} />,
+    library: <LibraryScreen />,
+    businesses: <BusinessDirectoryScreen />,
+    messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => setViewedUser(null)} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} />,
     dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} />
   };

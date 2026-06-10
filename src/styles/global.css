@@ -1119,6 +1119,10 @@ a {
   line-height: 1.45;
 }
 
+.chat-bubble p {
+  margin: 0;
+}
+
 .chat-bubble.received {
   background: #f1f5f4;
   color: #23322d;
@@ -1141,6 +1145,56 @@ a {
 .message-list {
   display: grid;
   gap: 10px;
+  max-height: 52vh;
+  overflow-y: auto;
+  align-content: start;
+  padding-right: 4px;
+}
+
+.message-actions,
+.reaction-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.message-actions button,
+.load-more {
+  border: 1px solid #d8e2df;
+  background: rgba(255, 255, 255, 0.9);
+  color: #23322d;
+  border-radius: 999px;
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.chat-bubble.sent .message-actions button {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.reaction-row span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  min-height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.typing-indicator,
+.load-more {
+  justify-self: center;
+  color: #5d716b;
+}
+
+.typing-indicator {
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .profile-actions {

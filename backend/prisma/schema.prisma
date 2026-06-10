@@ -39,6 +39,7 @@ model User {
   registrations    EventRegistration[]
   messagesSent     Message[]           @relation("SentMessages")
   messagesReceived Message[]           @relation("ReceivedMessages")
+  messageReactions MessageReaction[]
   connectionsSent  Connection[]        @relation("ConnectionRequester")
   connectionsGot   Connection[]        @relation("ConnectionReceiver")
 }
@@ -109,8 +110,27 @@ model Message {
   receiverId String
   content    String
   readAt     DateTime?
+  deletedAt  DateTime?
   createdAt  DateTime @default(now())
 
-  sender   User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender    User              @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver  User              @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  reactions MessageReaction[]
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, readAt])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
 }

@@ -3,17 +3,42 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
+import Redis from 'ioredis';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
 
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
 const prisma = new PrismaClient();
 const allowedOrigins = [
   'http://localhost:5173',
   process.env.FRONTEND_URL,
   'https://ummah-connect-psi.vercel.app'
 ].filter(Boolean);
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true
+  }
+});
+const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 }) : null;
+const memoryCache = new Map();
+const onlineUsers = new Map();
+const messageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 45,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+if (redis) {
+  redis.connect().catch((error) => console.error('Redis unavailable, using memory fallback', error.message));
+  redis.on('error', (error) => console.error('Redis error', error.message));
+}
 
 const fallbackMasjids = [
   {
@@ -60,6 +85,50 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 
+io.use((socket, next) => {
+  try {
+    const rawToken = socket.handshake.auth?.token || socket.handshake.headers.authorization?.split(' ')[1];
+    if (!rawToken) return next(new Error('Unauthorized'));
+    socket.user = jwt.verify(rawToken, process.env.JWT_SECRET || 'dev_secret');
+    return next();
+  } catch {
+    return next(new Error('Unauthorized'));
+  }
+});
+
+io.on('connection', (socket) => {
+  const userId = socket.user.id;
+  onlineUsers.set(userId, (onlineUsers.get(userId) || 0) + 1);
+  socket.join(userRoom(userId));
+  emitPresence();
+  emitUnread(userId).catch(console.error);
+
+  socket.on('thread:join', ({ otherUserId }) => {
+    if (otherUserId) socket.join(threadRoom(userId, otherUserId));
+  });
+
+  socket.on('thread:leave', ({ otherUserId }) => {
+    if (otherUserId) socket.leave(threadRoom(userId, otherUserId));
+  });
+
+  socket.on('typing:start', ({ receiverId }) => {
+    if (!receiverId) return;
+    io.to(threadRoom(userId, receiverId)).except(socket.id).emit('typing:update', { userId, isTyping: true });
+  });
+
+  socket.on('typing:stop', ({ receiverId }) => {
+    if (!receiverId) return;
+    io.to(threadRoom(userId, receiverId)).except(socket.id).emit('typing:update', { userId, isTyping: false });
+  });
+
+  socket.on('disconnect', () => {
+    const count = (onlineUsers.get(userId) || 1) - 1;
+    if (count <= 0) onlineUsers.delete(userId);
+    else onlineUsers.set(userId, count);
+    emitPresence();
+  });
+});
+
 function normalizeList(value) {
   if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
   if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
@@ -89,6 +158,83 @@ function publicUser(user) {
 
 function createToken(user) {
   return jwt.sign({ id: user.id, accountType: user.accountType }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '7d' });
+}
+
+function threadIdFor(a, b) {
+  return [a, b].sort().join(':');
+}
+
+function userRoom(userId) {
+  return `user:${userId}`;
+}
+
+function threadRoom(a, b) {
+  return `thread:${threadIdFor(a, b)}`;
+}
+
+function serializeMessage(message) {
+  const reactions = message.reactions || [];
+  return {
+    ...message,
+    content: message.deletedAt ? 'This message was unsent' : message.content,
+    isDeleted: Boolean(message.deletedAt),
+    sender: publicUser(message.sender),
+    receiver: publicUser(message.receiver),
+    reactions: reactions.map((reaction) => ({
+      id: reaction.id,
+      emoji: reaction.emoji,
+      userId: reaction.userId,
+      user: publicUser(reaction.user),
+      createdAt: reaction.createdAt
+    }))
+  };
+}
+
+async function cacheGet(key) {
+  if (redis?.status === 'ready') {
+    const value = await redis.get(key);
+    return value ? JSON.parse(value) : null;
+  }
+  const item = memoryCache.get(key);
+  if (!item || item.expiresAt < Date.now()) return null;
+  return item.value;
+}
+
+async function cacheSet(key, value, seconds = 30) {
+  if (redis?.status === 'ready') {
+    await redis.set(key, JSON.stringify(value), 'EX', seconds);
+    return;
+  }
+  memoryCache.set(key, { value, expiresAt: Date.now() + seconds * 1000 });
+}
+
+async function cacheDel(key) {
+  if (redis?.status === 'ready') {
+    await redis.del(key);
+    return;
+  }
+  memoryCache.delete(key);
+}
+
+async function unreadCount(userId) {
+  const key = `unread:${userId}`;
+  const cached = await cacheGet(key);
+  if (cached != null) return cached;
+  const count = await prisma.message.count({ where: { receiverId: userId, readAt: null, deletedAt: null } });
+  await cacheSet(key, count, 20);
+  return count;
+}
+
+async function invalidateUnread(userId) {
+  await cacheDel(`unread:${userId}`);
+}
+
+function emitPresence() {
+  io.emit('presence:update', { onlineUserIds: [...onlineUsers.keys()] });
+}
+
+async function emitUnread(userId) {
+  io.to(userRoom(userId)).emit('messages:unread', { unread: await unreadCount(userId) });
 }
 
 function auth(req, res, next) {
@@ -356,7 +502,7 @@ app.get('/api/messages/threads', auth, async (req, res) => {
     if (!threads.has(other.id)) {
       threads.set(other.id, {
         user: publicUser(other),
-        lastMessage: message.content,
+        lastMessage: message.deletedAt ? 'This message was unsent' : message.content,
         lastMessageAt: message.createdAt,
         unread: message.receiverId === req.user.id && !message.readAt ? 1 : 0
       });
@@ -365,21 +511,31 @@ app.get('/api/messages/threads', auth, async (req, res) => {
       thread.unread += 1;
     }
   });
-  res.json([...threads.values()]);
+  res.json({ threads: [...threads.values()], unreadTotal: await unreadCount(req.user.id), onlineUserIds: [...onlineUsers.keys()] });
 });
 
 app.get('/api/messages/:userId', auth, async (req, res) => {
   const otherUserId = req.params.userId;
+  const limit = Math.min(Math.max(Number(req.query.limit || 30), 1), 50);
+  const before = req.query.before ? new Date(String(req.query.before)) : null;
+  const filters = [{ OR: [{ senderId: req.user.id, receiverId: otherUserId }, { senderId: otherUserId, receiverId: req.user.id }] }];
+  if (before && Number.isFinite(before.getTime())) filters.push({ createdAt: { lt: before } });
   await prisma.message.updateMany({ where: { senderId: otherUserId, receiverId: req.user.id, readAt: null }, data: { readAt: new Date() } });
+  await invalidateUnread(req.user.id);
   const messages = await prisma.message.findMany({
-    where: { OR: [{ senderId: req.user.id, receiverId: otherUserId }, { senderId: otherUserId, receiverId: req.user.id }] },
-    include: { sender: true, receiver: true },
-    orderBy: { createdAt: 'asc' }
+    where: { AND: filters },
+    include: { sender: true, receiver: true, reactions: { include: { user: true }, orderBy: { createdAt: 'asc' } } },
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1
   });
-  res.json(messages.map((message) => ({ ...message, sender: publicUser(message.sender), receiver: publicUser(message.receiver) })));
+  const hasMore = messages.length > limit;
+  const page = messages.slice(0, limit).reverse();
+  const nextCursor = hasMore ? page[0]?.createdAt : null;
+  await emitUnread(req.user.id);
+  res.json({ messages: page.map(serializeMessage), nextCursor, hasMore });
 });
 
-app.post('/api/messages', auth, async (req, res) => {
+app.post('/api/messages', auth, messageLimiter, async (req, res) => {
   const { receiverId, content } = req.body;
   if (!receiverId || !content?.trim()) return res.status(400).json({ error: 'Receiver and content are required' });
   if (receiverId === req.user.id) return res.status(400).json({ error: 'Cannot message yourself' });
@@ -387,9 +543,57 @@ app.post('/api/messages', auth, async (req, res) => {
   if (!receiver) return res.status(404).json({ error: 'Receiver not found' });
   const message = await prisma.message.create({
     data: { senderId: req.user.id, receiverId, content: content.trim() },
-    include: { sender: true, receiver: true }
+    include: { sender: true, receiver: true, reactions: { include: { user: true } } }
   });
-  res.json({ ...message, sender: publicUser(message.sender), receiver: publicUser(message.receiver) });
+  await invalidateUnread(receiverId);
+  const serialized = serializeMessage(message);
+  io.to(threadRoom(req.user.id, receiverId)).emit('message:new', serialized);
+  io.to(userRoom(receiverId)).emit('message:new', serialized);
+  await emitUnread(receiverId);
+  res.json(serialized);
+});
+
+app.delete('/api/messages/:messageId', auth, async (req, res) => {
+  const message = await prisma.message.findUnique({
+    where: { id: req.params.messageId },
+    include: { sender: true, receiver: true, reactions: { include: { user: true } } }
+  });
+  if (!message) return res.status(404).json({ error: 'Message not found' });
+  if (message.senderId !== req.user.id && req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Only the sender or an admin can unsend this message' });
+  const updated = await prisma.message.update({
+    where: { id: message.id },
+    data: { deletedAt: new Date(), content: '' },
+    include: { sender: true, receiver: true, reactions: { include: { user: true } } }
+  });
+  const serialized = serializeMessage(updated);
+  io.to(threadRoom(updated.senderId, updated.receiverId)).emit('message:update', serialized);
+  io.to(userRoom(updated.senderId)).emit('message:update', serialized);
+  io.to(userRoom(updated.receiverId)).emit('message:update', serialized);
+  res.json(serialized);
+});
+
+app.post('/api/messages/:messageId/reactions', auth, async (req, res) => {
+  const emoji = String(req.body.emoji || '').trim().slice(0, 8);
+  if (!emoji) return res.status(400).json({ error: 'Emoji is required' });
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message || ![message.senderId, message.receiverId].includes(req.user.id)) return res.status(404).json({ error: 'Message not found' });
+  const existing = await prisma.messageReaction.findUnique({
+    where: { messageId_userId_emoji: { messageId: message.id, userId: req.user.id, emoji } }
+  });
+  if (existing) {
+    await prisma.messageReaction.delete({ where: { id: existing.id } });
+  } else {
+    await prisma.messageReaction.create({ data: { messageId: message.id, userId: req.user.id, emoji } });
+  }
+  const updated = await prisma.message.findUnique({
+    where: { id: message.id },
+    include: { sender: true, receiver: true, reactions: { include: { user: true }, orderBy: { createdAt: 'asc' } } }
+  });
+  const serialized = serializeMessage(updated);
+  io.to(threadRoom(updated.senderId, updated.receiverId)).emit('message:update', serialized);
+  io.to(userRoom(updated.senderId)).emit('message:update', serialized);
+  io.to(userRoom(updated.receiverId)).emit('message:update', serialized);
+  res.json(serialized);
 });
 
 app.get('/api/location/masjids', async (req, res) => {
@@ -458,4 +662,4 @@ app.get('/api/prayer-times', async (req, res) => {
 });
 
 const port = process.env.PORT || 5000;
-app.listen(port, () => console.log(`API running on http://localhost:${port}`));
+server.listen(port, () => console.log(`API running on http://localhost:${port}`));
