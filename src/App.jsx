@@ -237,7 +237,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost }) {
+function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment }) {
   const orgAccount = isOrganizationAccount(user);
   const favoritePrograms = favoriteMasjids.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program) => ({ ...program, masjid })));
   return (
@@ -255,7 +255,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
             <button onClick={() => setTab('messages')}><Mail size={18} />Messages</button>
           </div>
         </section>
-        <PostFeed posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} />
+        <PostFeed posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} />
       </section>
       <aside className="right-rail">
         <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
@@ -292,7 +292,9 @@ function FavoritePrograms({ programs, openOrganization }) {
   );
 }
 
-function PostFeed({ posts, openOrganization, toggleLikePost, toggleSavePost }) {
+function PostFeed({ posts, openOrganization, toggleLikePost, toggleSavePost, addPostComment }) {
+  const [commentForms, setCommentForms] = useState({});
+  const [commentingPostId, setCommentingPostId] = useState('');
   function sharePost(post) {
     const text = `${post.title} - ${post.organization?.name || 'Ummah Connect'}`;
     if (navigator.share) {
@@ -300,6 +302,18 @@ function PostFeed({ posts, openOrganization, toggleLikePost, toggleSavePost }) {
     } else {
       navigator.clipboard?.writeText(text).catch(() => {});
       alert('Post title copied.');
+    }
+  }
+  async function submitComment(event, post) {
+    event.preventDefault();
+    const content = (commentForms[post.id] || '').trim();
+    if (!content) return;
+    setCommentingPostId(post.id);
+    try {
+      await addPostComment(post, content);
+      setCommentForms((forms) => ({ ...forms, [post.id]: '' }));
+    } finally {
+      setCommentingPostId('');
     }
   }
   return (
@@ -322,10 +336,24 @@ function PostFeed({ posts, openOrganization, toggleLikePost, toggleSavePost }) {
             {post.eventTime && <div className="meta-line"><CalendarDays size={16} />{new Date(post.eventTime).toLocaleString()}</div>}
             <div className="post-social-row">
               <button onClick={() => toggleLikePost(post)}><HeartHandshake size={17} />{post.isLiked ? 'Liked' : 'Like'}{post.likeCount ? ` ${post.likeCount}` : ''}</button>
+              <button onClick={() => setCommentForms((forms) => ({ ...forms, [post.id]: forms[post.id] || '' }))}><MessageCircle size={17} />Comment{post.commentCount ? ` ${post.commentCount}` : ''}</button>
               <button onClick={() => post.organization?.id && openOrganization(post.organization.id)}><Building2 size={17} />View masjid</button>
               <button onClick={() => sharePost(post)}><Send size={17} />Share</button>
               <button onClick={() => toggleSavePost(post)}><Library size={17} />{post.isSaved ? 'Saved' : 'Save'}</button>
               {post.eventTime && <button onClick={() => post.organization?.id && openOrganization(post.organization.id)}><CalendarDays size={17} />Event</button>}
+            </div>
+            <div className="post-comments">
+              {(post.comments || []).map((comment) => (
+                <div className="comment-row" key={comment.id}>
+                  <div className="tiny-avatar">{comment.author?.avatarUrl ? <img src={comment.author.avatarUrl} alt="" /> : initials(comment.author?.name || 'U')}</div>
+                  <p><strong>{comment.author?.name || 'Community member'}</strong>{comment.content}</p>
+                </div>
+              ))}
+              {post.commentCount > (post.comments || []).length && <span className="comment-more">{post.commentCount - (post.comments || []).length} more comments</span>}
+              <form className="comment-form" onSubmit={(event) => submitComment(event, post)}>
+                <input value={commentForms[post.id] || ''} maxLength={500} onChange={(event) => setCommentForms((forms) => ({ ...forms, [post.id]: event.target.value }))} placeholder="Add a comment" />
+                <button type="submit" disabled={commentingPostId === post.id || !(commentForms[post.id] || '').trim()}><Send size={15} /></button>
+              </form>
             </div>
             <div className="tag-row">{post.isLiked && <span>Liked</span>}{post.isSaved && <span>Saved</span>}{post.isFromFavoriteMasjid && <span>Favorite masjid</span>}{post.isFromFollowedMasjid && <span>Following</span>}{post.followerCount ? <span>{post.followerCount} followers</span> : null}</div>
           </article>
@@ -2186,6 +2214,12 @@ export default function App() {
     await loadPosts();
   }
 
+  async function addPostComment(post, content) {
+    if (!post?.id) return;
+    await api(`/api/posts/${post.id}/comments`, { method: 'POST', body: JSON.stringify({ content }) });
+    await loadPosts();
+  }
+
   async function loadOpportunities() {
     const loaded = await api('/api/opportunities').catch(() => []);
     setOpportunities(loaded);
@@ -2588,7 +2622,7 @@ export default function App() {
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} />,
+    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} />,
     events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,

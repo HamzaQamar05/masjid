@@ -213,8 +213,10 @@ function publicOrganization(org, viewerId) {
 
 function publicPost(post) {
   if (!post) return null;
+  const comments = post.comments || [];
+  const { comments: _comments, _count, ...safePost } = post;
   return {
-    ...post,
+    ...safePost,
     author: publicUser(post.author),
     organization: post.organization ? {
       id: post.organization.id,
@@ -224,7 +226,12 @@ function publicPost(post) {
       address: post.organization.address,
       imageUrl: post.organization.imageUrl,
       verified: post.organization.verified
-    } : null
+    } : null,
+    comments: comments.map((comment) => ({
+      ...comment,
+      author: publicUser(comment.author)
+    })),
+    commentCount: _count?.comments ?? comments.length
   };
 }
 
@@ -732,7 +739,13 @@ app.get('/api/posts', auth, async (req, res) => {
   const liked = await prisma.postLike.findMany({ where: { userId: req.user.id }, select: { postId: true } });
   const likedIds = new Set(liked.map((item) => item.postId));
   const posts = await prisma.post.findMany({
-    include: { author: true, organization: { include: { followers: true } }, likedBy: true },
+    include: {
+      author: true,
+      organization: { include: { followers: true } },
+      likedBy: true,
+      comments: { include: { author: true }, orderBy: { createdAt: 'desc' }, take: 3 },
+      _count: { select: { comments: true } }
+    },
     orderBy: { createdAt: 'desc' },
     take: 100
   });
@@ -780,6 +793,19 @@ app.post('/api/posts/:id/like', auth, async (req, res) => {
 app.delete('/api/posts/:id/like', auth, async (req, res) => {
   await prisma.postLike.deleteMany({ where: { postId: req.params.id, userId: req.user.id } });
   res.json({ liked: false });
+});
+
+app.post('/api/posts/:id/comments', auth, async (req, res) => {
+  const content = String(req.body.content || '').trim();
+  if (!content) return res.status(400).json({ error: 'Comment is required' });
+  if (content.length > 500) return res.status(400).json({ error: 'Comment must be 500 characters or less' });
+  const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  const comment = await prisma.postComment.create({
+    data: { postId: post.id, authorId: req.user.id, content },
+    include: { author: true }
+  });
+  res.json({ ...comment, author: publicUser(comment.author) });
 });
 
 app.post('/api/organizations/:id/posts', auth, async (req, res) => {
