@@ -1986,6 +1986,34 @@ a {
     background: #0f766e;
     color: #fff;
   }
+  .network-search-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.network-search {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 16px;
+  color: var(--muted);
+}
+
+.network-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.network-search input::placeholder {
+  color: var(--muted);
+}
 
   .page-header {
     min-height: 180px;
