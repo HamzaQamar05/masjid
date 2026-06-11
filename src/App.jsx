@@ -239,6 +239,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
 
 function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization }) {
   const orgAccount = isOrganizationAccount(user);
+  const favoritePrograms = favoriteMasjids.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program) => ({ ...program, masjid })));
   return (
     <div className="content-grid">
       <section className="feed-column">
@@ -258,6 +259,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
       </section>
       <aside className="right-rail">
         <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
+        <FavoritePrograms programs={favoritePrograms} openOrganization={openOrganization} />
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
         <section className="panel">
           <div className="section-title"><h2>Account</h2><button onClick={() => setTab('profile')}>Edit</button></div>
@@ -265,6 +267,28 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
         </section>
       </aside>
     </div>
+  );
+}
+
+function FavoritePrograms({ programs, openOrganization }) {
+  return (
+    <section className="panel favorite-programs">
+      <div className="section-title"><div><p className="eyebrow">Favorite masjids</p><h2>Programs first</h2></div><span>{programs.length}</span></div>
+      <div className="stack-list">
+        {programs.slice(0, 4).map((program, index) => (
+          <article className="mini-row" key={program.id || `${program.masjid.id}-${program.title}-${index}`}>
+            <strong>{program.title || 'Program'}</strong>
+            <span>{program.masjid.name} - {program.dayTime || 'Schedule TBD'}</span>
+            <p>{program.teacher || program.description || program.location || 'Details coming soon.'}</p>
+            <div className="manager-row">
+              <button onClick={() => openOrganization(program.masjid.id)}>Open masjid</button>
+              {program.registrationLink && <a className="secondary-button" href={program.registrationLink} target="_blank" rel="noreferrer">Register</a>}
+            </div>
+          </article>
+        ))}
+        {!programs.length && <p className="helper-text">Enable prayer notifications on a masjid profile to see that masjid's classes and programs first.</p>}
+      </div>
+    </section>
   );
 }
 

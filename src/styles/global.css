@@ -917,6 +917,10 @@ a {
   gap: 12px;
 }
 
+.favorite-programs .mini-row {
+  border-left: 4px solid #0f766e;
+}
+
 .nearby-list {
   display: grid;
   gap: 10px;
