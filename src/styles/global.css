@@ -379,6 +379,7 @@ a {
 }
 
 .icon-button,
+.dm-top-button,
 .post-button,
 .primary-button,
 .secondary-button {
@@ -397,6 +398,27 @@ a {
 .icon-button {
   width: 40px;
   padding: 0;
+}
+
+.dm-top-button {
+  position: relative;
+  min-width: 40px;
+  padding: 0;
+}
+
+.dm-top-button span {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  min-height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #9f1239;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .post-button,
@@ -2070,7 +2092,11 @@ a {
 :root[data-theme="dark"] .application-card,
 :root[data-theme="dark"] .application-modal,
 :root[data-theme="dark"] .filter-panel,
-:root[data-theme="dark"] .modal-backdrop .panel {
+:root[data-theme="dark"] .modal-backdrop .panel,
+:root[data-theme="dark"] .capacity-block,
+:root[data-theme="dark"] .donation-card,
+:root[data-theme="dark"] .info-block,
+:root[data-theme="dark"] .mini-row {
   background: #1c2522;
   border-color: var(--border);
   color: var(--text);
@@ -2084,7 +2110,9 @@ a {
 :root[data-theme="dark"] .search-results button,
 :root[data-theme="dark"] .mini-row,
 :root[data-theme="dark"] .metric-card,
-:root[data-theme="dark"] .chat-bubble.received {
+:root[data-theme="dark"] .chat-bubble.received,
+:root[data-theme="dark"] .qr-box,
+:root[data-theme="dark"] .reaction-row span {
   background: var(--panel-soft);
   border-color: var(--border);
   color: var(--text);
@@ -2110,6 +2138,10 @@ a {
 
 :root[data-theme="dark"] .helper-text,
 :root[data-theme="dark"] .search-results small,
+:root[data-theme="dark"] .capacity-block div:first-child,
+:root[data-theme="dark"] .donation-card,
+:root[data-theme="dark"] .info-block p,
+:root[data-theme="dark"] .meta-line,
 :root[data-theme="dark"] p,
 :root[data-theme="dark"] span,
 :root[data-theme="dark"] small {
@@ -2142,12 +2174,16 @@ a {
 
 :root[data-theme="dark"] .secondary-button,
 :root[data-theme="dark"] .icon-button,
+:root[data-theme="dark"] .dm-top-button,
 :root[data-theme="dark"] .manager-row button,
 :root[data-theme="dark"] .filter-bar button,
 :root[data-theme="dark"] .post-actions button,
 :root[data-theme="dark"] .composer-actions button,
 :root[data-theme="dark"] .compact-card button,
-:root[data-theme="dark"] .inbox-list button {
+:root[data-theme="dark"] .inbox-list button,
+:root[data-theme="dark"] .message-actions button,
+:root[data-theme="dark"] .load-more,
+:root[data-theme="dark"] .mobile-logout {
   background: var(--panel-soft);
   border-color: var(--border);
   color: var(--brand-strong);
@@ -2155,13 +2191,31 @@ a {
 
 :root[data-theme="dark"] .secondary-button *,
 :root[data-theme="dark"] .icon-button *,
+:root[data-theme="dark"] .dm-top-button *,
 :root[data-theme="dark"] .manager-row button *,
 :root[data-theme="dark"] .filter-bar button *,
 :root[data-theme="dark"] .post-actions button *,
 :root[data-theme="dark"] .composer-actions button *,
 :root[data-theme="dark"] .compact-card button *,
-:root[data-theme="dark"] .inbox-list button * {
+:root[data-theme="dark"] .inbox-list button *,
+:root[data-theme="dark"] .message-actions button *,
+:root[data-theme="dark"] .load-more *,
+:root[data-theme="dark"] .mobile-logout * {
   color: inherit;
+}
+
+:root[data-theme="dark"] .dm-top-button span {
+  background: #f43f5e;
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .sponsor-strip,
+:root[data-theme="dark"] .post-head > span,
+:root[data-theme="dark"] .event-top > span,
+:root[data-theme="dark"] .library-card > span {
+  background: #2b3835;
+  border-color: var(--border);
+  color: var(--brand-strong);
 }
 
 :root[data-theme="dark"] .secondary-button.danger,
