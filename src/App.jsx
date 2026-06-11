@@ -874,7 +874,25 @@ function printableHoursReport(user, visible) {
 }
 
 function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToOpportunity, title, subtitle }) {
-  const visible = opportunities.filter((item) => item.type === type || (type === 'VOLUNTEER' && item.type === 'OPPORTUNITY'));
+  const [opportunityQuery, setOpportunityQuery] = useState('');
+  const [workTypeFilter, setWorkTypeFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const baseVisible = opportunities.filter((item) => item.type === type || (type === 'VOLUNTEER' && item.type === 'OPPORTUNITY'));
+  const workTypeOptions = ['all', ...Array.from(new Set(baseVisible.map((item) => item.workType || item.type).filter(Boolean)))];
+  const locationOptions = ['all', ...Array.from(new Set(baseVisible.map((item) => item.location).filter(Boolean)))];
+  const visible = baseVisible.filter((item) => {
+    const application = item.applications?.[0];
+    const query = opportunityQuery.trim().toLowerCase();
+    const haystack = `${item.title} ${item.description || ''} ${item.requirements || ''} ${item.organization?.name || ''} ${item.location || ''} ${Array.isArray(item.skills) ? item.skills.join(' ') : item.skills || ''}`.toLowerCase();
+    if (query && !haystack.includes(query)) return false;
+    if (workTypeFilter !== 'all' && (item.workType || item.type) !== workTypeFilter) return false;
+    if (locationFilter !== 'all' && item.location !== locationFilter) return false;
+    if (statusFilter === 'applied' && !application) return false;
+    if (statusFilter === 'open' && application) return false;
+    if (!['all', 'applied', 'open'].includes(statusFilter) && application?.status !== statusFilter) return false;
+    return true;
+  });
   const verifiedTotal = visible.reduce((sum, item) => sum + (item.applications?.[0]?.approvedHours || 0), 0);
   const [activeOpportunity, setActiveOpportunity] = useState(null);
   const [applicationForms, setApplicationForms] = useState({});
@@ -915,19 +933,35 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
           <button className="secondary-button" onClick={() => printableHoursReport(user, visible)}>Download PDF</button>
         </section>
       )}
+      <section className="filter-panel opportunity-filters">
+        <label><Search size={15} /><input placeholder={`Search ${type === 'JOB' ? 'jobs' : 'volunteer roles'}`} value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} /></label>
+        <select value={workTypeFilter} onChange={(event) => setWorkTypeFilter(event.target.value)}>{workTypeOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All types' : item}</option>)}</select>
+        <select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}>{locationOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All locations' : item}</option>)}</select>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="all">Any status</option>
+          <option value="open">Open to apply</option>
+          <option value="applied">Applied</option>
+          <option value="PENDING">Pending</option>
+          <option value="REVIEWING">Reviewing</option>
+          <option value="INTERVIEW">Interview</option>
+          <option value="APPROVED">Approved</option>
+          <option value="COMPLETED">Completed</option>
+        </select>
+      </section>
       <div className="card-grid two">
         {visible.map((item) => {
           const application = item.applications?.[0];
           return (
-          <article className="role-card" key={item.id}>
+          <article className={item.isFromFavoriteMasjid ? 'role-card opportunity-card favorite-opportunity' : 'role-card opportunity-card'} key={item.id}>
             <div className="role-icon">{item.type === 'JOB' ? <Briefcase size={24} /> : <HeartHandshake size={24} />}</div>
             <div>
               <h3>{item.title}</h3>
               <p>{item.organization?.name || 'Community organization'}</p>
-              <TagRow tags={[item.location || 'Location TBD', item.workType || item.type, item.deadline && `Deadline ${new Date(item.deadline).toLocaleDateString()}`, item.hours ? `${item.hours} hours` : null, ...(Array.isArray(item.skills) ? item.skills : normalizeList(item.skills))].filter(Boolean)} />
+              <TagRow tags={[item.isFromFavoriteMasjid && 'Favorite masjid', item.location || 'Location TBD', item.workType || item.type, item.deadline && `Deadline ${new Date(item.deadline).toLocaleDateString()}`, item.hours ? `${item.hours} hours` : null, ...(Array.isArray(item.skills) ? item.skills : normalizeList(item.skills))].filter(Boolean)} />
             </div>
             <p>{item.description || 'No description yet.'}</p>
             {item.requirements && <div className="check-row"><span>Requirements</span><strong>{item.requirements}</strong></div>}
+            <div className="check-row"><span>Masjid</span><strong>{item.organization?.name || 'Community organization'}</strong></div>
             <div className="check-row"><span>Status</span><strong>{application?.status || 'Not applied'}</strong></div>
             <div className="check-row"><span>Approved hours</span><strong>{application?.approvedHours || 0}</strong></div>
             {application?.note && <div className="check-row"><span>Your note</span><strong>{application.note}</strong></div>}
@@ -936,7 +970,7 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
             </div>
           </article>
         );})}
-        {!visible.length && <p className="helper-text">No {type.toLowerCase()} posts yet.</p>}
+        {!visible.length && <section className="panel"><p className="helper-text">No listings match those filters yet.</p></section>}
       </div>
       {activeOpportunity && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Apply to ${activeOpportunity.title}`}>
