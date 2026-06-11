@@ -237,7 +237,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization }) {
+function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleSavePost }) {
   const orgAccount = isOrganizationAccount(user);
   const favoritePrograms = favoriteMasjids.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program) => ({ ...program, masjid })));
   return (
@@ -255,7 +255,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
             <button onClick={() => setTab('messages')}><Mail size={18} />Messages</button>
           </div>
         </section>
-        <PostFeed posts={posts} openOrganization={openOrganization} />
+        <PostFeed posts={posts} openOrganization={openOrganization} toggleSavePost={toggleSavePost} />
       </section>
       <aside className="right-rail">
         <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
@@ -292,7 +292,7 @@ function FavoritePrograms({ programs, openOrganization }) {
   );
 }
 
-function PostFeed({ posts, openOrganization }) {
+function PostFeed({ posts, openOrganization, toggleSavePost }) {
   function sharePost(post) {
     const text = `${post.title} - ${post.organization?.name || 'Ummah Connect'}`;
     if (navigator.share) {
@@ -323,10 +323,10 @@ function PostFeed({ posts, openOrganization }) {
             <div className="post-social-row">
               <button onClick={() => post.organization?.id && openOrganization(post.organization.id)}><Building2 size={17} />View masjid</button>
               <button onClick={() => sharePost(post)}><Send size={17} />Share</button>
-              <button onClick={() => alert('Saved posts are coming soon.') }><HeartHandshake size={17} />Save</button>
+              <button onClick={() => toggleSavePost(post)}><HeartHandshake size={17} />{post.isSaved ? 'Saved' : 'Save'}</button>
               {post.eventTime && <button onClick={() => post.organization?.id && openOrganization(post.organization.id)}><CalendarDays size={17} />Event</button>}
             </div>
-            <div className="tag-row">{post.isFromFavoriteMasjid && <span>Favorite masjid</span>}{post.isFromFollowedMasjid && <span>Following</span>}{post.followerCount ? <span>{post.followerCount} followers</span> : null}</div>
+            <div className="tag-row">{post.isSaved && <span>Saved</span>}{post.isFromFavoriteMasjid && <span>Favorite masjid</span>}{post.isFromFollowedMasjid && <span>Following</span>}{post.followerCount ? <span>{post.followerCount} followers</span> : null}</div>
           </article>
         ))}
         {!posts.length && <p className="helper-text">Follow masjids or ask an admin to create posts to populate your feed.</p>}
@@ -2173,6 +2173,12 @@ export default function App() {
     setPosts(loadedPosts);
   }
 
+  async function toggleSavePost(post) {
+    if (!post?.id) return;
+    await api(`/api/posts/${post.id}/save`, { method: post.isSaved ? 'DELETE' : 'POST' });
+    await loadPosts();
+  }
+
   async function loadOpportunities() {
     const loaded = await api('/api/opportunities').catch(() => []);
     setOpportunities(loaded);
@@ -2575,7 +2581,7 @@ export default function App() {
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
+    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleSavePost={toggleSavePost} />,
     events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
