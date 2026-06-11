@@ -63,6 +63,10 @@ function isOrganizationAccount(user) {
   return ['MASJID', 'MSA'].includes(user?.accountType);
 }
 
+function isImamAccount(user) {
+  return ['IMAM', 'STUDENT_OF_KNOWLEDGE'].includes(user?.accountType);
+}
+
 function isUserAccount(user) {
   return user?.accountType === 'USER';
 }
@@ -203,7 +207,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
 
 function NavigationList({ tab, setTab, user, hasDashboardAccess }) {
   const visibleNav = navItems.filter((item) => {
-    if (item.key === 'dashboard') return canManageOrgs(user) || hasDashboardAccess;
+    if (item.key === 'dashboard') return canManageOrgs(user) || hasDashboardAccess || isImamAccount(user);
     if (isOrganizationAccount(user) && ['volunteers', 'jobs', 'businesses'].includes(item.key)) return false;
     return true;
   });
@@ -939,6 +943,73 @@ function ReadOnlyProfile({ profile }) {
 
 function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
+}
+
+function ImamDashboard({ user, social, setTab }) {
+  const linkedMasjids = social.affiliatedMasjids || [];
+  const linkedPrograms = linkedMasjids.flatMap((affiliation) => (affiliation.organization?.classes || []).map((program) => ({ ...program, organization: affiliation.organization })));
+  const profileFields = [user.bio, user.avatarUrl, user.bannerUrl, user.city || user.location, user.skills?.length, user.availability].filter(Boolean).length;
+  const completion = Math.round((profileFields / 6) * 100);
+  return (
+    <Page title="Imam Dashboard" subtitle="Professional hub for profile, messages, linked masjids, classes, reminders, and future requests.">
+      <div className="content-grid">
+        <section className="feed-column">
+          <section className="panel ops-overview">
+            <div className="section-title"><div><p className="eyebrow">Imam workspace</p><h2>{user.name}</h2></div><span>{displayRoleLabel(user.accountType)}</span></div>
+            <div className="metric-grid compact">
+              <button type="button" className="metric-card metric-button" onClick={() => setTab('profile')}><span>Profile</span><strong>{completion}%</strong><em>Bio, topics, image, and availability</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setTab('messages')}><span>Messages</span><strong>DM</strong><em>Users and masjids can contact you</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setTab('organizations')}><span>Linked masjids</span><strong>{linkedMasjids.length}</strong><em>Affiliations and roles</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setTab('network')}><span>Network</span><strong>{social.connections.length}</strong><em>Community connections</em></button>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title"><h2>Profile Overview</h2><button onClick={() => setTab('profile')}>Edit</button></div>
+            <div className="profile-hero"><div className="profile-avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials(user.name)}</div><div><h2>{user.name}</h2><p>{user.bio || 'Add your bio, credentials, topics, and availability.'}</p></div></div>
+            <TagRow tags={[...(user.skills || []), user.availability, user.city || user.location].filter(Boolean)} />
+          </section>
+
+          <section className="panel">
+            <div className="section-title"><h2>Classes & Programs</h2><span>{linkedPrograms.length}</span></div>
+            <div className="stack-list">
+              {linkedPrograms.map((program, index) => (
+                <article className="mini-row" key={program.id || `${program.organization.id}-${program.title}-${index}`}>
+                  <strong>{program.title}</strong>
+                  <span>{program.organization.name} - {program.dayTime || 'Schedule TBD'}</span>
+                  <p>{program.description || program.notes || program.location || 'Program details are not filled in yet.'}</p>
+                </article>
+              ))}
+              {!linkedPrograms.length && <p className="helper-text">No linked classes yet. Ask the masjid dashboard manager to add your class or attach you to the masjid team.</p>}
+            </div>
+          </section>
+        </section>
+
+        <aside className="right-rail">
+          <section className="panel">
+            <div className="section-title"><h2>Linked Masjids</h2><span>{linkedMasjids.length}</span></div>
+            <div className="stack-list">
+              {linkedMasjids.map((affiliation) => (
+                <article className="mini-row" key={affiliation.id}>
+                  <strong>{affiliation.organization?.name || 'Masjid'}</strong>
+                  <span>{affiliation.roleLabel}</span>
+                  <p>{affiliation.organization?.city || affiliation.organization?.address || 'Location not added yet.'}</p>
+                </article>
+              ))}
+              {!linkedMasjids.length && <p className="helper-text">No masjid affiliation is attached yet.</p>}
+            </div>
+          </section>
+          <section className="panel">
+            <div className="section-title"><h2>Requests</h2><span>Later</span></div>
+            <div className="stack-list">
+              <article className="mini-row"><strong>Speaking requests</strong><span>Khutbah, halaqah, class, and counseling request workflow planned.</span></article>
+              <article className="mini-row"><strong>Reminder posts</strong><span>Imam-authored reminders can build on the existing post model.</span></article>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </Page>
+  );
 }
 
 function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
@@ -2185,12 +2256,12 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
+    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
   };
 
   return (
     <>
-      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0} theme={theme} toggleTheme={toggleTheme}>
+      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)} theme={theme} toggleTheme={toggleTheme}>
         {screens[tab] || screens.home}
       </Shell>
       <section className="mobile-bottom-nav">
