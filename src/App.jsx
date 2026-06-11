@@ -1069,6 +1069,15 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
   const allApplications = scopedOrganizations.flatMap((org) => (org.opportunities || []).flatMap((opportunity) => (opportunity.applications || []).map((application) => ({ org, opportunity, application }))));
   const pendingRegistrations = scopedOrganizations.flatMap((org) => (org.events || []).flatMap((event) => (event.registrations || []).filter((registration) => registration.status === 'PENDING').map((registration) => ({ org, event, registration }))));
   const allFollowers = scopedOrganizations.flatMap((org) => (org.followers || []).map((follow) => ({ org, follow })));
+  const adminStats = {
+    users: users.filter((person) => person.accountType === 'USER').length,
+    masjids: myOrganizations.filter((org) => ['MASJID', 'MSA'].includes(String(org.type).toUpperCase())).length,
+    imams: users.filter((person) => ['IMAM', 'STUDENT_OF_KNOWLEDGE'].includes(person.accountType)).length,
+    businesses: users.filter((person) => person.accountType === 'BUSINESS').length,
+    posts: myOrganizations.reduce((sum, org) => sum + (org.posts || []).length, 0),
+    opportunities: myOrganizations.reduce((sum, org) => sum + (org.opportunities || []).length, 0),
+    reports: 0
+  };
   const metrics = {
     followers: scopedOrganizations.reduce((sum, org) => sum + (org.followerCount || 0), 0),
     posts: scopedOrganizations.reduce((sum, org) => sum + (org.posts || []).length, 0),
@@ -1764,6 +1773,27 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
             </div>
           </section>
           {user.accountType === 'ADMIN' && (
+            <>
+            <section className="panel">
+              <div className="section-title"><h2>Platform Overview</h2><span>Admin</span></div>
+              <div className="metric-grid compact">
+                <article className="metric-card"><span>Users</span><strong>{adminStats.users}</strong><em>Community members</em></article>
+                <article className="metric-card"><span>Masjids/MSAs</span><strong>{adminStats.masjids}</strong><em>Organization profiles</em></article>
+                <article className="metric-card"><span>Imams</span><strong>{adminStats.imams}</strong><em>Religious service accounts</em></article>
+                <article className="metric-card"><span>Posts</span><strong>{adminStats.posts}</strong><em>Organization content</em></article>
+                <article className="metric-card"><span>Opportunities</span><strong>{adminStats.opportunities}</strong><em>Jobs and volunteer listings</em></article>
+                <article className="metric-card"><span>Reports</span><strong>{adminStats.reports}</strong><em>Moderation queue</em></article>
+              </div>
+            </section>
+            <section className="panel">
+              <div className="section-title"><h2>Reports & Settings</h2><span>Launch</span></div>
+              <div className="stack-list">
+                <article className="mini-row"><strong>Reports queue</strong><span>No report model yet. Add backend reports before enabling public report actions.</span></article>
+                <article className="mini-row"><strong>Role management</strong><span>Use the searchable role table below for admins, masjids, imams, businesses, and users.</span></article>
+                <article className="mini-row"><strong>Production readiness</strong><span>Neon migration is committed. Render should run Prisma migrate/deploy before starting the API.</span></article>
+                <article className="mini-row"><strong>Content oversight</strong><span>Use search plus dashboard filters to review posts, programs, jobs, volunteers, and applications.</span></article>
+              </div>
+            </section>
             <section className="panel">
               <div className="section-title"><h2>User Roles</h2></div>
               <div className="stack-list">
@@ -1779,6 +1809,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                 ))}
               </div>
             </section>
+            </>
           )}
         </aside>
       </div>
