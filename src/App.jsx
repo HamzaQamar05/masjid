@@ -1125,6 +1125,13 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
 function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
   const editingSelf = !viewedUser || viewedUser.id === user.id;
   const profile = viewedUser || user;
+  const [editMode, setEditMode] = useState(false);
+  const [activeList, setActiveList] = useState(null);
+
+  const followers = social.followers || social.connections || [];
+  const following = social.following || social.connections || [];
+  const favoriteMasjids = (social.followingMasjids || []).slice(0, 2);
+
   const [form, setForm] = useState(() => ({
     name: profile.name || '',
     city: profile.city || '',
@@ -1157,62 +1164,207 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
       languages: listToText(profile.languages),
       hobbies: listToText(profile.hobbies)
     });
+    setEditMode(false);
   }, [profile.id]);
 
   async function submit(event) {
     event.preventDefault();
     const updated = await api('/api/me', {
       method: 'PUT',
-      body: JSON.stringify({ ...form, skills: textToList(form.skills), interests: textToList(form.interests), languages: textToList(form.languages), hobbies: textToList(form.hobbies) })
+      body: JSON.stringify({
+        ...form,
+        skills: textToList(form.skills),
+        interests: textToList(form.interests),
+        languages: textToList(form.languages),
+        hobbies: textToList(form.hobbies)
+      })
     });
     onSave(updated);
+    setEditMode(false);
+  }
+
+  function openList(title, people) {
+    setActiveList({ title, people });
   }
 
   return (
-    <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="Complete community profile with banner, avatar, role, applications, followed masjids, and network context.">
+    <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="Community profile, network, favorite masjids, and personal details.">
       {!editingSelf && <button className="secondary-button" onClick={onCloseViewed}>Back to your profile</button>}
+
       <section className="panel profile-detail">
         <div className="profile-banner" style={profileBannerStyle(profile)} />
-        <div className="profile-hero"><div className="profile-avatar">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : initials(profile.name)}</div><div><h2>{profile.name}</h2><p>{displayRoleLabel(profile.accountType)} - {profile.city || 'No city yet'}</p><div className="trust-strip"><span>{displayRoleLabel(profile.accountType)}</span><span>{profile.location || profile.city || 'Location open'}</span><span>{(profile.skills || []).length} skills</span></div></div></div>
-        {editingSelf ? (
-          <form className="profile-form" onSubmit={submit}>
+
+        <div className="profile-header-card">
+          <div className="profile-avatar large">
+            {profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : initials(profile.name)}
+          </div>
+
+          <div className="profile-main-info">
+            <h2>{profile.name}</h2>
+            <p>{displayRoleLabel(profile.accountType)} · {profile.city || profile.location || 'Location open'}</p>
+            {profile.bio && <p className="profile-bio">{profile.bio}</p>}
+          </div>
+
+          <div className="profile-actions">
+            {editingSelf ? (
+              <button className="primary-button" onClick={() => setEditMode(!editMode)}>
+                {editMode ? 'Cancel edit' : 'Edit profile'}
+              </button>
+            ) : (
+              <>
+                <button className="primary-button">Follow</button>
+                <button className="secondary-button">Message</button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="profile-stat-row">
+          <button type="button" onClick={() => openList('Followers', followers)}>
+            <strong>{followers.length}</strong>
+            <span>Followers</span>
+          </button>
+          <button type="button" onClick={() => openList('Following', following)}>
+            <strong>{following.length}</strong>
+            <span>Following</span>
+          </button>
+          <button type="button">
+            <strong>{favoriteMasjids.length}</strong>
+            <span>Favorite Masjids</span>
+          </button>
+        </div>
+
+        {editMode && editingSelf ? (
+          <form className="profile-form clean-edit-form" onSubmit={submit}>
             <div className="form-grid">
-              {['name', 'city', 'location', 'availability', 'avatarUrl', 'bannerUrl'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
+              {['name', 'city', 'location', 'availability', 'avatarUrl', 'bannerUrl'].map((field) => (
+                <input
+                  key={field}
+                  placeholder={field}
+                  value={form[field]}
+                  onChange={(event) => setForm({ ...form, [field]: event.target.value })}
+                />
+              ))}
             </div>
-            <p className="helper-text">Avatar and banner images make profiles feel complete across feed, networking, and messaging.</p>
+
             <textarea placeholder="Bio" value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} />
             <textarea placeholder="Experience" value={form.experience} onChange={(event) => setForm({ ...form, experience: event.target.value })} />
             <textarea placeholder="Education" value={form.education} onChange={(event) => setForm({ ...form, education: event.target.value })} />
+
             <input placeholder="Skills, comma separated" value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
             <input placeholder="Interests, comma separated" value={form.interests} onChange={(event) => setForm({ ...form, interests: event.target.value })} />
             <input placeholder="Languages, comma separated" value={form.languages} onChange={(event) => setForm({ ...form, languages: event.target.value })} />
             <input placeholder="Hobbies, comma separated" value={form.hobbies} onChange={(event) => setForm({ ...form, hobbies: event.target.value })} />
+
             <button className="primary-button">Save profile</button>
           </form>
-        ) : <ReadOnlyProfile profile={profile} />}
+        ) : (
+          <ProfileSections profile={profile} />
+        )}
       </section>
+
       <section className="panel profile-social">
-        <div className="profile-trust-grid">
-          <article><span>Connections</span><strong>{social.connections.length}</strong></article>
-          <article><span>Following Masjids</span><strong>{social.followingMasjids.length}</strong></article>
-          <article><span>Masjid Roles</span><strong>{social.affiliatedMasjids.length}</strong></article>
+        <div className="section-title">
+          <h2>Favorite Masjids</h2>
+          <span>Max 2</span>
         </div>
-        <div className="section-title"><h2>Connections</h2><span>{social.connections.length}</span></div>
-        <div className="tag-row">{social.connections.map((person) => <span key={person.id}>{person.name}</span>)}</div>
-        {!social.connections.length && <p className="helper-text">No accepted connections yet.</p>}
-        <div className="section-title"><h2>Following Masjids</h2><span>{social.followingMasjids.length}</span></div>
-        <div className="tag-row">{social.followingMasjids.map((org) => <span key={org.id}>{org.name}</span>)}</div>
-        {!social.followingMasjids.length && <p className="helper-text">No followed masjids yet.</p>}
-        <div className="section-title"><h2>Masjid Roles</h2><span>{social.affiliatedMasjids.length}</span></div>
+
+        <div className="favorite-masjid-grid">
+          {favoriteMasjids.map((org) => (
+            <article className="favorite-masjid-card" key={org.id}>
+              <div className="mini-org-avatar">{org.logoUrl ? <img src={org.logoUrl} alt="" /> : initials(org.name)}</div>
+              <div>
+                <strong>{org.name}</strong>
+                <span>{org.city || org.location || 'Location open'}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        {!favoriteMasjids.length && <p className="helper-text">No favorite masjids yet.</p>}
+
+        <div className="section-title">
+          <h2>Masjid Roles</h2>
+          <span>{social.affiliatedMasjids.length}</span>
+        </div>
+
         <div className="stack-list">
-          {social.affiliatedMasjids.map((item) => <article className="mini-row" key={item.id}><strong>{item.organization?.name}</strong><span>{item.roleLabel}</span></article>)}
+          {social.affiliatedMasjids.map((item) => (
+            <article className="mini-row" key={item.id}>
+              <strong>{item.organization?.name}</strong>
+              <span>{item.roleLabel}</span>
+            </article>
+          ))}
         </div>
+
         {!social.affiliatedMasjids.length && <p className="helper-text">No masjid roles listed yet.</p>}
       </section>
+
+      {activeList && (
+        <div className="modal-backdrop" onClick={() => setActiveList(null)}>
+          <div className="bottom-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="sheet-header">
+              <h2>{activeList.title}</h2>
+              <button onClick={() => setActiveList(null)}>×</button>
+            </div>
+
+            <div className="people-list">
+              {activeList.people.map((person) => (
+                <article className="person-list-row" key={person.id}>
+                  <div className="profile-avatar small">
+                    {person.avatarUrl ? <img src={person.avatarUrl} alt="" /> : initials(person.name)}
+                  </div>
+                  <div>
+                    <strong>{person.name}</strong>
+                    <span>{displayRoleLabel(person.accountType)}</span>
+                  </div>
+                  <button className="secondary-button">View</button>
+                </article>
+              ))}
+            </div>
+
+            {!activeList.people.length && <p className="helper-text">Nothing to show yet.</p>}
+          </div>
+        </div>
+      )}
     </Page>
   );
 }
 
+function ProfileSections({ profile }) {
+  return (
+    <div className="profile-section-stack">
+      <ProfileInfoBlock title="About" text={profile.bio || 'No bio added yet.'} />
+      <ProfileInfoBlock title="Experience" text={profile.experience || 'No experience added yet.'} />
+      <ProfileInfoBlock title="Education" text={profile.education || 'No education added yet.'} />
+
+      <ChipSection title="Skills" items={profile.skills || []} />
+      <ChipSection title="Interests" items={profile.interests || []} />
+      <ChipSection title="Languages" items={profile.languages || []} />
+      <ChipSection title="Hobbies" items={profile.hobbies || []} />
+    </div>
+  );
+}
+
+function ProfileInfoBlock({ title, text }) {
+  return (
+    <article className="profile-info-block">
+      <h3>{title}</h3>
+      <p>{text}</p>
+    </article>
+  );
+}
+
+function ChipSection({ title, items }) {
+  return (
+    <article className="profile-info-block">
+      <h3>{title}</h3>
+      <div className="tag-row">
+        {items.length ? items.map((item) => <span key={item}>{item}</span>) : <span>Not added yet</span>}
+      </div>
+    </article>
+  );
+}
 function ReadOnlyProfile({ profile }) {
   return (
     <div className="profile-read">
