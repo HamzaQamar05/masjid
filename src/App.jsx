@@ -408,28 +408,73 @@ function OrganizationsScreen({ masjids, locationStatus, requestLocation, openOrg
 }
 
 function NetworkScreen({ user, users, connections, loadNetwork, openProfile, startMessage }) {
+  const [networkQuery, setNetworkQuery] = useState('');
+
   function connectionFor(otherId) {
     return connections.find((connection) => [connection.requesterId, connection.receiverId].includes(otherId));
   }
+
   async function connect(otherId) {
     await api(`/api/connections/${otherId}`, { method: 'POST' });
     await loadNetwork();
   }
+
   async function accept(connectionId) {
     await api(`/api/connections/${connectionId}`, { method: 'PUT', body: JSON.stringify({ status: 'ACCEPTED' }) });
     await loadNetwork();
   }
+
+  const filteredUsers = users.filter((person) => {
+    const query = networkQuery.trim().toLowerCase();
+    if (!query) return true;
+
+    return [
+      person.name,
+      person.email,
+      person.accountType,
+      displayRoleLabel(person.accountType),
+      person.city,
+      person.location,
+      person.bio,
+      ...(person.skills || [])
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+
   return (
     <Page title="Network" subtitle="LinkedIn-style community directory for masjids, imams, professionals, businesses, and volunteers.">
+      <section className="panel network-search-panel">
+        <label className="network-search">
+          <Search size={18} />
+          <input
+            value={networkQuery}
+            onChange={(event) => setNetworkQuery(event.target.value)}
+            placeholder="Search users, masjids, imams, skills, city, or role"
+          />
+        </label>
+        <p className="helper-text">
+          Showing {filteredUsers.length} of {users.length} profiles
+        </p>
+      </section>
+
       <div className="card-grid two">
-        {users.map((person) => {
+        {filteredUsers.map((person) => {
           const connection = connectionFor(person.id);
           const incoming = connection?.receiverId === user.id && connection.status === 'PENDING';
+
           return (
             <article className="person-card" key={person.id}>
               <div className="person-banner" style={profileBannerStyle(person)} />
-              <button className="profile-avatar network-avatar" onClick={() => openProfile(person)}>{person.avatarUrl ? <img src={person.avatarUrl} alt="" /> : initials(person.name)}</button>
-              <div><h3>{person.name}</h3><p>{displayRoleLabel(person.accountType)} - {person.city || person.location || 'Location not added'}</p></div>
+              <button className="profile-avatar network-avatar" onClick={() => openProfile(person)}>
+                {person.avatarUrl ? <img src={person.avatarUrl} alt="" /> : initials(person.name)}
+              </button>
+              <div>
+                <h3>{person.name}</h3>
+                <p>{displayRoleLabel(person.accountType)} - {person.city || person.location || 'Location not added'}</p>
+              </div>
               <p>{person.bio || 'No bio yet.'}</p>
               <TagRow tags={person.skills || []} />
               <div className="card-footer profile-actions">
@@ -442,6 +487,10 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
             </article>
           );
         })}
+
+        {!filteredUsers.length && (
+          <p className="helper-text">No profiles match your search.</p>
+        )}
       </div>
     </Page>
   );
