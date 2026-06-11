@@ -1131,7 +1131,10 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
   const followers = social.followers || social.connections || [];
   const following = social.following || social.connections || [];
   const favoriteMasjids = (social.followingMasjids || []).slice(0, 2);
-
+async function unfavoriteMasjid(orgId) {
+  await api(`/api/organizations/${orgId}/follow`, { method: 'DELETE' });
+  window.location.reload();
+}
   const [form, setForm] = useState(() => ({
     name: profile.name || '',
     city: profile.city || '',
