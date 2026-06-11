@@ -1725,7 +1725,14 @@ a {
 }
 
 .auth-screen {
+  position: relative;
   padding: 34px;
+}
+
+.auth-theme-toggle {
+  position: absolute;
+  top: 18px;
+  right: 18px;
 }
 
 .auth-screen .brand-mark {
@@ -1756,6 +1763,43 @@ a {
   font-weight: 850;
   margin-top: 14px;
   padding: 12px 0 0;
+}
+
+:root[data-theme="dark"] .auth-only {
+  background: #151d1a;
+}
+
+:root[data-theme="dark"] .auth-screen {
+  background: var(--panel-bg);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme="dark"] .auth-screen .brand-mark {
+  background: #1faba2;
+  color: #061f1c;
+}
+
+:root[data-theme="dark"] .auth-screen .muted {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .auth-form input,
+:root[data-theme="dark"] .auth-form textarea {
+  background: #202a27;
+  border-color: #364742;
+  color: #edf5f2;
+}
+
+:root[data-theme="dark"] .auth-form input:focus,
+:root[data-theme="dark"] .auth-form textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(31, 171, 162, 0.16);
+}
+
+:root[data-theme="dark"] .auth-screen .text-btn {
+  color: var(--brand-strong);
 }
 
 @media (max-width: 1180px) {

@@ -2272,7 +2272,7 @@ export default function App() {
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
   }, [searchQuery, users, posts, masjids, events, opportunities]);
 
-  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} /></div>;
+  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} /></div>;
 
   const screens = {
     home: <HomeScreen user={user} posts={posts} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
