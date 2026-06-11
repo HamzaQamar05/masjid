@@ -50,6 +50,7 @@ model User {
   volunteerApplications    VolunteerApplication[] @relation("VolunteerApplicant")
   volunteerApprovals       VolunteerApplication[] @relation("VolunteerApprover")
   savedPosts               SavedPost[]
+  likedPosts               PostLike[]
 }
 
 model Organization {
@@ -103,12 +104,26 @@ model Post {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   author       User         @relation("PostCreator", fields: [authorId], references: [id], onDelete: Cascade)
   savedBy      SavedPost[]
+  likedBy      PostLike[]
 
   @@index([organizationId, createdAt])
   @@index([type, createdAt])
 }
 
 model SavedPost {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+}
+
+model PostLike {
   id        String   @id @default(cuid())
   postId    String
   userId    String

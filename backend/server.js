@@ -729,18 +729,25 @@ app.get('/api/posts', auth, async (req, res) => {
   const favoriteIds = new Set(follows.filter((follow) => follow.notifyPrayers).map((follow) => follow.organizationId));
   const saved = await prisma.savedPost.findMany({ where: { userId: req.user.id }, select: { postId: true } });
   const savedIds = new Set(saved.map((item) => item.postId));
+  const liked = await prisma.postLike.findMany({ where: { userId: req.user.id }, select: { postId: true } });
+  const likedIds = new Set(liked.map((item) => item.postId));
   const posts = await prisma.post.findMany({
-    include: { author: true, organization: { include: { followers: true } } },
+    include: { author: true, organization: { include: { followers: true } }, likedBy: true },
     orderBy: { createdAt: 'desc' },
     take: 100
   });
-  res.json(posts.map((post) => ({
-    ...publicPost(post),
-    isFromFollowedMasjid: followedIds.has(post.organizationId),
-    isFromFavoriteMasjid: favoriteIds.has(post.organizationId),
-    isSaved: savedIds.has(post.id),
-    followerCount: post.organization?.followers?.length || 0
-  })).sort((a, b) => Number(b.isFromFavoriteMasjid) - Number(a.isFromFavoriteMasjid) || Number(b.isFromFollowedMasjid) - Number(a.isFromFollowedMasjid) || new Date(b.createdAt) - new Date(a.createdAt)));
+  res.json(posts.map((post) => {
+    const { likedBy, ...postRecord } = post;
+    return {
+      ...publicPost(postRecord),
+      isFromFollowedMasjid: followedIds.has(post.organizationId),
+      isFromFavoriteMasjid: favoriteIds.has(post.organizationId),
+      isSaved: savedIds.has(post.id),
+      isLiked: likedIds.has(post.id),
+      likeCount: likedBy.length,
+      followerCount: post.organization?.followers?.length || 0
+    };
+  }).sort((a, b) => Number(b.isFromFavoriteMasjid) - Number(a.isFromFavoriteMasjid) || Number(b.isFromFollowedMasjid) - Number(a.isFromFollowedMasjid) || new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
 app.post('/api/posts/:id/save', auth, async (req, res) => {
@@ -757,6 +764,22 @@ app.post('/api/posts/:id/save', auth, async (req, res) => {
 app.delete('/api/posts/:id/save', auth, async (req, res) => {
   await prisma.savedPost.deleteMany({ where: { postId: req.params.id, userId: req.user.id } });
   res.json({ saved: false });
+});
+
+app.post('/api/posts/:id/like', auth, async (req, res) => {
+  const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  const liked = await prisma.postLike.upsert({
+    where: { postId_userId: { postId: post.id, userId: req.user.id } },
+    create: { postId: post.id, userId: req.user.id },
+    update: {}
+  });
+  res.json({ liked: true, id: liked.id });
+});
+
+app.delete('/api/posts/:id/like', auth, async (req, res) => {
+  await prisma.postLike.deleteMany({ where: { postId: req.params.id, userId: req.user.id } });
+  res.json({ liked: false });
 });
 
 app.post('/api/organizations/:id/posts', auth, async (req, res) => {

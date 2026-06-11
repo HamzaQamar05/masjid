@@ -801,7 +801,7 @@ a {
 
 .post-social-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 8px;
   border-top: 1px solid #e4ece9;
   padding-top: 12px;
