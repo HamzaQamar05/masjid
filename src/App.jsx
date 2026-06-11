@@ -145,7 +145,7 @@ async function showPrayerNotification(title, body, tag) {
   new Notification(title, { body, tag });
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, theme, toggleTheme }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, theme, toggleTheme, onNotificationsClick }) {
   const [navOpen, setNavOpen] = useState(false);
   function navigate(key) {
     setTab(key);
