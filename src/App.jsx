@@ -237,7 +237,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment }) {
+function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment }) {
   const orgAccount = isOrganizationAccount(user);
   const favoritePrograms = favoriteMasjids.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program) => ({ ...program, masjid })));
   return (
@@ -255,7 +255,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
             <button onClick={() => setTab('messages')}><Mail size={18} />Messages</button>
           </div>
         </section>
-        <PostFeed posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} />
+        <PostFeed user={user} posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />
       </section>
       <aside className="right-rail">
         <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
@@ -292,7 +292,7 @@ function FavoritePrograms({ programs, openOrganization }) {
   );
 }
 
-function PostFeed({ posts, openOrganization, toggleLikePost, toggleSavePost, addPostComment }) {
+function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment }) {
   const [commentForms, setCommentForms] = useState({});
   const [commentingPostId, setCommentingPostId] = useState('');
   function sharePost(post) {
@@ -315,6 +315,9 @@ function PostFeed({ posts, openOrganization, toggleLikePost, toggleSavePost, add
     } finally {
       setCommentingPostId('');
     }
+  }
+  function canDeleteComment(comment) {
+    return comment.author?.id === user?.id || user?.accountType === 'ADMIN' || isOrganizationAccount(user);
   }
   return (
     <section className="panel">
@@ -346,7 +349,10 @@ function PostFeed({ posts, openOrganization, toggleLikePost, toggleSavePost, add
               {(post.comments || []).map((comment) => (
                 <div className="comment-row" key={comment.id}>
                   <div className="tiny-avatar">{comment.author?.avatarUrl ? <img src={comment.author.avatarUrl} alt="" /> : initials(comment.author?.name || 'U')}</div>
-                  <p><strong>{comment.author?.name || 'Community member'}</strong>{comment.content}</p>
+                  <div className="comment-bubble">
+                    <p><strong>{comment.author?.name || 'Community member'}</strong>{comment.content}</p>
+                    {canDeleteComment(comment) && <button aria-label="Delete comment" onClick={() => deletePostComment(post, comment)}><X size={13} /></button>}
+                  </div>
                 </div>
               ))}
               {post.commentCount > (post.comments || []).length && <span className="comment-more">{post.commentCount - (post.comments || []).length} more comments</span>}
@@ -2220,6 +2226,12 @@ export default function App() {
     await loadPosts();
   }
 
+  async function deletePostComment(post, comment) {
+    if (!post?.id || !comment?.id) return;
+    await api(`/api/posts/${post.id}/comments/${comment.id}`, { method: 'DELETE' });
+    await loadPosts();
+  }
+
   async function loadOpportunities() {
     const loaded = await api('/api/opportunities').catch(() => []);
     setOpportunities(loaded);
@@ -2622,7 +2634,7 @@ export default function App() {
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} />,
+    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />,
     events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,

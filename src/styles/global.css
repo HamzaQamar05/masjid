@@ -856,21 +856,45 @@ a {
   object-fit: cover;
 }
 
-.comment-row p {
+.comment-bubble {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 6px;
+  align-items: start;
   margin: 0;
   padding: 8px 10px;
   border-radius: 8px;
   background: #f4f8f7;
   color: #344944;
+}
+
+.comment-bubble p {
+  margin: 0;
   font-size: 13px;
   line-height: 1.45;
 }
 
-.comment-row strong {
+.comment-bubble strong {
   display: block;
   margin-bottom: 2px;
   color: #1e3f3b;
   font-size: 12px;
+}
+
+.comment-bubble button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: transparent;
+  color: #7c8b86;
+}
+
+.comment-bubble button:hover {
+  background: #e6efec;
+  color: #b42318;
 }
 
 .comment-more {
@@ -2828,7 +2852,7 @@ a {
   border-color: var(--border);
 }
 
-:root[data-theme="dark"] .comment-row p,
+:root[data-theme="dark"] .comment-bubble,
 :root[data-theme="dark"] .tiny-avatar,
 :root[data-theme="dark"] .comment-form input {
   background: var(--panel-soft);
@@ -2836,8 +2860,13 @@ a {
   color: var(--text);
 }
 
-:root[data-theme="dark"] .comment-row strong {
+:root[data-theme="dark"] .comment-bubble strong {
   color: var(--text);
+}
+
+:root[data-theme="dark"] .comment-bubble button:hover {
+  background: #3a2028;
+  color: #fecdd3;
 }
 
 :root[data-theme="dark"] .progress {

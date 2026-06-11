@@ -808,6 +808,18 @@ app.post('/api/posts/:id/comments', auth, async (req, res) => {
   res.json({ ...comment, author: publicUser(comment.author) });
 });
 
+app.delete('/api/posts/:postId/comments/:commentId', auth, async (req, res) => {
+  const comment = await prisma.postComment.findUnique({
+    where: { id: req.params.commentId },
+    include: { post: true }
+  });
+  if (!comment || comment.postId !== req.params.postId) return res.status(404).json({ error: 'Comment not found' });
+  const canDelete = comment.authorId === req.user.id || req.user.accountType === 'ADMIN' || await canManageOrganization(req.user, comment.post.organizationId);
+  if (!canDelete) return res.status(403).json({ error: 'Only the comment author, post masjid, or admin can delete this comment' });
+  await prisma.postComment.delete({ where: { id: comment.id } });
+  res.json({ deleted: true });
+});
+
 app.post('/api/organizations/:id/posts', auth, async (req, res) => {
   if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this masjid or admin can create posts' });
   if (!req.body.title?.trim() || !req.body.content?.trim()) return res.status(400).json({ error: 'Title and content are required' });
