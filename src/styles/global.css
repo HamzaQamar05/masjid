@@ -168,14 +168,14 @@
 }
 
 :root[data-theme="dark"] {
-  --page-bg: #111816;
-  --panel-bg: #18231f;
-  --panel-soft: #21302b;
-  --text: #eef7f3;
-  --muted: #a9bbb5;
-  --border: #31453f;
-  --brand: #2dd4bf;
-  --brand-strong: #5eead4;
+  --page-bg: #101513;
+  --panel-bg: #19211f;
+  --panel-soft: #242d2a;
+  --text: #f1f5f3;
+  --muted: #b7c3bf;
+  --border: #3a4642;
+  --brand: #35cbb9;
+  --brand-strong: #7de6dc;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
 }
 
@@ -2016,6 +2016,23 @@ a {
   color: var(--text);
 }
 
+:root[data-theme="dark"] .composer,
+:root[data-theme="dark"] .feed-post,
+:root[data-theme="dark"] .event-card,
+:root[data-theme="dark"] .organization-card,
+:root[data-theme="dark"] .nearby-card,
+:root[data-theme="dark"] .compact-card,
+:root[data-theme="dark"] .hours-summary,
+:root[data-theme="dark"] .application-card,
+:root[data-theme="dark"] .application-modal,
+:root[data-theme="dark"] .filter-panel,
+:root[data-theme="dark"] .modal-backdrop .panel {
+  background: #1c2522;
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
 :root[data-theme="dark"] input,
 :root[data-theme="dark"] textarea,
 :root[data-theme="dark"] select,
@@ -2027,6 +2044,11 @@ a {
   background: var(--panel-soft);
   border-color: var(--border);
   color: var(--text);
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #93a39d;
 }
 
 :root[data-theme="dark"] .brand,
@@ -2050,16 +2072,90 @@ a {
   color: var(--muted);
 }
 
+:root[data-theme="dark"] a,
+:root[data-theme="dark"] .text-action,
+:root[data-theme="dark"] .section-title button {
+  color: var(--brand-strong);
+}
+
+:root[data-theme="dark"] button {
+  color: var(--text);
+}
+
 :root[data-theme="dark"] .primary-button,
 :root[data-theme="dark"] .post-button {
   background: var(--brand);
   border-color: var(--brand);
-  color: #08211d;
+  color: #06201d;
+}
+
+:root[data-theme="dark"] .primary-button *,
+:root[data-theme="dark"] .post-button *,
+:root[data-theme="dark"] .filter-bar button.active *,
+:root[data-theme="dark"] .mobile-bottom-nav button.active * {
+  color: #06201d;
 }
 
 :root[data-theme="dark"] .secondary-button,
-:root[data-theme="dark"] .icon-button {
+:root[data-theme="dark"] .icon-button,
+:root[data-theme="dark"] .manager-row button,
+:root[data-theme="dark"] .filter-bar button,
+:root[data-theme="dark"] .post-actions button,
+:root[data-theme="dark"] .composer-actions button,
+:root[data-theme="dark"] .compact-card button,
+:root[data-theme="dark"] .inbox-list button {
   background: var(--panel-soft);
   border-color: var(--border);
   color: var(--brand-strong);
+}
+
+:root[data-theme="dark"] .secondary-button *,
+:root[data-theme="dark"] .icon-button *,
+:root[data-theme="dark"] .manager-row button *,
+:root[data-theme="dark"] .filter-bar button *,
+:root[data-theme="dark"] .post-actions button *,
+:root[data-theme="dark"] .composer-actions button *,
+:root[data-theme="dark"] .compact-card button *,
+:root[data-theme="dark"] .inbox-list button * {
+  color: inherit;
+}
+
+:root[data-theme="dark"] .secondary-button.danger,
+:root[data-theme="dark"] .manager-row .danger {
+  background: #3a2028;
+  border-color: #7f3346;
+  color: #fecdd3;
+}
+
+:root[data-theme="dark"] .side-nav button.active,
+:root[data-theme="dark"] .side-nav button:hover,
+:root[data-theme="dark"] .inbox-list button.active,
+:root[data-theme="dark"] .filter-bar button.active,
+:root[data-theme="dark"] .metric-button:hover,
+:root[data-theme="dark"] .metric-button:focus-visible {
+  background: #283532;
+  border-color: var(--brand);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .status-pill,
+:root[data-theme="dark"] .tag-row span,
+:root[data-theme="dark"] .profile-meta span,
+:root[data-theme="dark"] .role-meta span {
+  background: #2b3835;
+  border-color: var(--border);
+  color: #d9e7e3;
+}
+
+:root[data-theme="dark"] .chat-bubble.sent {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .chat-bubble.sent *,
+:root[data-theme="dark"] .profile-avatar,
+:root[data-theme="dark"] .org-logo,
+:root[data-theme="dark"] .brand span,
+:root[data-theme="dark"] .dm-dot {
+  color: #ffffff;
 }
