@@ -799,6 +799,29 @@ a {
   background: #f4f8f7;
 }
 
+.post-social-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid #e4ece9;
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.post-social-row button {
+  min-width: 0;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #d8e2df;
+  border-radius: 8px;
+  background: #f8fbfa;
+  color: #526761;
+  font-weight: 850;
+}
+
 .right-rail {
   display: grid;
   gap: 14px;
@@ -1550,6 +1573,12 @@ a {
   line-height: 1.35;
 }
 
+.inbox-list small {
+  color: #6c7d77;
+  font-size: 11px;
+  font-weight: 750;
+}
+
 .inbox-list em {
   position: absolute;
   right: 10px;
@@ -1598,6 +1627,15 @@ a {
 
 .chat-bubble p {
   margin: 0;
+}
+
+.chat-bubble small {
+  display: block;
+  margin-top: 6px;
+  color: inherit;
+  opacity: 0.72;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .chat-bubble.received {
@@ -2338,6 +2376,10 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .post-social-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .masjid-hub-hero {
     min-height: 170px;
     align-items: flex-end;
@@ -2552,6 +2594,7 @@ a {
 :root[data-theme="dark"] .manager-row button,
 :root[data-theme="dark"] .filter-bar button,
 :root[data-theme="dark"] .post-actions button,
+:root[data-theme="dark"] .post-social-row button,
 :root[data-theme="dark"] .composer-actions button,
 :root[data-theme="dark"] .compact-card button,
 :root[data-theme="dark"] .mobile-bottom-nav button,
@@ -2570,6 +2613,7 @@ a {
 :root[data-theme="dark"] .manager-row button *,
 :root[data-theme="dark"] .filter-bar button *,
 :root[data-theme="dark"] .post-actions button *,
+:root[data-theme="dark"] .post-social-row button *,
 :root[data-theme="dark"] .composer-actions button *,
 :root[data-theme="dark"] .compact-card button *,
 :root[data-theme="dark"] .mobile-bottom-nav button *,

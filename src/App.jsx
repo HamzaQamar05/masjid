@@ -269,6 +269,15 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
 }
 
 function PostFeed({ posts, openOrganization }) {
+  function sharePost(post) {
+    const text = `${post.title} - ${post.organization?.name || 'Ummah Connect'}`;
+    if (navigator.share) {
+      navigator.share({ title: post.title, text }).catch(() => {});
+    } else {
+      navigator.clipboard?.writeText(text).catch(() => {});
+      alert('Post title copied.');
+    }
+  }
   return (
     <section className="panel">
       <div className="section-title"><div><p className="eyebrow">Feed</p><h2>Community updates</h2></div><span>{posts.length}</span></div>
@@ -287,7 +296,13 @@ function PostFeed({ posts, openOrganization }) {
             <p>{post.content}</p>
             {post.location && <div className="meta-line"><MapPin size={16} />{post.location}</div>}
             {post.eventTime && <div className="meta-line"><CalendarDays size={16} />{new Date(post.eventTime).toLocaleString()}</div>}
-            {post.isFromFollowedMasjid && <span className="status-pill">Following</span>}
+            <div className="post-social-row">
+              <button onClick={() => post.organization?.id && openOrganization(post.organization.id)}><Building2 size={17} />View masjid</button>
+              <button onClick={() => sharePost(post)}><Send size={17} />Share</button>
+              <button onClick={() => alert('Saved posts are coming soon.') }><HeartHandshake size={17} />Save</button>
+              {post.eventTime && <button onClick={() => post.organization?.id && openOrganization(post.organization.id)}><CalendarDays size={17} />Event</button>}
+            </div>
+            <div className="tag-row">{post.isFromFavoriteMasjid && <span>Favorite masjid</span>}{post.isFromFollowedMasjid && <span>Following</span>}{post.followerCount ? <span>{post.followerCount} followers</span> : null}</div>
           </article>
         ))}
         {!posts.length && <p className="helper-text">Follow masjids or ask an admin to create posts to populate your feed.</p>}
@@ -596,7 +611,13 @@ function MessagesScreen({
   const [draft, setDraft] = useState('');
   const [conversationQuery, setConversationQuery] = useState('');
   const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
-  const visibleUsers = users.filter((person) => `${person.name} ${person.accountType} ${person.city || ''}`.toLowerCase().includes(conversationQuery.trim().toLowerCase()));
+  const visibleUsers = users
+    .filter((person) => `${person.name} ${person.accountType} ${person.city || ''}`.toLowerCase().includes(conversationQuery.trim().toLowerCase()))
+    .sort((a, b) => {
+      const aThread = threads.find((item) => item.user.id === a.id);
+      const bThread = threads.find((item) => item.user.id === b.id);
+      return new Date(bThread?.lastMessageAt || 0) - new Date(aThread?.lastMessageAt || 0);
+    });
 
   useEffect(() => {
     if (!selectedUser?.id) return undefined;
@@ -658,6 +679,7 @@ function MessagesScreen({
                 <strong>{person.name}</strong>
                 <span>{isOnline ? 'Online' : displayRoleLabel(person.accountType)}</span>
                 <p>{thread?.lastMessage || person.city || 'No messages yet'}</p>
+                <small>{thread?.lastMessageAt ? new Date(thread.lastMessageAt).toLocaleString() : displayRoleLabel(person.accountType)}</small>
                 {thread?.unread > 0 && <em>{thread.unread}</em>}
               </button>
             );
@@ -673,6 +695,7 @@ function MessagesScreen({
                 {messages.map((message) => (
                   <div className={message.senderId === selectedUser.id ? 'chat-bubble received' : 'chat-bubble sent'} key={message.id}>
                     <p>{message.content}</p>
+                    <small>{message.createdAt ? new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</small>
                     {!!message.reactions?.length && <div className="reaction-row">{message.reactions.map((reaction) => <span key={reaction.id}>{reaction.emoji}</span>)}</div>}
                     {!message.isDeleted && (
                       <div className="message-actions">
