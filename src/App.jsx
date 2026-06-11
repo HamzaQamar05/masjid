@@ -674,9 +674,18 @@ function MessagesScreen({
 }) {
   const [draft, setDraft] = useState('');
   const [conversationQuery, setConversationQuery] = useState('');
+  const [conversationFilter, setConversationFilter] = useState('all');
   const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
+  const unreadThreads = threads.filter((thread) => thread.unread > 0).length;
+  const onlineContacts = users.filter((person) => onlineUserIds.includes(person.id)).length;
+  const quickReplies = ['Assalamu alaikum', 'JazakAllah khair', 'I can help with this', 'Can you share more details?'];
   const visibleUsers = users
-    .filter((person) => `${person.name} ${person.accountType} ${person.city || ''}`.toLowerCase().includes(conversationQuery.trim().toLowerCase()))
+    .filter((person) => {
+      const thread = threads.find((item) => item.user.id === person.id);
+      const matchesQuery = `${person.name} ${person.accountType} ${person.city || ''} ${thread?.lastMessage || ''}`.toLowerCase().includes(conversationQuery.trim().toLowerCase());
+      const matchesFilter = conversationFilter === 'unread' ? (thread?.unread || 0) > 0 : conversationFilter === 'online' ? onlineUserIds.includes(person.id) : true;
+      return matchesQuery && matchesFilter;
+    })
     .sort((a, b) => {
       const aThread = threads.find((item) => item.user.id === a.id);
       const bThread = threads.find((item) => item.user.id === b.id);
@@ -729,11 +738,30 @@ function MessagesScreen({
     }
   }
 
+  function onComposerKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
+
   return (
     <Page title="Messages" subtitle="Instagram-style inbox for users, masjids, imams, and community organizations.">
       <div className="messaging-layout">
         <section className="panel inbox-list">
+          <div className="dm-inbox-summary">
+            <strong>{threads.length}</strong><span>Conversations</span>
+            <strong>{unreadThreads}</strong><span>Unread</span>
+            <strong>{onlineContacts}</strong><span>Online</span>
+          </div>
           <label className="dm-search"><Search size={16} /><input placeholder="Search conversations" value={conversationQuery} onChange={(event) => setConversationQuery(event.target.value)} /></label>
+          <div className="dm-filter-row">
+            {[
+              ['all', 'All'],
+              ['unread', 'Unread'],
+              ['online', 'Online']
+            ].map(([key, label]) => <button key={key} className={conversationFilter === key ? 'active' : ''} onClick={() => setConversationFilter(key)}>{label}</button>)}
+          </div>
           {visibleUsers.map((person) => {
             const thread = threads.find((item) => item.user.id === person.id);
             const isOnline = onlineUserIds.includes(person.id);
@@ -771,12 +799,15 @@ function MessagesScreen({
                 ))}
                 {typingUserIds.includes(selectedUser.id) && <div className="typing-indicator">{selectedUser.name} is typing...</div>}
               </div>
+              <div className="quick-reply-row">
+                {quickReplies.map((reply) => <button key={reply} onClick={() => setDraft((current) => current ? `${current} ${reply}` : reply)}>{reply}</button>)}
+              </div>
               <div className="message-composer">
-                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${selectedUser.name}`} />
+                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKeyDown} placeholder={`Message ${selectedUser.name}`} />
                 <button className="primary-button" onClick={sendMessage} aria-label="Send message"><Send size={18} /></button>
               </div>
             </>
-          ) : <p className="helper-text">Choose a person to start messaging.</p>}
+          ) : <div className="dm-empty-state"><MessageCircle size={30} /><h2>Select a conversation</h2><p>Search for a user, masjid, imam, or organization to start a direct message.</p></div>}
         </section>
       </div>
     </Page>

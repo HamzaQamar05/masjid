@@ -111,6 +111,64 @@
   width: 100%;
 }
 
+.dm-inbox-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.dm-inbox-summary strong,
+.dm-inbox-summary span {
+  text-align: center;
+}
+
+.dm-inbox-summary strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.dm-inbox-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.dm-filter-row,
+.quick-reply-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dm-filter-row button,
+.quick-reply-row button {
+  width: auto;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dm-filter-row button.active,
+.dm-filter-row button:hover,
+.quick-reply-row button:hover {
+  border-color: var(--brand);
+  background: #edf7f4;
+  color: var(--brand);
+  box-shadow: none;
+}
+
 .inbox-list button {
   grid-template-columns: 42px 1fr auto;
   align-items: center;
@@ -143,6 +201,29 @@
   min-height: 46px;
   max-height: 120px;
   resize: vertical;
+}
+
+.quick-reply-row {
+  align-self: end;
+}
+
+.dm-empty-state {
+  min-height: 42vh;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.dm-empty-state h2,
+.dm-empty-state p {
+  margin: 0;
+}
+
+.dm-empty-state h2 {
+  color: var(--text);
 }
 
 @media (max-width: 760px) {
@@ -1728,6 +1809,31 @@ a {
   font-weight: 900;
 }
 
+.inbox-list .dm-inbox-summary span {
+  color: var(--muted);
+}
+
+.inbox-list .dm-filter-row button,
+.quick-reply-row button {
+  width: auto;
+  min-height: 34px;
+  display: inline-flex;
+  gap: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  text-align: center;
+  position: static;
+}
+
+.inbox-list .dm-filter-row button.active,
+.inbox-list .dm-filter-row button:hover,
+.quick-reply-row button:hover {
+  border-color: var(--brand);
+  background: #edf7f4;
+  color: var(--brand);
+  box-shadow: none;
+}
+
 .message-thread {
   display: grid;
   gap: 12px;
@@ -2819,6 +2925,30 @@ a {
 :root[data-theme="dark"] .metric-button:focus-visible,
 :root[data-theme="dark"] .dashboard-menu-grid button.active,
 :root[data-theme="dark"] .dashboard-menu-grid button:hover {
+  background: #283532;
+  border-color: var(--brand);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .dm-inbox-summary {
+  background: var(--panel-soft);
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] .inbox-list .dm-inbox-summary span {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .inbox-list .dm-filter-row button,
+:root[data-theme="dark"] .quick-reply-row button {
+  background: var(--panel-soft);
+  border-color: var(--border);
+  color: var(--brand-strong);
+}
+
+:root[data-theme="dark"] .inbox-list .dm-filter-row button.active,
+:root[data-theme="dark"] .inbox-list .dm-filter-row button:hover,
+:root[data-theme="dark"] .quick-reply-row button:hover {
   background: #283532;
   border-color: var(--brand);
   color: var(--text);
