@@ -2133,7 +2133,15 @@ a {
 :root[data-theme="dark"] textarea::placeholder {
   color: #93a39d;
 }
+:root[data-theme="dark"] .composer-main button {
+  background: var(--panel-soft);
+  border-color: var(--border);
+  color: var(--text);
+}
 
+:root[data-theme="dark"] .composer-main button:hover {
+  background: #283532;
+}
 :root[data-theme="dark"] input:focus,
 :root[data-theme="dark"] textarea:focus,
 :root[data-theme="dark"] select:focus,
