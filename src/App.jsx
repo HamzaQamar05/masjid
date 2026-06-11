@@ -2380,6 +2380,7 @@ export default function App() {
   const [masjids, setMasjids] = useState([]);
   const [prayerTimes, setPrayerTimes] = useState(prayers);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  const [showNotifications, setShowNotifications] = useState(false);
 
   async function bootstrap() {
     if (!token()) return;
@@ -2862,8 +2863,8 @@ async function enableNotifications() {
 
   return (
     <>
-      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)} theme={theme} toggleTheme={toggleTheme}>
-        {screens[tab] || screens.home}
+      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)} theme={theme} toggleTheme={toggleTheme} setShowNotifications(true)}>
+        {screens[tab] || screens.home}onNotificationsClick={() => 
       </Shell>
       <section className="mobile-bottom-nav">
         {navItems.filter((item) => mobileNavKeys.includes(item.key)).filter((item) => !(isOrganizationAccount(user) && ['volunteers', 'jobs'].includes(item.key))).map((item) => {
@@ -2871,6 +2872,39 @@ async function enableNotifications() {
           return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span></button>;
         })}
       </section>
+        {showNotifications && (
+  <div className="modal-backdrop" onClick={() => setShowNotifications(false)}>
+    <div className="bottom-sheet" onClick={(event) => event.stopPropagation()}>
+      <div className="sheet-header">
+        <h2>Notifications</h2>
+        <button onClick={() => setShowNotifications(false)}>×</button>
+      </div>
+
+      <div className="people-list">
+        <article className="person-list-row">
+          <div>
+            <strong>New message from Ahmed</strong>
+            <span>2 minutes ago</span>
+          </div>
+        </article>
+
+        <article className="person-list-row">
+          <div>
+            <strong>Imam Bukhari Centre posted an event</strong>
+            <span>Today</span>
+          </div>
+        </article>
+
+        <article className="person-list-row">
+          <div>
+            <strong>Friday prayer reminder</strong>
+            <span>Upcoming</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+)}
       <div className="app-glow" />
     </>
   );
