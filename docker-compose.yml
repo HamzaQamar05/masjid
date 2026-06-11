@@ -1,14 +1,4 @@
 services:
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-
   backend:
     build:
       context: ./backend
@@ -18,7 +8,7 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379
-      FRONTEND_URL: http://147.182.151.226
+      FRONTEND_URL: https://masjid-nine-chi.vercel.app
     depends_on:
       - redis
     ports:
