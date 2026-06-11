@@ -1173,6 +1173,109 @@ a {
   padding: 17px;
 }
 
+.event-discovery {
+  display: grid;
+  gap: 14px;
+}
+
+.event-detail-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.event-detail-image,
+.event-banner {
+  min-height: 220px;
+  border-radius: 8px;
+  background: #d8e2df center / cover;
+}
+
+.event-detail-panel h2 {
+  margin: 0 0 8px;
+  font-size: 32px;
+}
+
+.event-detail-panel p {
+  color: #5d716b;
+  line-height: 1.5;
+}
+
+.event-card-upgraded {
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.event-card-upgraded > :not(.event-banner) {
+  margin-left: 17px;
+  margin-right: 17px;
+}
+
+.event-card-upgraded .card-footer {
+  margin: 8px 17px 17px;
+}
+
+.event-banner {
+  position: relative;
+  width: 100%;
+  border: 0;
+  display: block;
+  cursor: pointer;
+}
+
+.event-date-badge {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  min-width: 58px;
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #10231e;
+  font-size: 18px;
+  font-weight: 900;
+  box-shadow: 0 12px 30px rgba(20, 36, 31, 0.18);
+}
+
+.event-date-badge strong {
+  display: block;
+  color: #0f766e;
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.event-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(140px, 1fr));
+}
+
+.event-filters label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #d8e2df;
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.event-filters input,
+.event-filters select {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #17221d;
+}
+
 .event-top {
   justify-content: space-between;
   margin-bottom: 12px;
@@ -2139,12 +2242,17 @@ a {
   .metric-grid,
   .admin-grid,
   .right-rail,
+  .event-detail-panel,
   .messaging-layout {
     grid-template-columns: 1fr;
   }
 
   .hub-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .event-filters {
+    grid-template-columns: 1fr;
   }
 
   .nearby-card,
@@ -2271,7 +2379,8 @@ a {
 :root[data-theme="dark"] .info-block,
 :root[data-theme="dark"] .mini-row,
 :root[data-theme="dark"] .hub-stats article,
-:root[data-theme="dark"] .dashboard-menu-grid button {
+:root[data-theme="dark"] .dashboard-menu-grid button,
+:root[data-theme="dark"] .event-filters label {
   background: #1c2522;
   border-color: var(--border);
   color: var(--text);
@@ -2292,6 +2401,8 @@ a {
 :root[data-theme="dark"] .post-form select,
 :root[data-theme="dark"] .post-form textarea,
 :root[data-theme="dark"] .person-card select,
+:root[data-theme="dark"] .event-filters input,
+:root[data-theme="dark"] .event-filters select,
 :root[data-theme="dark"] .search-results button,
 :root[data-theme="dark"] .mini-row,
 :root[data-theme="dark"] .metric-card,
@@ -2452,6 +2563,11 @@ a {
 :root[data-theme="dark"] .dashboard-menu-grid button:hover {
   background: #283532;
   border-color: var(--brand);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .event-date-badge {
+  background: rgba(25, 33, 31, 0.94);
   color: var(--text);
 }
 

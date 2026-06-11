@@ -338,37 +338,113 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
 }
 
 function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent, unregisterEvent }) {
+  const [eventQuery, setEventQuery] = useState('');
+  const [eventCategory, setEventCategory] = useState('all');
+  const [eventDate, setEventDate] = useState('all');
+  const [eventLocation, setEventLocation] = useState('all');
+  const [eventHost, setEventHost] = useState('all');
+  const [selectedEvent, setSelectedEvent] = useState(null);
   async function deleteEvent(id) {
     if (!confirm('Delete this event?')) return;
     await api(`/api/events/${id}`, { method: 'DELETE' });
     await loadEvents();
   }
+  function eventTiming(event) {
+    const date = event.startTime ? new Date(event.startTime) : null;
+    return date && Number.isFinite(date.getTime()) ? date : null;
+  }
+  function eventImage(event) {
+    return event?.imageUrl || event?.bannerUrl || event?.organization?.heroImageUrl || 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=1200&q=80';
+  }
+  function matchesDate(event) {
+    if (eventDate === 'all') return true;
+    const date = eventTiming(event);
+    if (!date) return eventDate === 'unscheduled';
+    const now = new Date();
+    const end = new Date(now);
+    if (eventDate === 'today') end.setHours(23, 59, 59, 999);
+    if (eventDate === 'week') end.setDate(now.getDate() + 7);
+    if (eventDate === 'month') end.setMonth(now.getMonth() + 1);
+    return date >= now && date <= end;
+  }
+  const categoryOptions = ['all', ...Array.from(new Set(events.map((event) => event.category || event.type || (event.requiresApproval ? 'Approval required' : 'Community')).filter(Boolean)))];
+  const locationOptions = ['all', ...Array.from(new Set(events.map((event) => event.location || event.place).filter(Boolean)))];
+  const hostOptions = ['all', ...Array.from(new Set(events.map((event) => event.organization?.name || event.createdBy?.name).filter(Boolean)))];
+  const visibleEvents = events.filter((event) => {
+    const query = eventQuery.trim().toLowerCase();
+    const haystack = `${event.title} ${event.description || ''} ${event.location || ''} ${event.organization?.name || ''} ${event.createdBy?.name || ''}`.toLowerCase();
+    const category = event.category || event.type || (event.requiresApproval ? 'Approval required' : 'Community');
+    const host = event.organization?.name || event.createdBy?.name || '';
+    if (query && !haystack.includes(query)) return false;
+    if (eventCategory !== 'all' && category !== eventCategory) return false;
+    if (eventLocation !== 'all' && (event.location || event.place) !== eventLocation) return false;
+    if (eventHost !== 'all' && host !== eventHost) return false;
+    return matchesDate(event);
+  });
+  const featuredEvent = selectedEvent || visibleEvents[0] || events[0];
+  function EventCard({ event }) {
+    const canDelete = user.accountType === 'ADMIN' || event.createdById === user.id || event.createdBy?.id === user.id || myOrganizations.some((org) => org.id === event.organizationId);
+    const registration = (event.registrations || []).find((item) => item.userId === user.id);
+    const registeredCount = (event.registrations || []).filter((item) => item.status !== 'DENIED').length;
+    const remaining = event.capacity ? Math.max(0, event.capacity - registeredCount) : null;
+    const date = eventTiming(event);
+    const category = event.category || event.type || (event.requiresApproval ? 'Approval required' : 'Community');
+    return (
+      <article className="event-card event-card-upgraded" key={event.id}>
+        <button className="event-banner" type="button" onClick={() => setSelectedEvent(event)} style={{ backgroundImage: `url(${eventImage(event)})` }} aria-label={`View ${event.title}`}>
+          <span className="event-date-badge"><strong>{date ? date.toLocaleDateString(undefined, { month: 'short' }) : 'TBA'}</strong>{date ? date.getDate() : ''}</span>
+        </button>
+        <div className="event-top"><span>{category}</span>{canDelete && <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete</button>}</div>
+        <h3>{event.title}</h3>
+        <p>{event.description || 'No description yet.'}</p>
+        <div className="meta-line"><CalendarDays size={16} />{date ? date.toLocaleString() : event.time || 'Time TBA'}</div>
+        <div className="meta-line"><MapPin size={16} />{event.location || event.place || 'Location TBA'}</div>
+        <TagRow tags={[event.organization?.name || event.createdBy?.name || 'Community event', remaining !== null ? `${remaining} spots left` : `${registeredCount} registered`, event.requiresApproval && 'Approval required', registration && `Your status: ${registration.status}`].filter(Boolean)} />
+        <div className="card-footer">
+          <button className="secondary-button" onClick={() => setSelectedEvent(event)}>Details</button>
+          {registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
+        </div>
+      </article>
+    );
+  }
   return (
-    <Page title="Events" subtitle="Create, register for, and delete events you own. Admins can delete any event.">
-      <div className="card-grid two">
-        {events.map((event) => {
-          const canDelete = user.accountType === 'ADMIN' || event.createdById === user.id || event.createdBy?.id === user.id || myOrganizations.some((org) => org.id === event.organizationId);
-          const registration = (event.registrations || []).find((item) => item.userId === user.id);
-          const registeredCount = (event.registrations || []).filter((item) => item.status !== 'DENIED').length;
-          const remaining = event.capacity ? Math.max(0, event.capacity - registeredCount) : null;
-          return (
-            <article className="event-card" key={event.id}>
-              <div className="event-top"><span>Event</span>{canDelete && <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete</button>}</div>
-              <h3>{event.title}</h3>
-              <p>{event.description || 'No description yet.'}</p>
-              <div className="meta-line"><CalendarDays size={16} />{event.startTime ? new Date(event.startTime).toLocaleString() : event.time || 'Time TBA'}</div>
-              <div className="meta-line"><MapPin size={16} />{event.location || event.place || 'Location TBA'}</div>
-              <div className="check-row"><span>Seats</span><strong>{event.capacity ? `${registeredCount}/${event.capacity} registered - ${remaining} left` : `${registeredCount} registered`}</strong></div>
-              {event.requiresApproval && <div className="check-row"><span>Entry</span><strong>Approval required</strong></div>}
-              {registration && <div className="check-row"><span>Your status</span><strong>{registration.status}</strong></div>}
-              <div className="card-footer">
-                <span>{event.organization?.name || (event.createdBy?.name ? `By ${event.createdBy.name}` : 'Community event')}</span>
-                {registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
+    <Page title="Events" subtitle="Discover masjid programs, community gatherings, classes, and approval-based registrations.">
+      <section className="event-discovery">
+        {featuredEvent && (
+          <article className="event-detail-panel panel">
+            <div className="event-detail-image" style={{ backgroundImage: `url(${eventImage(featuredEvent)})` }} />
+            <div>
+              <p className="eyebrow">{featuredEvent.organization?.name || featuredEvent.createdBy?.name || 'Community host'}</p>
+              <h2>{featuredEvent.title}</h2>
+              <p>{featuredEvent.description || 'Event details will appear here once the host adds them.'}</p>
+              <div className="meta-line"><CalendarDays size={16} />{eventTiming(featuredEvent)?.toLocaleString() || featuredEvent.time || 'Time TBA'}</div>
+              <div className="meta-line"><MapPin size={16} />{featuredEvent.location || featuredEvent.place || 'Location TBA'}</div>
+              <TagRow tags={[(featuredEvent.category || featuredEvent.type || 'Community'), featuredEvent.requiresApproval && 'Approval required', featuredEvent.capacity && `${featuredEvent.capacity} capacity`].filter(Boolean)} />
+              <div className="hub-actions">
+                {(featuredEvent.registrations || []).find((item) => item.userId === user.id) ? <button className="secondary-button" onClick={() => unregisterEvent(featuredEvent.id)}>Cancel registration</button> : <button className="primary-button" onClick={() => registerEvent(featuredEvent.id)}>{featuredEvent.requiresApproval ? 'Request entry' : 'Register'}</button>}
+                {(featuredEvent.location || featuredEvent.place) && <a className="secondary-button" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(featuredEvent.location || featuredEvent.place)}`} target="_blank" rel="noreferrer">Map</a>}
               </div>
-            </article>
-          );
-        })}
-      </div>
+            </div>
+          </article>
+        )}
+        <section className="filter-panel event-filters">
+          <label><Search size={15} /><input placeholder="Search events" value={eventQuery} onChange={(event) => setEventQuery(event.target.value)} /></label>
+          <select value={eventCategory} onChange={(event) => setEventCategory(event.target.value)}>{categoryOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All categories' : item}</option>)}</select>
+          <select value={eventDate} onChange={(event) => setEventDate(event.target.value)}>
+            <option value="all">Any date</option>
+            <option value="today">Today</option>
+            <option value="week">Next 7 days</option>
+            <option value="month">This month</option>
+            <option value="unscheduled">Unscheduled</option>
+          </select>
+          <select value={eventLocation} onChange={(event) => setEventLocation(event.target.value)}>{locationOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All locations' : item}</option>)}</select>
+          <select value={eventHost} onChange={(event) => setEventHost(event.target.value)}>{hostOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All masjids' : item}</option>)}</select>
+        </section>
+        <div className="card-grid two">
+          {visibleEvents.map((event) => <EventCard key={event.id} event={event} />)}
+          {!visibleEvents.length && <section className="panel"><p className="helper-text">No events match those filters yet.</p></section>}
+        </div>
+      </section>
     </Page>
   );
 }
