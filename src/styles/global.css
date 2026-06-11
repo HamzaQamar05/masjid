@@ -2095,6 +2095,20 @@ a {
   background-position: center;
 }
 
+.compact-button {
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.favorite-masjid-card {
+  justify-content: space-between;
+}
+
+.favorite-masjid-card > div:nth-child(2) {
+  flex: 1;
+}
+
 .masjid-hero .org-logo {
   width: 76px;
   height: 76px;
