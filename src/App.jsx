@@ -2460,7 +2460,20 @@ export default function App() {
     setMessages(loaded.messages || loaded);
     setMessagePage({ nextCursor: loaded.nextCursor || null, hasMore: Boolean(loaded.hasMore), loadingOlder: false });
   }
+async function enableNotifications() {
+  if (!('Notification' in window)) {
+    alert('Notifications are not supported on this browser.');
+    return;
+  }
 
+  const permission = await Notification.requestPermission();
+
+  if (permission === 'granted') {
+    new Notification('Notifications enabled', {
+      body: 'You will now receive Ummah Connect notifications.'
+    });
+  }
+}
   async function loadThreads() {
     const loaded = await api('/api/messages/threads').catch(() => ({ threads: [] }));
     setThreads(Array.isArray(loaded) ? loaded : loaded.threads || []);
