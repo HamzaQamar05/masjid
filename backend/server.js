@@ -724,8 +724,9 @@ app.put('/api/organizations/:id', auth, async (req, res) => {
 });
 
 app.get('/api/posts', auth, async (req, res) => {
-  const follows = await prisma.organizationFollow.findMany({ where: { userId: req.user.id }, select: { organizationId: true } });
+  const follows = await prisma.organizationFollow.findMany({ where: { userId: req.user.id }, select: { organizationId: true, notifyPrayers: true } });
   const followedIds = new Set(follows.map((follow) => follow.organizationId));
+  const favoriteIds = new Set(follows.filter((follow) => follow.notifyPrayers).map((follow) => follow.organizationId));
   const posts = await prisma.post.findMany({
     include: { author: true, organization: { include: { followers: true } } },
     orderBy: { createdAt: 'desc' },
@@ -734,8 +735,9 @@ app.get('/api/posts', auth, async (req, res) => {
   res.json(posts.map((post) => ({
     ...publicPost(post),
     isFromFollowedMasjid: followedIds.has(post.organizationId),
+    isFromFavoriteMasjid: favoriteIds.has(post.organizationId),
     followerCount: post.organization?.followers?.length || 0
-  })).sort((a, b) => Number(b.isFromFollowedMasjid) - Number(a.isFromFollowedMasjid) || new Date(b.createdAt) - new Date(a.createdAt)));
+  })).sort((a, b) => Number(b.isFromFavoriteMasjid) - Number(a.isFromFavoriteMasjid) || Number(b.isFromFollowedMasjid) - Number(a.isFromFollowedMasjid) || new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
 app.post('/api/organizations/:id/posts', auth, async (req, res) => {
@@ -868,12 +870,31 @@ app.delete('/api/organizations/:id/people/:userId', auth, async (req, res) => {
   res.json({ message: 'Team member removed' });
 });
 
-app.get('/api/events', async (_, res) => {
+app.get('/api/events', async (req, res) => {
+  let viewerId = null;
+  const header = req.headers.authorization;
+  if (header) {
+    try {
+      viewerId = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret').id;
+    } catch {
+      viewerId = null;
+    }
+  }
   const events = await prisma.event.findMany({
-    include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } },
+    include: { organization: { include: { followers: true } }, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } },
     orderBy: { startTime: 'asc' }
   });
-  res.json(events.map((event) => ({ ...event, registrations: event.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) })));
+  res.json(events.map((event) => {
+    const viewerFollow = viewerId ? event.organization?.followers?.find((follow) => follow.userId === viewerId) : null;
+    const { followers: _followers, ...organization } = event.organization || {};
+    return {
+      ...event,
+      organization: event.organization ? organization : null,
+      isFromFollowedMasjid: Boolean(viewerFollow),
+      isFromFavoriteMasjid: Boolean(viewerFollow?.notifyPrayers),
+      registrations: event.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) }))
+    };
+  }).sort((a, b) => Number(b.isFromFavoriteMasjid) - Number(a.isFromFavoriteMasjid) || Number(b.isFromFollowedMasjid) - Number(a.isFromFollowedMasjid) || new Date(a.startTime) - new Date(b.startTime)));
 });
 
 app.post('/api/events', auth, async (req, res) => {

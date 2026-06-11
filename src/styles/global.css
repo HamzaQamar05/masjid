@@ -881,6 +881,14 @@ a {
   font-style: normal;
 }
 
+.manager-prayer-grid {
+  margin-top: 8px;
+}
+
+.prayer-profile-button {
+  margin-top: 12px;
+}
+
 .nearby-panel {
   display: grid;
   gap: 12px;

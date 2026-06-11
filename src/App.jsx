@@ -237,7 +237,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, posts, masjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization }) {
+function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization }) {
   const orgAccount = isOrganizationAccount(user);
   return (
     <div className="content-grid">
@@ -257,7 +257,7 @@ function HomeScreen({ user, posts, masjids, locationStatus, requestLocation, pra
         <PostFeed posts={posts} openOrganization={openOrganization} />
       </section>
       <aside className="right-rail">
-        <PrayerWidget prayerTimes={prayerTimes} />
+        <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
         <section className="panel">
           <div className="section-title"><h2>Account</h2><button onClick={() => setTab('profile')}>Edit</button></div>
@@ -296,15 +296,20 @@ function PostFeed({ posts, openOrganization }) {
   );
 }
 
-function PrayerWidget({ prayerTimes }) {
+function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization }) {
+  const favorite = favoriteMasjids[0];
+  const iqamah = favorite?.iqamahTimes || {};
   return (
     <section className="panel prayer-panel">
-      <div className="section-title"><div><p className="eyebrow">Live API</p><h2>Prayer times today</h2></div><ShieldCheck size={22} /></div>
+      <div className="section-title"><div><p className="eyebrow">{favorite ? 'Favorite masjid' : 'Live API'}</p><h2>{favorite ? favorite.name : 'Prayer times today'}</h2></div><ShieldCheck size={22} /></div>
+      {favorite && <p className="helper-text">Showing this masjid first because prayer notifications are enabled.</p>}
       <div className="prayer-grid detailed">
         {prayerTimes.map((item) => (
-          <div key={item.name}><span>{item.name}</span><strong>{item.adhan}</strong><em>Iqamah {item.iqamah || 'Set by masjid'}</em></div>
+          <div key={item.name}><span>{item.name}</span><strong>{item.adhan}</strong><em>Iqamah {iqamah[item.name] || item.iqamah || 'Set by masjid'}</em></div>
         ))}
       </div>
+      {favorite?.prayerNotes && <p className="helper-text">{favorite.prayerNotes}</p>}
+      {favorite && openOrganization && <button className="secondary-button prayer-profile-button" onClick={() => openOrganization(favorite.id)}>Open masjid profile</button>}
     </section>
   );
 }
@@ -1171,6 +1176,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     ['jobApplications', 'Job Applications'],
     ['team', 'Team'],
     ['followers', 'Followers'],
+    ['prayerTimes', 'Prayer Times'],
     ['attention', 'Notifications']
   ];
   const showSection = (section) => activeSection === 'all' || activeSection === section;
@@ -1237,6 +1243,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'events', label: 'Event Approvals', count: metrics.pendingRegistrations, detail: `${metrics.events} events`, icon: CalendarDays },
     { key: 'programs', label: 'Programs', count: metrics.programs, detail: 'Classes and halaqas', icon: Library },
     { key: 'attention', label: 'Notifications', count: pendingApplications.length + pendingRegistrations.length + unreadMessages, detail: `${unreadMessages} unread DMs`, icon: Bell },
+    { key: 'prayerTimes', label: 'Prayer Times', count: 'Jamaat', detail: selectedOrg?.prayerNotes || 'Iqamah schedule', icon: ShieldCheck },
     { key: 'userView', label: 'User View', count: selectedOrg ? 'Preview' : 'Add profile', detail: 'Public profile', icon: Home }
   ];
   function openUserView() {
@@ -1711,6 +1718,21 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                     <button className="secondary-button" type="button" onClick={() => setEditingOrgId('')}>Cancel</button>
                   </div>
                 </form>
+              )}
+              {showSection('prayerTimes') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Jamaat & Iqamah Times</h3><span>Shown on public profile</span></div>
+                  <div className="prayer-grid detailed manager-prayer-grid">
+                    {['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha', 'Jumuah'].map((name) => (
+                      <div key={name}><span>{name}</span><strong>{org.iqamahTimes?.[name] || org.iqamahTimes?.[name.toLowerCase()] || 'Not set'}</strong><em>Iqamah / jamaat</em></div>
+                    ))}
+                  </div>
+                  {org.prayerNotes && <p className="helper-text">{org.prayerNotes}</p>}
+                  <div className="manager-row">
+                    <span>Update jamaat times, Jumuah, and prayer notes for users who follow this masjid or enable prayer notifications.</span>
+                    <button onClick={() => startEditOrg(org)}>Change times</button>
+                  </div>
+                </div>
               )}
               {showApplications && (
                 <div className="manager-section">
@@ -2308,7 +2330,7 @@ export default function App() {
     const org = await api(`/api/organizations/${id}`);
     setSelectedOrganization(org);
     if (notifyPrayers) schedulePrayerNotification(org);
-    await Promise.all([loadLocationData(location), loadPosts()]);
+    await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id), loadNotificationMasjids()]);
   }
 
   function requestLocation() {
@@ -2436,32 +2458,40 @@ export default function App() {
   }
 
   const otherUsers = users.filter((person) => person.id !== user?.id);
+  const favoriteMasjids = profileSocial.followingMasjids.filter((org) => org.notifyPrayers);
+  const favoriteMasjidIds = new Set(favoriteMasjids.map((org) => org.id));
+  const followedMasjidIds = new Set(profileSocial.followingMasjids.map((org) => org.id));
+  const favoriteRank = (organizationId) => favoriteMasjidIds.has(organizationId) ? 2 : followedMasjidIds.has(organizationId) ? 1 : 0;
+  const prioritizedMasjids = [...masjids].sort((a, b) => favoriteRank(b.id) - favoriteRank(a.id) || Number(b.followerCount || 0) - Number(a.followerCount || 0));
+  const prioritizedPosts = [...posts].sort((a, b) => Number(b.isFromFavoriteMasjid || favoriteMasjidIds.has(b.organization?.id)) - Number(a.isFromFavoriteMasjid || favoriteMasjidIds.has(a.organization?.id)) || Number(b.isFromFollowedMasjid || followedMasjidIds.has(b.organization?.id)) - Number(a.isFromFollowedMasjid || followedMasjidIds.has(a.organization?.id)) || new Date(b.createdAt) - new Date(a.createdAt));
+  const prioritizedEvents = [...events].sort((a, b) => favoriteRank(b.organizationId || b.organization?.id) - favoriteRank(a.organizationId || a.organization?.id) || new Date(a.startTime || 0) - new Date(b.startTime || 0));
+  const prioritizedOpportunities = [...opportunities].sort((a, b) => favoriteRank(b.organizationId || b.organization?.id) - favoriteRank(a.organizationId || a.organization?.id) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
     const index = [
       ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`, tab: 'network' })),
-      ...posts.map((post) => ({ id: post.id, kind: 'Post', title: post.title, subtitle: `${post.organization?.name || ''} ${post.type} ${post.content || ''}`, tab: 'home' })),
-      ...masjids.map((masjid) => ({ id: masjid.id, kind: 'Masjid', title: masjid.name, subtitle: `${masjid.address || ''} ${masjid.city || ''}`, tab: 'organizations' })),
-      ...events.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' })),
-      ...opportunities.map((item) => ({ id: item.id, kind: item.type === 'JOB' ? 'Job' : 'Volunteer', title: item.title, subtitle: `${item.organization?.name || ''} ${item.description || ''} ${item.location || ''} ${Array.isArray(item.skills) ? item.skills.join(' ') : item.skills || ''}`, tab: item.type === 'JOB' ? 'jobs' : 'volunteers' })),
+      ...prioritizedPosts.map((post) => ({ id: post.id, kind: 'Post', title: post.title, subtitle: `${post.organization?.name || ''} ${post.type} ${post.content || ''}`, tab: 'home' })),
+      ...prioritizedMasjids.map((masjid) => ({ id: masjid.id, kind: 'Masjid', title: masjid.name, subtitle: `${masjid.address || ''} ${masjid.city || ''}`, tab: 'organizations' })),
+      ...prioritizedEvents.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' })),
+      ...prioritizedOpportunities.map((item) => ({ id: item.id, kind: item.type === 'JOB' ? 'Job' : 'Volunteer', title: item.title, subtitle: `${item.organization?.name || ''} ${item.description || ''} ${item.location || ''} ${Array.isArray(item.skills) ? item.skills.join(' ') : item.skills || ''}`, tab: item.type === 'JOB' ? 'jobs' : 'volunteers' })),
       ...lectures.map((lecture) => ({ id: lecture.id, kind: 'Lecture', title: lecture.title, subtitle: `${lecture.speaker} ${lecture.category}`, tab: 'library' })),
       ...businesses.map((business) => ({ id: business.id, kind: 'Business', title: business.name, subtitle: `${business.category} ${business.city}`, tab: 'businesses' }))
     ];
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
-  }, [searchQuery, users, posts, masjids, events, opportunities]);
+  }, [searchQuery, users, prioritizedPosts, prioritizedMasjids, prioritizedEvents, prioritizedOpportunities]);
 
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} posts={posts} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
-    events: <EventsScreen user={user} events={events} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
+    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
+    events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
-    organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
+    organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
     masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => setTab('organizations')} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
-    volunteers: <OpportunitiesScreen user={user} opportunities={opportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
-    jobs: <OpportunitiesScreen user={user} opportunities={opportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
+    volunteers: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
+    jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
