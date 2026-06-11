@@ -2073,6 +2073,7 @@ a {
 :root[data-theme="dark"] .search-results,
 :root[data-theme="dark"] .mobile-drawer,
 :root[data-theme="dark"] .mobile-bottom-nav,
+:root[data-theme="dark"] .drawer-profile,
 :root[data-theme="dark"] .role-card,
 :root[data-theme="dark"] .person-card,
 :root[data-theme="dark"] .business-card,
@@ -2107,6 +2108,16 @@ a {
 :root[data-theme="dark"] textarea,
 :root[data-theme="dark"] select,
 :root[data-theme="dark"] .global-search,
+:root[data-theme="dark"] .dm-search,
+:root[data-theme="dark"] .profile-form input,
+:root[data-theme="dark"] .profile-form select,
+:root[data-theme="dark"] .profile-form textarea,
+:root[data-theme="dark"] .application-form input,
+:root[data-theme="dark"] .application-form textarea,
+:root[data-theme="dark"] .post-form input,
+:root[data-theme="dark"] .post-form select,
+:root[data-theme="dark"] .post-form textarea,
+:root[data-theme="dark"] .person-card select,
 :root[data-theme="dark"] .search-results button,
 :root[data-theme="dark"] .mini-row,
 :root[data-theme="dark"] .metric-card,
@@ -2121,6 +2132,22 @@ a {
 :root[data-theme="dark"] input::placeholder,
 :root[data-theme="dark"] textarea::placeholder {
   color: #93a39d;
+}
+
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] textarea:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] .profile-form input:focus,
+:root[data-theme="dark"] .profile-form select:focus,
+:root[data-theme="dark"] .profile-form textarea:focus,
+:root[data-theme="dark"] .application-form input:focus,
+:root[data-theme="dark"] .application-form textarea:focus,
+:root[data-theme="dark"] .post-form input:focus,
+:root[data-theme="dark"] .post-form select:focus,
+:root[data-theme="dark"] .post-form textarea:focus {
+  outline: 0;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(53, 203, 185, 0.16);
 }
 
 :root[data-theme="dark"] .brand,
@@ -2142,6 +2169,8 @@ a {
 :root[data-theme="dark"] .donation-card,
 :root[data-theme="dark"] .info-block p,
 :root[data-theme="dark"] .meta-line,
+:root[data-theme="dark"] .drawer-profile span,
+:root[data-theme="dark"] .check-toggle,
 :root[data-theme="dark"] p,
 :root[data-theme="dark"] span,
 :root[data-theme="dark"] small {
@@ -2180,6 +2209,7 @@ a {
 :root[data-theme="dark"] .post-actions button,
 :root[data-theme="dark"] .composer-actions button,
 :root[data-theme="dark"] .compact-card button,
+:root[data-theme="dark"] .mobile-bottom-nav button,
 :root[data-theme="dark"] .inbox-list button,
 :root[data-theme="dark"] .message-actions button,
 :root[data-theme="dark"] .load-more,
@@ -2197,6 +2227,7 @@ a {
 :root[data-theme="dark"] .post-actions button *,
 :root[data-theme="dark"] .composer-actions button *,
 :root[data-theme="dark"] .compact-card button *,
+:root[data-theme="dark"] .mobile-bottom-nav button *,
 :root[data-theme="dark"] .inbox-list button *,
 :root[data-theme="dark"] .message-actions button *,
 :root[data-theme="dark"] .load-more *,
@@ -2229,6 +2260,7 @@ a {
 :root[data-theme="dark"] .side-nav button:hover,
 :root[data-theme="dark"] .inbox-list button.active,
 :root[data-theme="dark"] .filter-bar button.active,
+:root[data-theme="dark"] .mobile-bottom-nav button.active,
 :root[data-theme="dark"] .metric-button:hover,
 :root[data-theme="dark"] .metric-button:focus-visible {
   background: #283532;
@@ -2236,13 +2268,33 @@ a {
   color: var(--text);
 }
 
+:root[data-theme="dark"] .mobile-bottom-nav button.active,
+:root[data-theme="dark"] .mobile-bottom-nav button.active * {
+  color: var(--brand-strong);
+}
+
 :root[data-theme="dark"] .status-pill,
 :root[data-theme="dark"] .tag-row span,
 :root[data-theme="dark"] .profile-meta span,
-:root[data-theme="dark"] .role-meta span {
+:root[data-theme="dark"] .role-meta span,
+:root[data-theme="dark"] .org-detail-row span,
+:root[data-theme="dark"] .check-row span,
+:root[data-theme="dark"] .check-row strong {
   background: #2b3835;
   border-color: var(--border);
   color: #d9e7e3;
+}
+
+:root[data-theme="dark"] .progress {
+  background: #2b3835;
+}
+
+:root[data-theme="dark"] .masjid-hero,
+:root[data-theme="dark"] .person-banner,
+:root[data-theme="dark"] .profile-banner {
+  background:
+    linear-gradient(135deg, rgba(53, 203, 185, 0.18), rgba(176, 120, 26, 0.16)),
+    linear-gradient(45deg, #1c2522, #293631);
 }
 
 :root[data-theme="dark"] .chat-bubble.sent {
