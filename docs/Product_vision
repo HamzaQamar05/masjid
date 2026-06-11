@@ -1,3 +1,14 @@
+
+Before making any changes, read and understand:
+docs/PRODUCT_VISION.md
+docs/UI_GUIDELINES.md
+If any implementation decision conflicts with these documents, follow the documents.
+
+After completing work, explain:
+1. What was changed
+2. Which sections of PRODUCT_VISION.md were addressed
+3. Any remaining gaps between the implementation and the product vision
+
 You are improving my Masjid community platform frontend and workflows.
 
 The app currently feels too much like a demo. I want it to feel like a real product combining:
