@@ -947,6 +947,8 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
   const [eventForm, setEventForm] = useState({ organizationId: '', title: '', description: '', location: '', startTime: '', capacity: '', requiresApproval: false });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', requirements: '', location: '', skills: '', hours: '', workType: 'volunteer', deadline: '', applicationQuestions: '' });
+  const emptyClassForm = { organizationId: '', title: '', teacher: '', description: '', dayTime: '', location: '', notes: '', registrationLink: '' };
+  const [classForm, setClassForm] = useState(emptyClassForm);
   const [peopleForm, setPeopleForm] = useState({ organizationId: '', userId: '', roleLabel: 'Imam' });
   const [inviteForm, setInviteForm] = useState({ organizationId: '', name: '', email: '', accountType: 'IMAM', roleLabel: 'Imam' });
   const [peopleQuery, setPeopleQuery] = useState('');
@@ -965,6 +967,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     ['all', 'All'],
     ['posts', 'Posts'],
     ['events', 'Events'],
+    ['programs', 'Programs'],
     ['volunteers', 'Volunteers'],
     ['jobs', 'Jobs'],
     ['applications', 'Applications'],
@@ -984,6 +987,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
         org.phone,
         ...(org.posts || []).map((post) => `${post.title} ${post.content} ${post.type}`),
         ...(org.events || []).map((event) => `${event.title} ${event.description || ''} ${event.location || ''}`),
+        ...(org.classes || []).map((item) => `${item.title || ''} ${item.teacher || ''} ${item.description || ''} ${item.dayTime || ''} ${item.location || ''}`),
         ...(org.opportunities || []).map((opportunity) => `${opportunity.title} ${opportunity.description || ''} ${opportunity.type} ${opportunity.location || ''}`),
         ...(org.people || []).map((person) => `${person.user?.name || ''} ${person.roleLabel}`),
         ...(org.followers || []).map((follow) => follow.user?.name || '')
@@ -998,6 +1002,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     followers: scopedOrganizations.reduce((sum, org) => sum + (org.followerCount || 0), 0),
     posts: scopedOrganizations.reduce((sum, org) => sum + (org.posts || []).length, 0),
     events: scopedOrganizations.reduce((sum, org) => sum + (org.events || []).length, 0),
+    programs: scopedOrganizations.reduce((sum, org) => sum + (org.classes || []).length, 0),
     pendingApplications: pendingApplications.length,
     pendingRegistrations: pendingRegistrations.length,
     applications: allApplications.length,
@@ -1040,6 +1045,26 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     await createEvent({ ...eventForm, organizationId });
     setEventForm({ organizationId, title: '', description: '', location: '', startTime: '', capacity: '', requiresApproval: false });
     setActiveSection('events');
+  }
+  async function submitClass(event) {
+    event.preventDefault();
+    const organizationId = classForm.organizationId || myOrganizations[0]?.id;
+    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!classForm.title.trim()) return alert('Class title is required.');
+    const org = myOrganizations.find((item) => item.id === organizationId);
+    const nextClass = {
+      id: `class-${Date.now()}`,
+      title: classForm.title.trim(),
+      teacher: classForm.teacher.trim(),
+      description: classForm.description.trim(),
+      dayTime: classForm.dayTime.trim(),
+      location: classForm.location.trim(),
+      notes: classForm.notes.trim(),
+      registrationLink: classForm.registrationLink.trim()
+    };
+    await updateOrganization(organizationId, { classes: [...(org?.classes || []), nextClass] });
+    setClassForm({ ...emptyClassForm, organizationId });
+    setActiveSection('programs');
   }
   async function submitPerson(event) {
     event.preventDefault();
@@ -1118,6 +1143,24 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     if (hours === null) return;
     await updateOpportunity(opportunity.id, { title, description, location, skills, hours });
   }
+  async function editClass(org, classItem, classIndex) {
+    const title = prompt('Class title', classItem.title || '');
+    if (title === null) return;
+    const teacher = prompt('Teacher or imam', classItem.teacher || '');
+    if (teacher === null) return;
+    const dayTime = prompt('Day/time', classItem.dayTime || '');
+    if (dayTime === null) return;
+    const location = prompt('Location', classItem.location || '');
+    if (location === null) return;
+    const description = prompt('Description', classItem.description || '');
+    if (description === null) return;
+    const classes = (org.classes || []).map((item, index) => (classItem.id ? item.id === classItem.id : index === classIndex) ? { ...item, title, teacher, dayTime, location, description } : item);
+    await updateOrganization(org.id, { classes });
+  }
+  async function deleteClass(org, classItem, classIndex) {
+    if (!confirm('Delete this class or program?')) return;
+    await updateOrganization(org.id, { classes: (org.classes || []).filter((item, index) => classItem.id ? item.id !== classItem.id : index !== classIndex) });
+  }
   function startEditOrg(org) {
     setEditingOrgId(org.id);
     setEditOrgForm({
@@ -1179,6 +1222,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('posts')}><span>Posts</span><strong>{metrics.posts}</strong><em>Announcements and updates</em></button>
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('applications')}><span>Applications</span><strong>{metrics.applications}</strong><em>{metrics.pendingApplications} waiting for review</em></button>
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('events')}><span>Event approvals</span><strong>{metrics.pendingRegistrations}</strong><em>{metrics.events} events total</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('programs')}><span>Programs</span><strong>{metrics.programs}</strong><em>Classes and recurring programs</em></button>
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('jobs')}><span>Jobs</span><strong>{metrics.jobs}</strong><em>Active job posts</em></button>
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('volunteers')}><span>Volunteer roles</span><strong>{metrics.volunteers}</strong><em>Active service roles</em></button>
             </div>
@@ -1292,6 +1336,26 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
               </div>
               <textarea placeholder="Description" value={eventForm.description} onChange={(event) => setEventForm({ ...eventForm, description: event.target.value })} />
               <button className="primary-button">Post event</button>
+            </form>
+          </section>
+
+          <section className="panel">
+            <div className="section-title"><h2>Create Class or Program</h2></div>
+            <form className="profile-form" onSubmit={submitClass}>
+              <div className="form-grid">
+                <select value={classForm.organizationId} onChange={(event) => setClassForm({ ...classForm, organizationId: event.target.value })}>
+                  <option value="">Select organization</option>
+                  {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                </select>
+                <input required placeholder="Class title" value={classForm.title} onChange={(event) => setClassForm({ ...classForm, title: event.target.value })} />
+                <input placeholder="Teacher or imam" value={classForm.teacher} onChange={(event) => setClassForm({ ...classForm, teacher: event.target.value })} />
+                <input placeholder="Day/time" value={classForm.dayTime} onChange={(event) => setClassForm({ ...classForm, dayTime: event.target.value })} />
+                <input placeholder="Location" value={classForm.location} onChange={(event) => setClassForm({ ...classForm, location: event.target.value })} />
+                <input placeholder="Registration link optional" value={classForm.registrationLink} onChange={(event) => setClassForm({ ...classForm, registrationLink: event.target.value })} />
+              </div>
+              <textarea placeholder="Description" value={classForm.description} onChange={(event) => setClassForm({ ...classForm, description: event.target.value })} />
+              <textarea placeholder="Gender, family, or attendance notes optional" value={classForm.notes} onChange={(event) => setClassForm({ ...classForm, notes: event.target.value })} />
+              <button className="primary-button">Publish class</button>
             </form>
           </section>
 
@@ -1415,6 +1479,26 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                       </article>
                     ))}
                     {!(org.opportunities || []).some((opportunity) => (opportunity.applications || []).length) && <p className="helper-text">No applications yet.</p>}
+                  </div>
+                </div>
+              )}
+              {showSection('programs') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Classes & Programs</h3><span>{(org.classes || []).length}</span></div>
+                  <div className="stack-list">
+                    {(org.classes || []).length ? (org.classes || []).map((item, index) => (
+                      <article className="mini-row" key={item.id || `${item.title}-${index}`}>
+                        <strong>{item.title}</strong>
+                        <span>{item.teacher || 'Teacher TBD'} - {item.dayTime || 'Schedule TBD'}</span>
+                        <p>{item.description || item.location || item.notes || 'No class details yet.'}</p>
+                        <TagRow tags={[item.location, item.notes, item.registrationLink && 'Registration link'].filter(Boolean)} />
+                        <div className="manager-row">
+                          <button onClick={() => editClass(org, item, index)}>Edit class</button>
+                          {item.registrationLink && <a className="secondary-button" href={item.registrationLink} target="_blank" rel="noreferrer">Open registration</a>}
+                          <button className="secondary-button danger" onClick={() => deleteClass(org, item, index)}>Delete class</button>
+                        </div>
+                      </article>
+                    )) : <p className="helper-text">No classes or programs have been added yet.</p>}
                   </div>
                 </div>
               )}
