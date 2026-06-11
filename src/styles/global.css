@@ -1579,6 +1579,23 @@ a {
   font-weight: 750;
 }
 
+.trust-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.trust-strip span {
+  border: 1px solid #d8e2df;
+  border-radius: 999px;
+  background: #f8fbfa;
+  color: #50665f;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .inbox-list em {
   position: absolute;
   right: 10px;
@@ -1812,6 +1829,32 @@ a {
 .profile-read {
   display: grid;
   gap: 14px;
+}
+
+.profile-trust-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.profile-trust-grid article {
+  border: 1px solid #e0e8e6;
+  border-radius: 8px;
+  background: #f8fbfa;
+  padding: 12px;
+}
+
+.profile-trust-grid span {
+  color: #5d716b;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.profile-trust-grid strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 24px;
 }
 
 .masjid-profile {
@@ -2331,6 +2374,10 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .profile-trust-grid {
+    grid-template-columns: 1fr;
+  }
+
   .event-filters {
     grid-template-columns: 1fr;
   }
@@ -2675,7 +2722,9 @@ a {
 :root[data-theme="dark"] .role-meta span,
 :root[data-theme="dark"] .org-detail-row span,
 :root[data-theme="dark"] .check-row span,
-:root[data-theme="dark"] .check-row strong {
+:root[data-theme="dark"] .check-row strong,
+:root[data-theme="dark"] .trust-strip span,
+:root[data-theme="dark"] .profile-trust-grid article {
   background: #2b3835;
   border-color: var(--border);
   color: #d9e7e3;

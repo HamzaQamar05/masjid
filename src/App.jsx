@@ -571,6 +571,11 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
                 <h3>{person.name}</h3>
                 <p>{displayRoleLabel(person.accountType)} - {person.city || person.location || 'Location not added'}</p>
               </div>
+              <div className="trust-strip">
+                <span>{displayRoleLabel(person.accountType)}</span>
+                <span>{person.city || person.location || 'Location open'}</span>
+                <span>{(person.skills || []).length} skills</span>
+              </div>
               <p>{person.bio || 'No bio yet.'}</p>
               <TagRow tags={person.skills || []} />
               <div className="card-footer profile-actions">
@@ -1078,7 +1083,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
       {!editingSelf && <button className="secondary-button" onClick={onCloseViewed}>Back to your profile</button>}
       <section className="panel profile-detail">
         <div className="profile-banner" style={profileBannerStyle(profile)} />
-        <div className="profile-hero"><div className="profile-avatar">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : initials(profile.name)}</div><div><h2>{profile.name}</h2><p>{displayRoleLabel(profile.accountType)} - {profile.city || 'No city yet'}</p></div></div>
+        <div className="profile-hero"><div className="profile-avatar">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : initials(profile.name)}</div><div><h2>{profile.name}</h2><p>{displayRoleLabel(profile.accountType)} - {profile.city || 'No city yet'}</p><div className="trust-strip"><span>{displayRoleLabel(profile.accountType)}</span><span>{profile.location || profile.city || 'Location open'}</span><span>{(profile.skills || []).length} skills</span></div></div></div>
         {editingSelf ? (
           <form className="profile-form" onSubmit={submit}>
             <div className="form-grid">
@@ -1097,6 +1102,11 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
         ) : <ReadOnlyProfile profile={profile} />}
       </section>
       <section className="panel profile-social">
+        <div className="profile-trust-grid">
+          <article><span>Connections</span><strong>{social.connections.length}</strong></article>
+          <article><span>Following Masjids</span><strong>{social.followingMasjids.length}</strong></article>
+          <article><span>Masjid Roles</span><strong>{social.affiliatedMasjids.length}</strong></article>
+        </div>
         <div className="section-title"><h2>Connections</h2><span>{social.connections.length}</span></div>
         <div className="tag-row">{social.connections.map((person) => <span key={person.id}>{person.name}</span>)}</div>
         {!social.connections.length && <p className="helper-text">No accepted connections yet.</p>}
