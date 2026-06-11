@@ -1033,6 +1033,115 @@ a {
   margin-top: 12px;
 }
 
+.masjid-hub {
+  display: grid;
+  gap: 14px;
+}
+
+.masjid-hub-hero {
+  min-height: 190px;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(16, 35, 30, 0.88), rgba(15, 118, 110, 0.72)),
+    url("https://images.unsplash.com/photo-1519817650390-64a93db51149?auto=format&fit=crop&w=1200&q=80") center / cover;
+  color: #fff;
+}
+
+.masjid-hub-hero h2,
+.masjid-hub-hero p {
+  margin: 0;
+}
+
+.masjid-hub-hero .eyebrow,
+.masjid-hub-hero p {
+  color: #dcebe7;
+}
+
+.hub-logo {
+  width: 72px;
+  height: 72px;
+  font-size: 22px;
+  border: 3px solid rgba(255, 255, 255, 0.82);
+}
+
+.hub-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hub-stats article {
+  min-width: 0;
+  background: #f8fbfa;
+  border: 1px solid #dce6e3;
+  border-radius: 8px;
+  padding: 11px;
+}
+
+.hub-stats span,
+.dashboard-menu-grid small {
+  color: #5d716b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hub-stats strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 22px;
+}
+
+.hub-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dashboard-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-menu-grid button {
+  min-width: 0;
+  min-height: 118px;
+  border: 1px solid #dce6e3;
+  border-radius: 8px;
+  background: #f8fbfa;
+  color: #17221d;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 5px;
+  padding: 13px;
+  text-align: left;
+}
+
+.dashboard-menu-grid button svg {
+  color: #0f766e;
+}
+
+.dashboard-menu-grid button span {
+  color: #17221d;
+  font-weight: 900;
+}
+
+.dashboard-menu-grid button strong {
+  font-size: 18px;
+}
+
+.dashboard-menu-grid button.active,
+.dashboard-menu-grid button:hover {
+  border-color: #0f766e;
+  background: #edf7f4;
+  box-shadow: 0 12px 28px rgba(15, 118, 110, 0.12);
+}
+
 .card-grid,
 .organization-grid,
 .metric-grid,
@@ -2034,6 +2143,10 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .hub-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .nearby-card,
   .hours-summary {
     grid-template-columns: 1fr;
@@ -2069,6 +2182,37 @@ a {
 
   .post-actions {
     grid-template-columns: 1fr;
+  }
+
+  .masjid-hub-hero {
+    min-height: 170px;
+    align-items: flex-end;
+    padding: 14px;
+  }
+
+  .hub-logo {
+    width: 58px;
+    height: 58px;
+    font-size: 18px;
+  }
+
+  .dashboard-menu-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .dashboard-menu-grid button {
+    min-height: 104px;
+    padding: 10px;
+  }
+
+  .dashboard-menu-grid button span,
+  .dashboard-menu-grid button strong {
+    font-size: 13px;
+  }
+
+  .dashboard-menu-grid small {
+    font-size: 10px;
   }
 
   .prayer-grid {
@@ -2125,7 +2269,9 @@ a {
 :root[data-theme="dark"] .capacity-block,
 :root[data-theme="dark"] .donation-card,
 :root[data-theme="dark"] .info-block,
-:root[data-theme="dark"] .mini-row {
+:root[data-theme="dark"] .mini-row,
+:root[data-theme="dark"] .hub-stats article,
+:root[data-theme="dark"] .dashboard-menu-grid button {
   background: #1c2522;
   border-color: var(--border);
   color: var(--text);
@@ -2189,6 +2335,7 @@ a {
 :root[data-theme="dark"] .brand,
 :root[data-theme="dark"] .profile-chip,
 :root[data-theme="dark"] .side-nav button,
+:root[data-theme="dark"] .dashboard-menu-grid button span,
 :root[data-theme="dark"] .page-header h1,
 :root[data-theme="dark"] .section-title h2,
 :root[data-theme="dark"] .section-title h3,
@@ -2207,6 +2354,8 @@ a {
 :root[data-theme="dark"] .meta-line,
 :root[data-theme="dark"] .drawer-profile span,
 :root[data-theme="dark"] .check-toggle,
+:root[data-theme="dark"] .hub-stats span,
+:root[data-theme="dark"] .dashboard-menu-grid small,
 :root[data-theme="dark"] p,
 :root[data-theme="dark"] span,
 :root[data-theme="dark"] small {
@@ -2298,7 +2447,9 @@ a {
 :root[data-theme="dark"] .filter-bar button.active,
 :root[data-theme="dark"] .mobile-bottom-nav button.active,
 :root[data-theme="dark"] .metric-button:hover,
-:root[data-theme="dark"] .metric-button:focus-visible {
+:root[data-theme="dark"] .metric-button:focus-visible,
+:root[data-theme="dark"] .dashboard-menu-grid button.active,
+:root[data-theme="dark"] .dashboard-menu-grid button:hover {
   background: #283532;
   border-color: var(--brand);
   color: var(--text);

@@ -1061,7 +1061,7 @@ function ImamDashboard({ user, social, setTab }) {
   );
 }
 
-function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, startMessage }) {
+function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
@@ -1091,10 +1091,15 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     ['volunteers', 'Volunteers'],
     ['jobs', 'Jobs'],
     ['applications', 'Applications'],
+    ['volunteerApplications', 'Volunteer Applications'],
+    ['jobApplications', 'Job Applications'],
     ['team', 'Team'],
-    ['followers', 'Followers']
+    ['followers', 'Followers'],
+    ['attention', 'Notifications']
   ];
   const showSection = (section) => activeSection === 'all' || activeSection === section;
+  const showApplications = activeSection === 'all' || ['applications', 'volunteerApplications', 'jobApplications'].includes(activeSection);
+  const applicationTypeFilter = activeSection === 'jobApplications' ? 'JOB' : activeSection === 'volunteerApplications' ? 'VOLUNTEER' : '';
   const scopedOrganizations = myOrganizations
     .filter((org) => !selectedOrgId || org.id === selectedOrgId)
     .filter((org) => {
@@ -1138,6 +1143,30 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     jobs: scopedOrganizations.reduce((sum, org) => sum + (org.opportunities || []).filter((item) => item.type === 'JOB').length, 0),
     volunteers: scopedOrganizations.reduce((sum, org) => sum + (org.opportunities || []).filter((item) => item.type !== 'JOB').length, 0)
   };
+  const selectedOrg = myOrganizations.find((org) => org.id === selectedOrgId) || scopedOrganizations[0] || myOrganizations[0];
+  const selectedOrgEvents = selectedOrg?.events || [];
+  const selectedOrgApplications = (selectedOrg?.opportunities || []).flatMap((opportunity) => (opportunity.applications || []).map((application) => ({ opportunity, application })));
+  const selectedOrgPendingApplications = selectedOrgApplications.filter(({ application }) => application.status === 'PENDING').length;
+  const upcomingEvents = selectedOrgEvents.filter((event) => {
+    const time = new Date(event.startTime || event.time || 0).getTime();
+    return Number.isFinite(time) && time >= Date.now();
+  }).length;
+  const unreadMessages = (threads || []).reduce((sum, thread) => sum + (thread.unread || 0), 0);
+  const hubItems = [
+    { key: 'followers', label: 'Followers', count: metrics.followers, detail: 'Community reach', icon: Users },
+    { key: 'team', label: 'Team', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Imams and staff', icon: UserCheck },
+    { key: 'posts', label: 'Posts', count: metrics.posts, detail: 'Announcements', icon: MessageCircle },
+    { key: 'jobApplications', label: 'Job Applications', count: allApplications.filter(({ opportunity }) => opportunity.type === 'JOB').length, detail: 'Hiring pipeline', icon: Briefcase },
+    { key: 'volunteerApplications', label: 'Volunteer Applications', count: allApplications.filter(({ opportunity }) => opportunity.type !== 'JOB').length, detail: 'Service requests', icon: HeartHandshake },
+    { key: 'events', label: 'Event Approvals', count: metrics.pendingRegistrations, detail: `${metrics.events} events`, icon: CalendarDays },
+    { key: 'programs', label: 'Programs', count: metrics.programs, detail: 'Classes and halaqas', icon: Library },
+    { key: 'attention', label: 'Notifications', count: pendingApplications.length + pendingRegistrations.length + unreadMessages, detail: `${unreadMessages} unread DMs`, icon: Bell },
+    { key: 'userView', label: 'User View', count: selectedOrg ? 'Preview' : 'Add profile', detail: 'Public profile', icon: Home }
+  ];
+  function openUserView() {
+    if (!selectedOrg?.id) return alert('Create or select a masjid profile first.');
+    openOrganization(selectedOrg.id).catch(console.error);
+  }
   async function deleteUser(id) {
     if (!confirm('Delete this user and their messages/events?')) return;
     await api(`/api/users/${id}`, { method: 'DELETE' });
@@ -1337,8 +1366,15 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     <Page title={user.accountType === 'ADMIN' ? 'Admin Dashboard' : 'Masjid Dashboard'} subtitle="Run daily masjid operations: posts, volunteers, jobs, event attendees, imams, followers, and profile settings.">
       <div className="content-grid">
         <section className="feed-column">
-          <section className="panel ops-overview">
-            <div className="section-title"><div><p className="eyebrow">Operations</p><h2>Today at a glance</h2></div><span>{scopedOrganizations.length} profiles</span></div>
+          <section className="panel masjid-hub">
+            <div className="masjid-hub-hero" style={profileBannerStyle(selectedOrg || {})}>
+              <div className="org-logo hub-logo">{selectedOrg?.imageUrl ? <img src={selectedOrg.imageUrl} alt="" /> : initials(selectedOrg?.name || user.name)}</div>
+              <div>
+                <p className="eyebrow">Operations Hub</p>
+                <h2>Welcome back, {selectedOrg?.name || user.name}</h2>
+                <p>{selectedOrg?.address || selectedOrg?.city || 'Select a masjid to manage posts, programs, events, applications, team, and followers.'}</p>
+              </div>
+            </div>
             <div className="form-grid">
               <select value={selectedOrgId} onChange={(event) => setSelectedOrgId(event.target.value)}>
                 <option value="">All managed masjids/MSAs</option>
@@ -1346,14 +1382,31 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
               </select>
               <input placeholder="Search posts, volunteers, jobs, imams, followers, events" value={dashboardQuery} onChange={(event) => setDashboardQuery(event.target.value)} />
             </div>
-            <div className="metric-grid compact">
-              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('followers')}><span>Followers</span><strong>{metrics.followers}</strong><em>People following managed profiles</em></button>
-              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('posts')}><span>Posts</span><strong>{metrics.posts}</strong><em>Announcements and updates</em></button>
-              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('applications')}><span>Applications</span><strong>{metrics.applications}</strong><em>{metrics.pendingApplications} waiting for review</em></button>
-              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('events')}><span>Event approvals</span><strong>{metrics.pendingRegistrations}</strong><em>{metrics.events} events total</em></button>
-              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('programs')}><span>Programs</span><strong>{metrics.programs}</strong><em>Classes and recurring programs</em></button>
-              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('jobs')}><span>Jobs</span><strong>{metrics.jobs}</strong><em>Active job posts</em></button>
-              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('volunteers')}><span>Volunteer roles</span><strong>{metrics.volunteers}</strong><em>Active service roles</em></button>
+            <div className="hub-stats">
+              <article><span>Followers</span><strong>{selectedOrg?.followerCount || metrics.followers}</strong></article>
+              <article><span>Upcoming events</span><strong>{upcomingEvents || metrics.events}</strong></article>
+              <article><span>Pending approvals</span><strong>{metrics.pendingRegistrations}</strong></article>
+              <article><span>New applications</span><strong>{selectedOrgPendingApplications || metrics.pendingApplications}</strong></article>
+              <article><span>Unread messages</span><strong>{unreadMessages}</strong></article>
+            </div>
+            <div className="hub-actions">
+              <button type="button" className="primary-button" onClick={() => setActiveSection('posts')}><Plus size={18} />Create post</button>
+              <button type="button" className="secondary-button" onClick={() => setActiveSection('events')}><CalendarDays size={18} />Create event</button>
+              <button type="button" className="secondary-button" onClick={() => setActiveSection('programs')}><Library size={18} />Add program</button>
+              <button type="button" className="secondary-button" onClick={openUserView}><Home size={18} />View user page</button>
+            </div>
+            <div className="dashboard-menu-grid">
+              {hubItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button key={item.key} type="button" className={activeSection === item.key ? 'active' : ''} onClick={item.key === 'userView' ? openUserView : () => setActiveSection(item.key)}>
+                    <Icon size={22} />
+                    <span>{item.label}</span>
+                    <strong>{item.count}</strong>
+                    <small>{item.detail}</small>
+                  </button>
+                );
+              })}
             </div>
             <div className="filter-bar dashboard-filter">
               {dashboardSections.map(([key, label]) => (
@@ -1362,7 +1415,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
             </div>
           </section>
 
-          {(pendingApplications.length > 0 || pendingRegistrations.length > 0) && (
+          {(activeSection === 'attention' || activeSection === 'all' || pendingApplications.length > 0 || pendingRegistrations.length > 0) && (
             <section className="panel">
               <div className="section-title"><h2>Needs attention</h2><span>{pendingApplications.length + pendingRegistrations.length}</span></div>
               <div className="stack-list">
@@ -1396,6 +1449,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                     </div>
                   </article>
                 ))}
+                {!pendingApplications.length && !pendingRegistrations.length && <p className="helper-text">No urgent applications or event approvals right now.</p>}
               </div>
             </section>
           )}
@@ -1582,11 +1636,11 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                   </div>
                 </form>
               )}
-              {showSection('applications') && (
+              {showApplications && (
                 <div className="manager-section">
-                  <div className="section-title compact-title"><h3>Application Portal</h3><span>{(org.opportunities || []).reduce((sum, opportunity) => sum + (opportunity.applications || []).length, 0)}</span></div>
+                  <div className="section-title compact-title"><h3>{activeSection === 'jobApplications' ? 'Job Applications' : activeSection === 'volunteerApplications' ? 'Volunteer Applications' : 'Application Portal'}</h3><span>{(org.opportunities || []).filter((opportunity) => !applicationTypeFilter || (applicationTypeFilter === 'JOB' ? opportunity.type === 'JOB' : opportunity.type !== 'JOB')).reduce((sum, opportunity) => sum + (opportunity.applications || []).length, 0)}</span></div>
                   <div className="application-portal">
-                    {(org.opportunities || []).flatMap((opportunity) => (opportunity.applications || []).map((application) => ({ opportunity, application }))).map(({ opportunity, application }) => (
+                    {(org.opportunities || []).filter((opportunity) => !applicationTypeFilter || (applicationTypeFilter === 'JOB' ? opportunity.type === 'JOB' : opportunity.type !== 'JOB')).flatMap((opportunity) => (opportunity.applications || []).map((application) => ({ opportunity, application }))).map(({ opportunity, application }) => (
                       <article className="application-card" key={application.id}>
                         <div>
                           <strong>{application.applicantName || application.applicant?.name || 'Applicant'}</strong>
@@ -1607,7 +1661,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                         </div>
                       </article>
                     ))}
-                    {!(org.opportunities || []).some((opportunity) => (opportunity.applications || []).length) && <p className="helper-text">No applications yet.</p>}
+                    {!(org.opportunities || []).filter((opportunity) => !applicationTypeFilter || (applicationTypeFilter === 'JOB' ? opportunity.type === 'JOB' : opportunity.type !== 'JOB')).some((opportunity) => (opportunity.applications || []).length) && <p className="helper-text">No applications yet.</p>}
                   </div>
                 </div>
               )}
@@ -2336,7 +2390,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
-    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
+    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} />
   };
 
   return (
