@@ -15,11 +15,13 @@ import {
   MapPin,
   Menu,
   MessageCircle,
+  Moon,
   Navigation,
   Plus,
   Search,
   Send,
   ShieldCheck,
+  Sun,
   UserCheck,
   Users,
   X
@@ -57,8 +59,34 @@ function canManageOrgs(user) {
   return ['MASJID', 'MSA', 'ADMIN'].includes(user?.accountType);
 }
 
+function isOrganizationAccount(user) {
+  return ['MASJID', 'MSA'].includes(user?.accountType);
+}
+
+function isUserAccount(user) {
+  return user?.accountType === 'USER';
+}
+
 function initials(name = 'UC') {
   return name.split(' ').filter(Boolean).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
+}
+
+function profileBannerStyle(item = {}) {
+  const image = item.bannerUrl || item.heroImageUrl || item.cover || item.coverImageUrl;
+  return image ? { backgroundImage: `url(${image})` } : undefined;
+}
+
+function displayRoleLabel(accountType = 'USER') {
+  const labels = {
+    USER: 'Community member',
+    MASJID: 'Masjid organization',
+    MSA: 'Student organization',
+    IMAM: 'Imam / scholar',
+    STUDENT_OF_KNOWLEDGE: 'Student of knowledge',
+    BUSINESS: 'Business',
+    ADMIN: 'Platform admin'
+  };
+  return labels[accountType] || accountType;
 }
 
 function listToText(value) {
@@ -72,7 +100,7 @@ function textToList(value) {
 function normalizeList(value) {
   if (Array.isArray(value)) return value;
   if (!value) return [];
-  return String(value).split(',').map((item) => item.trim()).filter(Boolean);
+  return String(value).split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
 }
 
 function escapeHtml(value) {
@@ -113,7 +141,7 @@ async function showPrayerNotification(title, body, tag) {
   new Notification(title, { body, tag });
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, theme, toggleTheme }) {
   const [navOpen, setNavOpen] = useState(false);
   function navigate(key) {
     setTab(key);
@@ -143,7 +171,10 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         </div>
         <div className="top-actions">
           <button className="icon-button" aria-label="Notifications"><Bell size={20} /></button>
-          <button className="post-button" onClick={() => navigate(canPost(user) ? 'post' : 'events')}><Plus size={18} /><span>Event</span></button>
+          <button className="icon-button" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+          <button className="post-button" onClick={() => navigate(canPost(user) ? 'dashboard' : 'events')}><Plus size={18} /><span>{canPost(user) ? 'Create' : 'Event'}</span></button>
           <button className="dm-top-button" onClick={() => navigate('messages')} aria-label="Open messages">
   <Mail size={22} />
   <span className="dm-dot"></span>
@@ -171,9 +202,14 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
 }
 
 function NavigationList({ tab, setTab, user, hasDashboardAccess }) {
+  const visibleNav = navItems.filter((item) => {
+    if (item.key === 'dashboard') return canManageOrgs(user) || hasDashboardAccess;
+    if (isOrganizationAccount(user) && ['volunteers', 'jobs', 'businesses'].includes(item.key)) return false;
+    return true;
+  });
   return (
     <nav className="side-nav">
-      {navItems.filter((item) => item.key !== 'dashboard' || canManageOrgs(user) || hasDashboardAccess).map((item) => {
+      {visibleNav.map((item) => {
         const Icon = item.icon;
         const label = item.key === 'dashboard' && user.accountType !== 'ADMIN' ? 'Dashboard' : item.label;
         return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{label}</span></button>;
@@ -185,12 +221,12 @@ function NavigationList({ tab, setTab, user, hasDashboardAccess }) {
 function ProfileSummary({ user, onLogout, setTab }) {
   return (
     <section className="profile-card">
-      <div className="profile-cover" />
+      <div className="profile-cover" style={profileBannerStyle(user)} />
       <div className="profile-body">
-        <button className="profile-avatar" onClick={() => setTab('profile')}>{initials(user.name)}</button>
+        <button className="profile-avatar" onClick={() => setTab('profile')}>{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials(user.name)}</button>
         <h2>{user.name}</h2>
-        <p>{user.bio || 'Add your bio, experience, skills, education, languages, and interests.'}</p>
-        <div className="profile-meta"><span>{user.accountType}</span><span>{user.city || 'No city yet'}</span></div>
+        <p>{isOrganizationAccount(user) ? 'Manage posts, applications, prayer times, imams, followers, and messages from your dashboard.' : (user.bio || 'Add your bio, experience, skills, education, languages, and interests.')}</p>
+        <div className="profile-meta"><span>{displayRoleLabel(user.accountType)}</span><span>{user.city || 'No city yet'}</span></div>
         <button className="text-action" onClick={onLogout}><LogOut size={16} />Logout</button>
       </div>
     </section>
@@ -198,15 +234,18 @@ function ProfileSummary({ user, onLogout, setTab }) {
 }
 
 function HomeScreen({ user, posts, masjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization }) {
+  const orgAccount = isOrganizationAccount(user);
   return (
     <div className="content-grid">
       <section className="feed-column">
         <section className="composer">
           <div className="composer-main">
-            <button onClick={() => setTab('profile')}>Complete your profile so other Muslims can find your skills, studies, and interests</button>
+            <button onClick={() => setTab(orgAccount ? 'dashboard' : 'profile')}>
+              {orgAccount ? 'Open your masjid operations dashboard for posts, applications, prayer times, classes, and imams' : 'Complete your profile so masjids can understand your skills, studies, and interests'}
+            </button>
           </div>
           <div className="composer-actions">
-            <button onClick={() => setTab('events')}><CalendarDays size={18} />Events</button>
+            <button onClick={() => setTab(orgAccount ? 'dashboard' : 'events')}><CalendarDays size={18} />{orgAccount ? 'Manage' : 'Events'}</button>
             <button onClick={() => setTab('network')}><Users size={18} />Network</button>
             <button onClick={() => setTab('messages')}><Mail size={18} />Messages</button>
           </div>
@@ -218,7 +257,7 @@ function HomeScreen({ user, posts, masjids, locationStatus, requestLocation, pra
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
         <section className="panel">
           <div className="section-title"><h2>Account</h2><button onClick={() => setTab('profile')}>Edit</button></div>
-          <p className="helper-text">Logged in as {user.name}. Network, messages, connections, events, and profile data are now backend-backed.</p>
+          <p className="helper-text">{orgAccount ? `Logged in as ${user.name}, an organization account. User-only application flows are hidden; use Dashboard for management.` : `Logged in as ${user.name}. Feed, applications, followed masjids, messages, and profile data are backend-backed.`}</p>
         </section>
       </aside>
     </div>
@@ -377,15 +416,16 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
     await loadNetwork();
   }
   return (
-    <Page title="Network" subtitle="Every registered account appears here automatically. Connect, view profiles, and message each other.">
+    <Page title="Network" subtitle="LinkedIn-style community directory for masjids, imams, professionals, businesses, and volunteers.">
       <div className="card-grid two">
         {users.map((person) => {
           const connection = connectionFor(person.id);
           const incoming = connection?.receiverId === user.id && connection.status === 'PENDING';
           return (
             <article className="person-card" key={person.id}>
-              <button className="profile-avatar" onClick={() => openProfile(person)}>{initials(person.name)}</button>
-              <div><h3>{person.name}</h3><p>{person.accountType} - {person.city || 'No city'}</p></div>
+              <div className="person-banner" style={profileBannerStyle(person)} />
+              <button className="profile-avatar network-avatar" onClick={() => openProfile(person)}>{person.avatarUrl ? <img src={person.avatarUrl} alt="" /> : initials(person.name)}</button>
+              <div><h3>{person.name}</h3><p>{displayRoleLabel(person.accountType)} - {person.city || person.location || 'Location not added'}</p></div>
               <p>{person.bio || 'No bio yet.'}</p>
               <TagRow tags={person.skills || []} />
               <div className="card-footer profile-actions">
@@ -420,7 +460,9 @@ function MessagesScreen({
   unsendMessage
 }) {
   const [draft, setDraft] = useState('');
+  const [conversationQuery, setConversationQuery] = useState('');
   const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
+  const visibleUsers = users.filter((person) => `${person.name} ${person.accountType} ${person.city || ''}`.toLowerCase().includes(conversationQuery.trim().toLowerCase()));
 
   useEffect(() => {
     if (!selectedUser?.id) return undefined;
@@ -469,26 +511,29 @@ function MessagesScreen({
   }
 
   return (
-    <Page title="Messages" subtitle="Start a conversation with any registered user and send backend-backed messages.">
+    <Page title="Messages" subtitle="Instagram-style inbox for users, masjids, imams, and community organizations.">
       <div className="messaging-layout">
         <section className="panel inbox-list">
-          {users.map((person) => {
+          <label className="dm-search"><Search size={16} /><input placeholder="Search conversations" value={conversationQuery} onChange={(event) => setConversationQuery(event.target.value)} /></label>
+          {visibleUsers.map((person) => {
             const thread = threads.find((item) => item.user.id === person.id);
             const isOnline = onlineUserIds.includes(person.id);
             return (
               <button key={person.id} className={selectedUser?.id === person.id ? 'active' : ''} onClick={() => chooseUser(person)}>
+                <span className="org-logo dm-avatar">{person.avatarUrl ? <img src={person.avatarUrl} alt="" /> : initials(person.name)}</span>
                 <strong>{person.name}</strong>
-                <span>{isOnline ? 'Online' : person.accountType}</span>
+                <span>{isOnline ? 'Online' : displayRoleLabel(person.accountType)}</span>
                 <p>{thread?.lastMessage || person.city || 'No messages yet'}</p>
                 {thread?.unread > 0 && <em>{thread.unread}</em>}
               </button>
             );
           })}
+          {!visibleUsers.length && <p className="helper-text">No conversations match this search.</p>}
         </section>
         <section className="panel message-thread">
           {selectedUser ? (
             <>
-              <div className="thread-head"><div className="org-logo">{initials(selectedUser.name)}</div><div><h2>{selectedUser.name}</h2><p>{onlineUserIds.includes(selectedUser.id) ? 'Online now' : selectedThread?.lastMessageAt ? `Last message ${new Date(selectedThread.lastMessageAt).toLocaleString()}` : 'Conversation'}</p></div></div>
+              <div className="thread-head"><div className="org-logo">{selectedUser.avatarUrl ? <img src={selectedUser.avatarUrl} alt="" /> : initials(selectedUser.name)}</div><div><h2>{selectedUser.name}</h2><p>{onlineUserIds.includes(selectedUser.id) ? 'Online now' : selectedThread?.lastMessageAt ? `Last message ${new Date(selectedThread.lastMessageAt).toLocaleString()}` : displayRoleLabel(selectedUser.accountType)}</p></div></div>
               <div className="message-list" onScroll={onMessageScroll}>
                 {messagePage.hasMore && <button className="load-more" onClick={() => loadOlderMessages(selectedUser.id)}>{messagePage.loadingOlder ? 'Loading...' : 'Load older messages'}</button>}
                 {messages.map((message) => (
@@ -505,8 +550,10 @@ function MessagesScreen({
                 ))}
                 {typingUserIds.includes(selectedUser.id) && <div className="typing-indicator">{selectedUser.name} is typing...</div>}
               </div>
-              <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${selectedUser.name}`} />
-              <button className="primary-button" onClick={sendMessage}><Send size={18} />Send message</button>
+              <div className="message-composer">
+                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${selectedUser.name}`} />
+                <button className="primary-button" onClick={sendMessage} aria-label="Send message"><Send size={18} /></button>
+              </div>
             </>
           ) : <p className="helper-text">Choose a person to start messaging.</p>}
         </section>
@@ -558,6 +605,8 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
   const jobs = opportunities.filter((item) => item.type === 'JOB');
   const volunteer = opportunities.filter((item) => item.type !== 'JOB');
   const iqamah = organization.iqamahTimes || {};
+  const classes = organization.classes || organization.programs || [];
+  const canFollowMasjid = isUserAccount(user);
   return (
     <Page title={organization.name} subtitle={organization.description || 'Masjid profile with events, opportunities, jobs, prayer times, location, and links.'}>
       <section className="panel masjid-profile">
@@ -570,8 +619,9 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
           </div>
         </div>
         <div className="profile-actions">
-          <button className="primary-button" onClick={() => onFollow(organization.id, false)}>{organization.isFollowing ? 'Following' : 'Follow masjid'}</button>
-          <button className="secondary-button" onClick={() => onFollow(organization.id, true)}>{organization.notifyPrayers ? 'Prayer notifications on' : 'Enable prayer notifications'}</button>
+          {canFollowMasjid && <button className="primary-button" onClick={() => onFollow(organization.id, false)}>{organization.isFollowing ? 'Following' : 'Follow masjid'}</button>}
+          {canFollowMasjid && <button className="secondary-button" onClick={() => onFollow(organization.id, true)}>{organization.notifyPrayers ? 'Prayer notifications on' : 'Enable prayer notifications'}</button>}
+          {!canFollowMasjid && <span className="status-pill">Organization profile</span>}
           <a className="secondary-button" href={directionsUrl(organization)} target="_blank" rel="noreferrer">Directions</a>
           {organization.website && <a className="secondary-button" href={organization.website} target="_blank" rel="noreferrer">Website</a>}
           {organization.donationUrl && <a className="secondary-button" href={organization.donationUrl} target="_blank" rel="noreferrer">Donate</a>}
@@ -592,6 +642,13 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
             <div className="stack-list">
               {events.map((event) => <article className="mini-row" key={event.id}><strong>{event.title}</strong><span>{new Date(event.startTime).toLocaleString()}</span><p>{event.description || event.location || 'No details yet.'}</p></article>)}
               {!events.length && <p className="helper-text">No events yet.</p>}
+            </div>
+          </section>
+          <section className="panel">
+            <div className="section-title"><h2>Classes & Programs</h2><span>{classes.length}</span></div>
+            <div className="stack-list">
+              {classes.map((item) => <article className="mini-row" key={item.id || item.title}><strong>{item.title}</strong><span>{item.teacher || item.imam || item.dayTime || 'Schedule TBD'}</span><p>{item.description || item.location || item.registrationLink || 'Registration details coming soon.'}</p></article>)}
+              {!classes.length && <p className="helper-text">No classes listed yet.</p>}
             </div>
           </section>
           <section className="panel">
@@ -626,7 +683,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
           <section className="panel">
             <div className="section-title"><h2>Iqamah Times</h2><ShieldCheck size={20} /></div>
             <div className="prayer-grid detailed">
-              {prayers.map((prayer) => <div key={prayer.name}><span>{prayer.name}</span><strong>{iqamah[prayer.name] || prayer.iqamah || 'TBD'}</strong></div>)}
+              {[...prayers, { name: 'Jumuah', iqamah: 'TBD' }].map((prayer) => <div key={prayer.name}><span>{prayer.name}</span><strong>{iqamah[prayer.name] || iqamah[prayer.name.toLowerCase()] || prayer.iqamah || 'TBD'}</strong></div>)}
             </div>
           </section>
           <section className="panel">
@@ -685,16 +742,35 @@ function printableHoursReport(user, visible) {
 function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToOpportunity, title, subtitle }) {
   const visible = opportunities.filter((item) => item.type === type || (type === 'VOLUNTEER' && item.type === 'OPPORTUNITY'));
   const verifiedTotal = visible.reduce((sum, item) => sum + (item.applications?.[0]?.approvedHours || 0), 0);
+  const [activeOpportunity, setActiveOpportunity] = useState(null);
   const [applicationForms, setApplicationForms] = useState({});
+  const userCanApply = isUserAccount(user);
+  const activeQuestions = activeOpportunity ? normalizeList(activeOpportunity.applicationQuestions || activeOpportunity.questions) : [];
   function updateApplicationForm(id, field, value) {
     setApplicationForms((current) => ({ ...current, [id]: { ...(current[id] || {}), [field]: value } }));
+  }
+  function updateAnswer(id, question, value) {
+    setApplicationForms((current) => ({
+      ...current,
+      [id]: {
+        ...(current[id] || {}),
+        answers: { ...((current[id] || {}).answers || {}), [question]: value }
+      }
+    }));
   }
   async function submitApplication(id) {
     await applyToOpportunity(id, applicationForms[id] || {});
     setApplicationForms((current) => ({ ...current, [id]: { note: '', contactPhone: '', resumeUrl: '' } }));
+    setActiveOpportunity(null);
   }
   return (
     <Page title={title} subtitle={subtitle}>
+      {!userCanApply && (
+        <section className="panel role-notice">
+          <strong>Organization account</strong>
+          <p>Masjid and MSA accounts manage listings from the dashboard. Applying is reserved for community member accounts.</p>
+        </section>
+      )}
       {type === 'VOLUNTEER' && (
         <section className="hours-summary panel">
           <div>
@@ -714,26 +790,48 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
             <div>
               <h3>{item.title}</h3>
               <p>{item.organization?.name || 'Community organization'}</p>
-              <TagRow tags={[item.location || 'Location TBD', item.hours ? `${item.hours} hours` : item.type, ...(Array.isArray(item.skills) ? item.skills : normalizeList(item.skills))]} />
+              <TagRow tags={[item.location || 'Location TBD', item.workType || item.type, item.deadline && `Deadline ${new Date(item.deadline).toLocaleDateString()}`, item.hours ? `${item.hours} hours` : null, ...(Array.isArray(item.skills) ? item.skills : normalizeList(item.skills))].filter(Boolean)} />
             </div>
             <p>{item.description || 'No description yet.'}</p>
+            {item.requirements && <div className="check-row"><span>Requirements</span><strong>{item.requirements}</strong></div>}
             <div className="check-row"><span>Status</span><strong>{application?.status || 'Not applied'}</strong></div>
             <div className="check-row"><span>Approved hours</span><strong>{application?.approvedHours || 0}</strong></div>
             {application?.note && <div className="check-row"><span>Your note</span><strong>{application.note}</strong></div>}
             <div className="card-footer">
-              {application ? <span>{application.status}</span> : (
-                <div className="application-form">
-                  <input placeholder="Phone optional" value={applicationForms[item.id]?.contactPhone || ''} onChange={(event) => updateApplicationForm(item.id, 'contactPhone', event.target.value)} />
-                  <input placeholder="Resume/profile link optional" value={applicationForms[item.id]?.resumeUrl || ''} onChange={(event) => updateApplicationForm(item.id, 'resumeUrl', event.target.value)} />
-                  <textarea placeholder={item.type === 'JOB' ? 'Why are you a good fit?' : 'Availability or short note to the coordinator'} value={applicationForms[item.id]?.note || ''} onChange={(event) => updateApplicationForm(item.id, 'note', event.target.value)} />
-                  <button className="primary-button" onClick={() => submitApplication(item.id)}>Apply</button>
-                </div>
-              )}
+              {application ? <span className="status-pill">{application.status}</span> : userCanApply ? <button className="primary-button" onClick={() => setActiveOpportunity(item)}>Apply</button> : <span className="status-pill">Manage in dashboard</span>}
             </div>
           </article>
         );})}
         {!visible.length && <p className="helper-text">No {type.toLowerCase()} posts yet.</p>}
       </div>
+      {activeOpportunity && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Apply to ${activeOpportunity.title}`}>
+          <section className="application-modal panel">
+            <div className="section-title">
+              <div><p className="eyebrow">{activeOpportunity.type === 'JOB' ? 'Job application' : 'Volunteer application'}</p><h2>{activeOpportunity.title}</h2></div>
+              <button className="icon-button" onClick={() => setActiveOpportunity(null)} aria-label="Close application"><X size={18} /></button>
+            </div>
+            <p className="helper-text">{activeOpportunity.organization?.name || 'Community organization'} - {activeOpportunity.location || 'Location TBD'}</p>
+            <div className="application-form modal-form">
+              <div className="form-grid">
+                <input placeholder="Full name" value={applicationForms[activeOpportunity.id]?.name || user.name || ''} onChange={(event) => updateApplicationForm(activeOpportunity.id, 'name', event.target.value)} />
+                <input placeholder="Email" value={applicationForms[activeOpportunity.id]?.email || user.email || ''} onChange={(event) => updateApplicationForm(activeOpportunity.id, 'email', event.target.value)} />
+                <input placeholder="Phone optional" value={applicationForms[activeOpportunity.id]?.contactPhone || ''} onChange={(event) => updateApplicationForm(activeOpportunity.id, 'contactPhone', event.target.value)} />
+                <input placeholder="Resume/profile link optional" value={applicationForms[activeOpportunity.id]?.resumeUrl || ''} onChange={(event) => updateApplicationForm(activeOpportunity.id, 'resumeUrl', event.target.value)} />
+              </div>
+              <textarea placeholder={activeOpportunity.type === 'JOB' ? 'Cover message' : 'Availability or short message'} value={applicationForms[activeOpportunity.id]?.note || ''} onChange={(event) => updateApplicationForm(activeOpportunity.id, 'note', event.target.value)} />
+              {activeQuestions.map((question) => (
+                <label className="question-field" key={question}>
+                  <span>{question}</span>
+                  <textarea placeholder="Your answer" value={applicationForms[activeOpportunity.id]?.answers?.[question] || ''} onChange={(event) => updateAnswer(activeOpportunity.id, question, event.target.value)} />
+                </label>
+              ))}
+              {!activeQuestions.length && <p className="helper-text">This listing does not have custom questions yet.</p>}
+              <button className="primary-button" onClick={() => submitApplication(activeOpportunity.id)}>Submit application</button>
+            </div>
+          </section>
+        </div>
+      )}
     </Page>
   );
 }
@@ -750,6 +848,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
     experience: profile.experience || '',
     availability: profile.availability || '',
     avatarUrl: profile.avatarUrl || '',
+    bannerUrl: profile.bannerUrl || profile.heroImageUrl || '',
     skills: listToText(profile.skills),
     interests: listToText(profile.interests),
     languages: listToText(profile.languages),
@@ -766,6 +865,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
       experience: profile.experience || '',
       availability: profile.availability || '',
       avatarUrl: profile.avatarUrl || '',
+      bannerUrl: profile.bannerUrl || profile.heroImageUrl || '',
       skills: listToText(profile.skills),
       interests: listToText(profile.interests),
       languages: listToText(profile.languages),
@@ -783,15 +883,17 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
   }
 
   return (
-    <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="Community profile with education, experience, skills, languages, interests, and hobbies.">
+    <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="Complete community profile with banner, avatar, role, applications, followed masjids, and network context.">
       {!editingSelf && <button className="secondary-button" onClick={onCloseViewed}>Back to your profile</button>}
       <section className="panel profile-detail">
-        <div className="profile-hero"><div className="profile-avatar">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : initials(profile.name)}</div><div><h2>{profile.name}</h2><p>{profile.accountType} - {profile.city || 'No city yet'}</p></div></div>
+        <div className="profile-banner" style={profileBannerStyle(profile)} />
+        <div className="profile-hero"><div className="profile-avatar">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : initials(profile.name)}</div><div><h2>{profile.name}</h2><p>{displayRoleLabel(profile.accountType)} - {profile.city || 'No city yet'}</p></div></div>
         {editingSelf ? (
           <form className="profile-form" onSubmit={submit}>
             <div className="form-grid">
-              {['name', 'city', 'location', 'availability', 'avatarUrl'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
+              {['name', 'city', 'location', 'availability', 'avatarUrl', 'bannerUrl'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
             </div>
+            <p className="helper-text">Avatar and banner images make profiles feel complete across feed, networking, and messaging.</p>
             <textarea placeholder="Bio" value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} />
             <textarea placeholder="Experience" value={form.experience} onChange={(event) => setForm({ ...form, experience: event.target.value })} />
             <textarea placeholder="Education" value={form.education} onChange={(event) => setForm({ ...form, education: event.target.value })} />
@@ -844,7 +946,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
   const [eventForm, setEventForm] = useState({ organizationId: '', title: '', description: '', location: '', startTime: '', capacity: '', requiresApproval: false });
-  const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
+  const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', requirements: '', location: '', skills: '', hours: '', workType: 'volunteer', deadline: '', applicationQuestions: '' });
   const [peopleForm, setPeopleForm] = useState({ organizationId: '', userId: '', roleLabel: 'Imam' });
   const [inviteForm, setInviteForm] = useState({ organizationId: '', name: '', email: '', accountType: 'IMAM', roleLabel: 'Imam' });
   const [peopleQuery, setPeopleQuery] = useState('');
@@ -865,6 +967,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     ['events', 'Events'],
     ['volunteers', 'Volunteers'],
     ['jobs', 'Jobs'],
+    ['applications', 'Applications'],
     ['team', 'Team'],
     ['followers', 'Followers']
   ];
@@ -888,6 +991,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
       return searchable.includes(query);
     });
   const pendingApplications = scopedOrganizations.flatMap((org) => (org.opportunities || []).flatMap((opportunity) => (opportunity.applications || []).filter((application) => application.status === 'PENDING').map((application) => ({ org, opportunity, application }))));
+  const allApplications = scopedOrganizations.flatMap((org) => (org.opportunities || []).flatMap((opportunity) => (opportunity.applications || []).map((application) => ({ org, opportunity, application }))));
   const pendingRegistrations = scopedOrganizations.flatMap((org) => (org.events || []).flatMap((event) => (event.registrations || []).filter((registration) => registration.status === 'PENDING').map((registration) => ({ org, event, registration }))));
   const allFollowers = scopedOrganizations.flatMap((org) => (org.followers || []).map((follow) => ({ org, follow })));
   const metrics = {
@@ -896,6 +1000,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     events: scopedOrganizations.reduce((sum, org) => sum + (org.events || []).length, 0),
     pendingApplications: pendingApplications.length,
     pendingRegistrations: pendingRegistrations.length,
+    applications: allApplications.length,
     jobs: scopedOrganizations.reduce((sum, org) => sum + (org.opportunities || []).filter((item) => item.type === 'JOB').length, 0),
     volunteers: scopedOrganizations.reduce((sum, org) => sum + (org.opportunities || []).filter((item) => item.type !== 'JOB').length, 0)
   };
@@ -919,7 +1024,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
     const organizationId = oppForm.organizationId || myOrganizations[0]?.id;
     if (!organizationId) return alert('Create or select a masjid first.');
     await createOpportunity(organizationId, oppForm);
-    setOppForm({ organizationId, type: 'VOLUNTEER', title: '', description: '', location: '', skills: '', hours: '' });
+    setOppForm({ organizationId, type: 'VOLUNTEER', title: '', description: '', requirements: '', location: '', skills: '', hours: '', workType: 'volunteer', deadline: '', applicationQuestions: '' });
   }
   async function submitPost(event) {
     event.preventDefault();
@@ -966,6 +1071,9 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
   async function approvePendingApplications(opportunityId) {
     const approvedHours = Number(prompt('Approved hours for each pending applicant?', '0') || 0);
     await bulkUpdateApplications(opportunityId, { status: 'APPROVED', fromStatus: 'PENDING', approvedHours });
+  }
+  async function moveApplication(opportunityId, applicationId, status) {
+    await updateApplication(opportunityId, applicationId, { status });
   }
   function formatDateTime(value) {
     return value ? new Date(value).toLocaleString() : 'Not recorded';
@@ -1033,7 +1141,9 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
       dhuhr: org.iqamahTimes?.Dhuhr || '',
       asr: org.iqamahTimes?.Asr || '',
       maghrib: org.iqamahTimes?.Maghrib || '',
-      isha: org.iqamahTimes?.Isha || ''
+      isha: org.iqamahTimes?.Isha || '',
+      jumuah: org.iqamahTimes?.Jumuah || org.iqamahTimes?.jumuah || '',
+      prayerNotes: org.prayerNotes || org.iqamahTimes?.notes || ''
     });
   }
   async function submitEditOrg(event) {
@@ -1043,7 +1153,9 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
       Dhuhr: editOrgForm.dhuhr,
       Asr: editOrgForm.asr,
       Maghrib: editOrgForm.maghrib,
-      Isha: editOrgForm.isha
+      Isha: editOrgForm.isha,
+      Jumuah: editOrgForm.jumuah,
+      notes: editOrgForm.prayerNotes
     };
     await updateOrganization(editingOrgId, { ...editOrgForm, iqamahTimes });
     setEditingOrgId('');
@@ -1065,7 +1177,7 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
             <div className="metric-grid compact">
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('followers')}><span>Followers</span><strong>{metrics.followers}</strong><em>People following managed profiles</em></button>
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('posts')}><span>Posts</span><strong>{metrics.posts}</strong><em>Announcements and updates</em></button>
-              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('volunteers')}><span>Volunteer requests</span><strong>{metrics.pendingApplications}</strong><em>Waiting for review</em></button>
+              <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('applications')}><span>Applications</span><strong>{metrics.applications}</strong><em>{metrics.pendingApplications} waiting for review</em></button>
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('events')}><span>Event approvals</span><strong>{metrics.pendingRegistrations}</strong><em>{metrics.events} events total</em></button>
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('jobs')}><span>Jobs</span><strong>{metrics.jobs}</strong><em>Active job posts</em></button>
               <button type="button" className="metric-card metric-button" onClick={() => setActiveSection('volunteers')}><span>Volunteer roles</span><strong>{metrics.volunteers}</strong><em>Active service roles</em></button>
@@ -1088,8 +1200,10 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                     {application.note && <p>{application.note}</p>}
                     <TagRow tags={[application.contactPhone && `Phone: ${application.contactPhone}`, application.resumeUrl && 'Resume/profile link'].filter(Boolean)} />
                     <div className="manager-row">
-                      <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'APPROVED' })}>Approve</button>
-                      <button onClick={() => updateApplication(opportunity.id, application.id, { status: 'DENIED' })}>Deny</button>
+                      <button onClick={() => moveApplication(opportunity.id, application.id, 'REVIEWING')}>Reviewing</button>
+                      <button onClick={() => moveApplication(opportunity.id, application.id, 'INTERVIEW')}>Interview</button>
+                      <button onClick={() => moveApplication(opportunity.id, application.id, 'APPROVED')}>Accept</button>
+                      <button onClick={() => moveApplication(opportunity.id, application.id, 'DENIED')}>Reject</button>
                       {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">Open link</a>}
                       {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message</button>}
                       {application.applicant && <button onClick={() => openProfile(application.applicant)}>Profile</button>}
@@ -1194,8 +1308,18 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                 <input placeholder="Location" value={oppForm.location} onChange={(event) => setOppForm({ ...oppForm, location: event.target.value })} />
                 <input placeholder="Skills, comma separated" value={oppForm.skills} onChange={(event) => setOppForm({ ...oppForm, skills: event.target.value })} />
                 <input placeholder="Hours" value={oppForm.hours} onChange={(event) => setOppForm({ ...oppForm, hours: event.target.value })} />
+                <select value={oppForm.workType} onChange={(event) => setOppForm({ ...oppForm, workType: event.target.value })}>
+                  <option value="volunteer">Volunteer</option>
+                  <option value="full-time">Full-time</option>
+                  <option value="part-time">Part-time</option>
+                  <option value="contract">Contract</option>
+                </select>
+                <input type="date" value={oppForm.deadline} onChange={(event) => setOppForm({ ...oppForm, deadline: event.target.value })} />
               </div>
               <textarea placeholder="Description" value={oppForm.description} onChange={(event) => setOppForm({ ...oppForm, description: event.target.value })} />
+              <textarea placeholder="Requirements" value={oppForm.requirements} onChange={(event) => setOppForm({ ...oppForm, requirements: event.target.value })} />
+              <textarea placeholder="Custom application questions, one per line" value={oppForm.applicationQuestions} onChange={(event) => setOppForm({ ...oppForm, applicationQuestions: event.target.value })} />
+              <p className="helper-text">Custom questions are stored with the listing and shown in the application modal.</p>
               <button className="primary-button">Post</button>
             </form>
           </section>
@@ -1253,14 +1377,46 @@ function AdminScreen({ user, users, loadNetwork, loadMyOrganizations, myOrganiza
                   </div>
                   <textarea placeholder="Description" value={editOrgForm.description || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, description: event.target.value })} />
                   <textarea placeholder="Facilities" value={editOrgForm.facilities || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, facilities: event.target.value })} />
+                  <div className="section-title compact-title"><h3>Prayer Times Management</h3><span>Profile visible</span></div>
                   <div className="form-grid">
-                    {['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map((field) => <input key={field} placeholder={`${field} iqamah, e.g. 05:30`} value={editOrgForm[field] || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, [field]: event.target.value })} />)}
+                    {['fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'jumuah'].map((field) => <input key={field} placeholder={`${field} iqamah, e.g. 05:30`} value={editOrgForm[field] || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, [field]: event.target.value })} />)}
                   </div>
+                  <textarea placeholder="Prayer notes or announcements" value={editOrgForm.prayerNotes || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, prayerNotes: event.target.value })} />
+                  <p className="helper-text">Prayer notes and Jumuah are saved with the masjid profile. Ramadan mode can build on this same profile surface.</p>
                   <div className="profile-actions">
                     <button className="primary-button">Save masjid profile</button>
                     <button className="secondary-button" type="button" onClick={() => setEditingOrgId('')}>Cancel</button>
                   </div>
                 </form>
+              )}
+              {showSection('applications') && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Application Portal</h3><span>{(org.opportunities || []).reduce((sum, opportunity) => sum + (opportunity.applications || []).length, 0)}</span></div>
+                  <div className="application-portal">
+                    {(org.opportunities || []).flatMap((opportunity) => (opportunity.applications || []).map((application) => ({ opportunity, application }))).map(({ opportunity, application }) => (
+                      <article className="application-card" key={application.id}>
+                        <div>
+                          <strong>{application.applicantName || application.applicant?.name || 'Applicant'}</strong>
+                          <span>{application.applicantEmail || application.applicant?.email || application.email || 'Email not provided'}</span>
+                          <p>{opportunity.title} - {opportunity.type}</p>
+                        </div>
+                        <TagRow tags={[`Status: ${application.status || 'NEW'}`, application.contactPhone && `Phone: ${application.contactPhone}`, application.resumeUrl && 'Resume/profile link'].filter(Boolean)} />
+                        {application.note && <p>{application.note}</p>}
+                        {application.answers && <pre>{JSON.stringify(application.answers, null, 2)}</pre>}
+                        <div className="manager-row">
+                          {application.resumeUrl && <a className="secondary-button" href={application.resumeUrl} target="_blank" rel="noreferrer">View application</a>}
+                          {(application.applicantEmail || application.applicant?.email) && <a className="secondary-button" href={`mailto:${application.applicantEmail || application.applicant.email}`}>Email applicant</a>}
+                          {application.applicant && <button onClick={() => startMessage(application.applicant)}>Message applicant</button>}
+                          <button onClick={() => moveApplication(opportunity.id, application.id, 'REVIEWING')}>Mark reviewing</button>
+                          <button onClick={() => moveApplication(opportunity.id, application.id, 'INTERVIEW')}>Move to interview</button>
+                          <button onClick={() => moveApplication(opportunity.id, application.id, 'ACCEPTED')}>Accept</button>
+                          <button onClick={() => moveApplication(opportunity.id, application.id, 'REJECTED')}>Reject</button>
+                        </div>
+                      </article>
+                    ))}
+                    {!(org.opportunities || []).some((opportunity) => (opportunity.applications || []).length) && <p className="helper-text">No applications yet.</p>}
+                  </div>
+                </div>
               )}
               {showSection('team') && (
                 <div className="manager-section">
@@ -1512,6 +1668,7 @@ export default function App() {
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
   const [masjids, setMasjids] = useState([]);
   const [prayerTimes, setPrayerTimes] = useState(prayers);
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
 
   async function bootstrap() {
     if (!token()) return;
@@ -1813,6 +1970,10 @@ export default function App() {
 
   useEffect(() => { bootstrap().catch(() => logout()); }, []);
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+  useEffect(() => {
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.error);
   }, []);
   useEffect(() => { if (user) requestLocation(); }, [Boolean(user)]);
@@ -1905,6 +2066,10 @@ export default function App() {
     else setTab(result.tab);
   }
 
+  function toggleTheme() {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+  }
+
   const otherUsers = users.filter((person) => person.id !== user?.id);
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -1941,11 +2106,11 @@ export default function App() {
 
   return (
     <>
-      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0}>
+      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0} theme={theme} toggleTheme={toggleTheme}>
         {screens[tab] || screens.home}
       </Shell>
       <section className="mobile-bottom-nav">
-        {navItems.filter((item) => mobileNavKeys.includes(item.key)).map((item) => {
+        {navItems.filter((item) => mobileNavKeys.includes(item.key)).filter((item) => !(isOrganizationAccount(user) && ['volunteers', 'jobs'].includes(item.key))).map((item) => {
           const Icon = item.icon;
           return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span></button>;
         })}

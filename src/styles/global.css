@@ -2,6 +2,183 @@
   box-sizing: border-box;
 }
 
+.role-notice {
+  display: grid;
+  gap: 6px;
+  border-left: 4px solid var(--brand);
+}
+
+.person-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.person-banner,
+.profile-banner {
+  min-height: 112px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, 0.18), rgba(176, 120, 26, 0.2)),
+    linear-gradient(45deg, #e4f3ef, #f7f1e5);
+  background-size: cover;
+  background-position: center;
+}
+
+.network-avatar {
+  margin-top: -36px;
+  margin-left: 18px;
+  border: 4px solid var(--panel-bg);
+  box-shadow: var(--shadow);
+}
+
+.profile-banner {
+  margin-bottom: -42px;
+}
+
+.profile-detail .profile-hero {
+  position: relative;
+  align-items: end;
+  padding-top: 8px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(7, 15, 13, 0.58);
+  backdrop-filter: blur(8px);
+}
+
+.application-modal {
+  width: min(760px, 100%);
+  max-height: min(820px, 92dvh);
+  overflow: auto;
+  box-shadow: var(--shadow);
+}
+
+.modal-form {
+  margin-top: 16px;
+}
+
+.question-field {
+  display: grid;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.question-field span {
+  color: var(--text);
+}
+
+.application-portal {
+  display: grid;
+  gap: 12px;
+}
+
+.application-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.application-card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dm-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.dm-search input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  width: 100%;
+}
+
+.inbox-list button {
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  column-gap: 10px;
+}
+
+.dm-avatar {
+  width: 42px;
+  height: 42px;
+  grid-row: span 3;
+}
+
+.message-thread {
+  min-height: 72dvh;
+  display: grid;
+  grid-template-rows: auto minmax(280px, 1fr) auto;
+}
+
+.message-composer {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding-top: 10px;
+  background: var(--panel-bg);
+}
+
+.message-composer textarea {
+  min-height: 46px;
+  max-height: 120px;
+  resize: vertical;
+}
+
+@media (max-width: 760px) {
+  .messaging-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .application-modal {
+    max-height: 94dvh;
+  }
+}
+
+:root {
+  --page-bg: #eef2f5;
+  --panel-bg: #ffffff;
+  --panel-soft: #f8fbfa;
+  --text: #17221d;
+  --muted: #5d716b;
+  --border: #d8e2df;
+  --brand: #0f766e;
+  --brand-strong: #0b5f58;
+  --shadow: 0 18px 50px rgba(20, 36, 31, 0.12);
+}
+
+:root[data-theme="dark"] {
+  --page-bg: #111816;
+  --panel-bg: #18231f;
+  --panel-soft: #21302b;
+  --text: #eef7f3;
+  --muted: #a9bbb5;
+  --border: #31453f;
+  --brand: #2dd4bf;
+  --brand-strong: #5eead4;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+}
+
 html,
 body,
 #root {
@@ -11,8 +188,8 @@ body,
 
 body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #eef2f5;
-  color: #17221d;
+  background: var(--page-bg);
+  color: var(--text);
   overflow-x: hidden;
 }
 
@@ -1821,4 +1998,68 @@ a {
   .auth-screen {
     padding: 28px 18px;
   }
+}
+
+/* Final theme/component overrides intentionally live at the end of the cascade. */
+:root[data-theme="dark"] .top-nav,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .profile-card,
+:root[data-theme="dark"] .search-results,
+:root[data-theme="dark"] .mobile-drawer,
+:root[data-theme="dark"] .mobile-bottom-nav,
+:root[data-theme="dark"] .role-card,
+:root[data-theme="dark"] .person-card,
+:root[data-theme="dark"] .business-card,
+:root[data-theme="dark"] .library-card {
+  background: var(--panel-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] .global-search,
+:root[data-theme="dark"] .search-results button,
+:root[data-theme="dark"] .mini-row,
+:root[data-theme="dark"] .metric-card,
+:root[data-theme="dark"] .chat-bubble.received {
+  background: var(--panel-soft);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .brand,
+:root[data-theme="dark"] .profile-chip,
+:root[data-theme="dark"] .side-nav button,
+:root[data-theme="dark"] .page-header h1,
+:root[data-theme="dark"] .section-title h2,
+:root[data-theme="dark"] .section-title h3,
+:root[data-theme="dark"] h1,
+:root[data-theme="dark"] h2,
+:root[data-theme="dark"] h3,
+:root[data-theme="dark"] strong {
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .helper-text,
+:root[data-theme="dark"] .search-results small,
+:root[data-theme="dark"] p,
+:root[data-theme="dark"] span,
+:root[data-theme="dark"] small {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .primary-button,
+:root[data-theme="dark"] .post-button {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #08211d;
+}
+
+:root[data-theme="dark"] .secondary-button,
+:root[data-theme="dark"] .icon-button {
+  background: var(--panel-soft);
+  border-color: var(--border);
+  color: var(--brand-strong);
 }

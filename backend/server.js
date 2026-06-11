@@ -132,8 +132,26 @@ io.on('connection', (socket) => {
 
 function normalizeList(value) {
   if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
-  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
   return [];
+}
+
+function normalizeJsonList(value) {
+  const list = normalizeList(value);
+  return list.length ? list : null;
+}
+
+function normalizeDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+const applicationStatuses = ['PENDING', 'REVIEWING', 'INTERVIEW', 'ACCEPTED', 'REJECTED', 'APPROVED', 'DENIED', 'COMPLETED'];
+
+function normalizeApplicationStatus(value, fallback = 'APPROVED') {
+  const status = String(value || '').toUpperCase();
+  return applicationStatuses.includes(status) ? status : fallback;
 }
 
 function publicUser(user) {
@@ -154,6 +172,7 @@ function publicUser(user) {
     hobbies: user.hobbies || [],
     availability: user.availability,
     avatarUrl: user.avatarUrl,
+    bannerUrl: user.bannerUrl,
     createdAt: user.createdAt
   };
 }
@@ -444,7 +463,8 @@ app.put('/api/me', auth, async (req, res) => {
     interests: normalizeList(req.body.interests),
     languages: normalizeList(req.body.languages),
     hobbies: normalizeList(req.body.hobbies),
-    avatarUrl: req.body.avatarUrl
+    avatarUrl: req.body.avatarUrl,
+    bannerUrl: req.body.bannerUrl
   };
   Object.keys(data).forEach((key) => data[key] === undefined && delete data[key]);
   const user = await prisma.user.update({ where: { id: req.user.id }, data });
@@ -608,7 +628,7 @@ app.get('/api/organizations', async (req, res) => {
 
 app.post('/api/organizations', auth, async (req, res) => {
   if (req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Only platform admins can create masjid or MSA profiles' });
-  const { name, type, city, address, website, email, phone, description, facilities, latitude, longitude, imageUrl, heroImageUrl, donationUrl, instagramUrl, facebookUrl, prayerTimes, iqamahTimes, ownerEmail } = req.body;
+  const { name, type, city, address, website, email, phone, description, facilities, latitude, longitude, imageUrl, heroImageUrl, donationUrl, instagramUrl, facebookUrl, prayerTimes, iqamahTimes, prayerNotes, classes, ownerEmail } = req.body;
   const orgType = organizationType(type);
   let ownerId = req.user.id;
   let temporaryPassword = null;
@@ -654,6 +674,8 @@ app.post('/api/organizations', auth, async (req, res) => {
       facebookUrl,
       prayerTimes,
       iqamahTimes,
+      prayerNotes,
+      classes: Array.isArray(classes) ? classes : null,
       ownerId,
       claimed: true,
       verified: req.user.accountType === 'ADMIN'
@@ -688,11 +710,12 @@ app.get('/api/organizations/:id', async (req, res) => {
 
 app.put('/api/organizations/:id', auth, async (req, res) => {
   if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can update it' });
-  const allowed = ['name', 'type', 'city', 'address', 'website', 'email', 'phone', 'description', 'facilities', 'imageUrl', 'heroImageUrl', 'donationUrl', 'instagramUrl', 'facebookUrl', 'prayerTimes', 'iqamahTimes'];
+  const allowed = ['name', 'type', 'city', 'address', 'website', 'email', 'phone', 'description', 'facilities', 'imageUrl', 'heroImageUrl', 'donationUrl', 'instagramUrl', 'facebookUrl', 'prayerTimes', 'iqamahTimes', 'prayerNotes', 'classes'];
   const data = {};
   allowed.forEach((key) => {
     if (req.body[key] !== undefined) data[key] = key === 'facilities' && Array.isArray(req.body[key]) ? req.body[key].join(', ') : req.body[key];
   });
+  if (data.classes !== undefined && !Array.isArray(data.classes)) data.classes = null;
   if (data.type !== undefined) data.type = organizationType(data.type);
   if (req.body.latitude !== undefined) data.latitude = req.body.latitude === '' ? null : Number(req.body.latitude);
   if (req.body.longitude !== undefined) data.longitude = req.body.longitude === '' ? null : Number(req.body.longitude);
@@ -972,7 +995,11 @@ app.post('/api/organizations/:id/opportunities', auth, async (req, res) => {
       type,
       location: req.body.location,
       skills: normalizeList(req.body.skills),
-      hours: req.body.hours == null || req.body.hours === '' ? null : Number(req.body.hours)
+      hours: req.body.hours == null || req.body.hours === '' ? null : Number(req.body.hours),
+      requirements: req.body.requirements || null,
+      workType: req.body.workType || null,
+      deadline: normalizeDate(req.body.deadline),
+      applicationQuestions: normalizeJsonList(req.body.applicationQuestions)
     }
   });
   res.json(opportunity);
@@ -992,6 +1019,10 @@ app.put('/api/opportunities/:id', auth, async (req, res) => {
   if (req.body.location !== undefined) data.location = req.body.location || null;
   if (req.body.skills !== undefined) data.skills = normalizeList(req.body.skills);
   if (req.body.hours !== undefined) data.hours = req.body.hours == null || req.body.hours === '' ? null : Number(req.body.hours);
+  if (req.body.requirements !== undefined) data.requirements = req.body.requirements || null;
+  if (req.body.workType !== undefined) data.workType = req.body.workType || null;
+  if (req.body.deadline !== undefined) data.deadline = normalizeDate(req.body.deadline);
+  if (req.body.applicationQuestions !== undefined) data.applicationQuestions = normalizeJsonList(req.body.applicationQuestions);
   if (req.body.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
   const updated = await prisma.opportunity.update({ where: { id: opportunity.id }, data, include: { applications: { include: { applicant: true } } } });
   res.json({ ...updated, applications: updated.applications.map((application) => ({ ...application, applicant: publicUser(application.applicant) })) });
@@ -1007,10 +1038,16 @@ app.delete('/api/opportunities/:id', auth, async (req, res) => {
 });
 
 app.post('/api/opportunities/:id/apply', auth, async (req, res) => {
+  if (['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Organization and admin accounts manage listings; only user accounts can apply' });
+  const opportunity = await prisma.opportunity.findUnique({ where: { id: req.params.id } });
+  if (!opportunity || !opportunity.isActive) return res.status(404).json({ error: 'Opportunity not found' });
   const data = {
+    applicantName: req.body.name?.trim() || req.user.name,
+    applicantEmail: req.body.email?.trim()?.toLowerCase() || req.user.email,
     note: req.body.note?.trim() || null,
     contactPhone: req.body.contactPhone?.trim() || null,
-    resumeUrl: req.body.resumeUrl?.trim() || null
+    resumeUrl: req.body.resumeUrl?.trim() || null,
+    answers: req.body.answers && typeof req.body.answers === 'object' ? req.body.answers : null
   };
   const application = await prisma.volunteerApplication.upsert({
     where: { opportunityId_applicantId: { opportunityId: req.params.id, applicantId: req.user.id } },
@@ -1024,9 +1061,9 @@ app.put('/api/opportunities/:id/applications', auth, async (req, res) => {
   const opportunity = await prisma.opportunity.findUnique({ where: { id: req.params.id } });
   if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
   if (!(await canManageOrganization(req.user, opportunity.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can manage applications' });
-  const status = ['PENDING', 'APPROVED', 'DENIED', 'COMPLETED'].includes(req.body.status) ? req.body.status : 'APPROVED';
+  const status = normalizeApplicationStatus(req.body.status);
   const where = { opportunityId: opportunity.id };
-  if (req.body.fromStatus && ['PENDING', 'APPROVED', 'DENIED', 'COMPLETED'].includes(req.body.fromStatus)) where.status = req.body.fromStatus;
+  if (req.body.fromStatus && applicationStatuses.includes(req.body.fromStatus)) where.status = req.body.fromStatus;
   const data = { status, approvedById: req.user.id };
   if (req.body.approvedHours != null) data.approvedHours = Number(req.body.approvedHours);
   if (req.body.checkedInAt === true) data.checkedInAt = new Date();
@@ -1041,7 +1078,7 @@ app.put('/api/opportunities/:id/applications/:applicationId', auth, async (req, 
   if (!(await canManageOrganization(req.user, opportunity.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can manage applications' });
   const existingApplication = await prisma.volunteerApplication.findUnique({ where: { id: req.params.applicationId } });
   if (!existingApplication || existingApplication.opportunityId !== opportunity.id) return res.status(404).json({ error: 'Application not found for this opportunity' });
-  const status = ['PENDING', 'APPROVED', 'DENIED', 'COMPLETED'].includes(req.body.status) ? req.body.status : 'APPROVED';
+  const status = normalizeApplicationStatus(req.body.status);
   const application = await prisma.volunteerApplication.update({
     where: { id: req.params.applicationId },
     data: {

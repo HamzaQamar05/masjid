@@ -34,6 +34,7 @@ model User {
   hobbies      String[]    @default([])
   availability String?
   avatarUrl    String?
+  bannerUrl    String?
   createdAt    DateTime    @default(now())
 
   eventsCreated            Event[]                @relation("EventCreator")
@@ -70,6 +71,8 @@ model Organization {
   facebookUrl   String?
   prayerTimes   Json?
   iqamahTimes   Json?
+  prayerNotes   String?
+  classes       Json?
   claimed       Boolean              @default(false)
   verified      Boolean              @default(false)
   ownerId       String?
@@ -202,6 +205,10 @@ model Opportunity {
   location       String?
   skills         String[] @default([])
   hours          Float?
+  requirements   String?
+  workType       String?
+  deadline       DateTime?
+  applicationQuestions Json?
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
 
@@ -216,9 +223,12 @@ model VolunteerApplication {
   opportunityId String
   applicantId   String
   status        String    @default("PENDING")
+  applicantName String?
+  applicantEmail String?
   note          String?
   contactPhone  String?
   resumeUrl     String?
+  answers       Json?
   approvedHours Float     @default(0)
   checkedInAt   DateTime?
   checkedOutAt  DateTime?
