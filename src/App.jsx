@@ -1271,14 +1271,26 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
 
         <div className="favorite-masjid-grid">
           {favoriteMasjids.map((org) => (
-            <article className="favorite-masjid-card" key={org.id}>
-              <div className="mini-org-avatar">{org.logoUrl ? <img src={org.logoUrl} alt="" /> : initials(org.name)}</div>
-              <div>
-                <strong>{org.name}</strong>
-                <span>{org.city || org.location || 'Location open'}</span>
-              </div>
-            </article>
-          ))}
+  <article className="favorite-masjid-card" key={org.id}>
+    <div className="mini-org-avatar">
+      {org.logoUrl ? <img src={org.logoUrl} alt="" /> : initials(org.name)}
+    </div>
+
+    <div>
+      <strong>{org.name}</strong>
+      <span>{org.city || org.location || 'Location open'}</span>
+    </div>
+
+    {editingSelf && (
+      <button
+        className="secondary-button compact-button"
+        onClick={() => unfavoriteMasjid(org.id)}
+      >
+        Unfavorite
+      </button>
+    )}
+  </article>
+))}
         </div>
 
         {!favoriteMasjids.length && <p className="helper-text">No favorite masjids yet.</p>}
