@@ -147,6 +147,27 @@ function normalizeDate(value) {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
+function normalizeBirthDate(value) {
+  const date = normalizeDate(value);
+  if (!date || date > new Date()) return null;
+  return date;
+}
+
+function calculateAge(dateOfBirth) {
+  const birthDate = normalizeBirthDate(dateOfBirth);
+  if (!birthDate) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age -= 1;
+  return age;
+}
+
+function isAdult(user) {
+  const age = calculateAge(user?.dateOfBirth);
+  return age != null && age >= 18;
+}
+
 const applicationStatuses = ['PENDING', 'REVIEWING', 'INTERVIEW', 'ACCEPTED', 'REJECTED', 'APPROVED', 'DENIED', 'COMPLETED'];
 
 function normalizeApplicationStatus(value, fallback = 'APPROVED') {
@@ -161,6 +182,8 @@ function publicUser(user) {
     name: user.name,
     email: user.email,
     accountType: user.accountType,
+    dateOfBirth: user.dateOfBirth,
+    age: calculateAge(user.dateOfBirth),
     bio: user.bio,
     city: user.city,
     location: user.location,
@@ -268,6 +291,18 @@ async function ensureFallbackOrganizations() {
 
 function createToken(user) {
   return jwt.sign({ id: user.id, accountType: user.accountType }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '7d' });
+}
+
+function publicResetLink(email, rawToken) {
+  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  return `${frontendUrl}/?resetToken=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(email)}`;
+}
+
+async function sendPasswordResetEmail(user, rawToken) {
+  const resetLink = publicResetLink(user.email, rawToken);
+  const message = `Reset your Ummah Connect password: ${resetLink}`;
+  console.log(`[password-reset] ${user.email}: ${message}`);
+  return resetLink;
 }
 
 function threadIdFor(a, b) {
@@ -412,7 +447,8 @@ app.get('/api/health', (_, res) => res.json({ ok: true }));
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password, city, bio } = req.body;
-    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' });
+    const dateOfBirth = normalizeBirthDate(req.body.dateOfBirth);
+    if (!name || !email || !password || !dateOfBirth) return res.status(400).json({ error: 'Name, email, password, and date of birth are required' });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
@@ -420,6 +456,7 @@ app.post('/api/auth/register', async (req, res) => {
         name,
         email: email.toLowerCase(),
         passwordHash,
+        dateOfBirth,
         accountType: 'USER',
         city,
         bio,
@@ -445,6 +482,39 @@ app.post('/api/auth/login', async (req, res) => {
   res.json({ token: createToken(user), user: publicUser(user) });
 });
 
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+  if (user) {
+    const rawToken = randomBytes(32).toString('hex');
+    const passwordResetTokenHash = await bcrypt.hash(rawToken, 10);
+    const passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordResetTokenHash, passwordResetExpiresAt } });
+    const resetLink = await sendPasswordResetEmail(user, rawToken);
+    return res.json({ message: 'Password reset email sent if the account exists.', devResetLink: process.env.NODE_ENV === 'production' ? undefined : resetLink });
+  }
+  res.json({ message: 'Password reset email sent if the account exists.' });
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const resetToken = String(req.body.resetToken || '');
+  const password = String(req.body.password || '');
+  if (!email || !resetToken || password.length < 6) return res.status(400).json({ error: 'Email, reset token, and a 6+ character password are required' });
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user?.passwordResetTokenHash || !user.passwordResetExpiresAt || user.passwordResetExpiresAt < new Date()) {
+    return res.status(400).json({ error: 'Reset link is invalid or expired' });
+  }
+  const valid = await bcrypt.compare(resetToken, user.passwordResetTokenHash);
+  if (!valid) return res.status(400).json({ error: 'Reset link is invalid or expired' });
+  const passwordHash = await bcrypt.hash(password, 10);
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash, passwordResetTokenHash: null, passwordResetExpiresAt: null }
+  });
+  res.json({ token: createToken(updated), user: publicUser(updated) });
+});
+
 app.get('/api/me', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.user.id } });
   res.json(publicUser(user));
@@ -453,6 +523,7 @@ app.get('/api/me', auth, async (req, res) => {
 app.put('/api/me', auth, async (req, res) => {
   const data = {
     name: req.body.name,
+    dateOfBirth: req.body.dateOfBirth !== undefined ? normalizeBirthDate(req.body.dateOfBirth) : undefined,
     bio: req.body.bio,
     city: req.body.city,
     location: req.body.location,
@@ -932,6 +1003,7 @@ app.delete('/api/events/:eventId', auth, async (req, res) => {
 
 app.post('/api/events/:eventId/register', auth, async (req, res) => {
   try {
+    if (['MASJID', 'MSA'].includes(req.user.accountType)) return res.status(403).json({ error: 'Masjid and MSA accounts manage events from the dashboard and cannot register as attendees' });
     const event = await prisma.event.findUnique({ where: { id: req.params.eventId }, include: { registrations: true } });
     if (!event) return res.status(404).json({ error: 'Event not found' });
     if (event.capacity && event.registrations.filter((registration) => registration.status !== 'DENIED').length >= event.capacity) return res.status(400).json({ error: 'Event is full' });
@@ -967,6 +1039,7 @@ app.put('/api/events/:eventId/registrations', auth, async (req, res) => {
 });
 
 app.delete('/api/events/:eventId/register', auth, async (req, res) => {
+  if (['MASJID', 'MSA'].includes(req.user.accountType)) return res.status(403).json({ error: 'Masjid and MSA accounts do not manage attendee registrations from the public event view' });
   await prisma.eventRegistration.deleteMany({ where: { userId: req.user.id, eventId: req.params.eventId } });
   res.json({ message: 'Registration removed' });
 });
@@ -1039,11 +1112,15 @@ app.delete('/api/opportunities/:id', auth, async (req, res) => {
 
 app.post('/api/opportunities/:id/apply', auth, async (req, res) => {
   if (['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Organization and admin accounts manage listings; only user accounts can apply' });
-  const opportunity = await prisma.opportunity.findUnique({ where: { id: req.params.id } });
+  const [opportunity, currentUser] = await Promise.all([
+    prisma.opportunity.findUnique({ where: { id: req.params.id } }),
+    prisma.user.findUnique({ where: { id: req.user.id } })
+  ]);
   if (!opportunity || !opportunity.isActive) return res.status(404).json({ error: 'Opportunity not found' });
+  if (opportunity.type === 'JOB' && !isAdult(currentUser)) return res.status(403).json({ error: 'Job applications require an account age of 18 or older' });
   const data = {
-    applicantName: req.body.name?.trim() || req.user.name,
-    applicantEmail: req.body.email?.trim()?.toLowerCase() || req.user.email,
+    applicantName: req.body.name?.trim() || currentUser.name,
+    applicantEmail: req.body.email?.trim()?.toLowerCase() || currentUser.email,
     note: req.body.note?.trim() || null,
     contactPhone: req.body.contactPhone?.trim() || null,
     resumeUrl: req.body.resumeUrl?.trim() || null,

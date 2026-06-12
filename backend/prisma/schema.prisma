@@ -22,6 +22,9 @@ model User {
   name         String
   email        String      @unique
   passwordHash String
+  dateOfBirth  DateTime?
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
   accountType  AccountType @default(USER)
   bio          String?
   city         String?

@@ -1952,7 +1952,7 @@ a {
     bottom: 10px;
     z-index: 35;
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
     background: rgba(255, 255, 255, 0.94);
     border: 1px solid #d8e2df;
@@ -2344,4 +2344,76 @@ a {
 :root[data-theme="dark"] .brand span,
 :root[data-theme="dark"] .dm-dot {
   color: #ffffff;
+}
+
+/* Account preference controls */
+.interest-picker,
+.settings-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.interest-picker {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.interest-picker strong,
+.field-label span {
+  color: var(--text);
+  font-weight: 900;
+}
+
+.interest-picker p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.interest-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.field-label {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label input {
+  width: min(360px, 100%);
+}
+
+.reset-message {
+  width: min(520px, 100%);
+  overflow-wrap: anywhere;
+}
+
+.auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 14px;
+}
+
+.profile-card,
+.panel,
+.composer,
+.feed-post,
+.event-card,
+.organization-card,
+.person-card,
+.role-card,
+.library-card,
+.business-card,
+.metric-card,
+.nearby-card {
+  box-shadow: 0 14px 34px rgba(20, 36, 31, 0.08);
+}
+
+.top-nav {
+  box-shadow: 0 10px 34px rgba(20, 36, 31, 0.08);
 }

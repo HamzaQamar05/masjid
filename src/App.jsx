@@ -15,13 +15,12 @@ import {
   MapPin,
   Menu,
   MessageCircle,
-  Moon,
   Navigation,
   Plus,
   Search,
   Send,
+  Settings,
   ShieldCheck,
-  Sun,
   UserCheck,
   Users,
   X
@@ -32,8 +31,26 @@ import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganiz
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const notificationTimers = new Map();
 
+const coreInterestLabels = ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile'];
+const optionalInterestLabels = ['Events', 'Library', 'Volunteer', 'Jobs', 'Business'];
+const interestByNavKey = {
+  home: 'Home',
+  prayer: 'Prayer',
+  messages: 'Messages',
+  organizations: 'Masjids',
+  network: 'Network',
+  profile: 'Profile',
+  events: 'Events',
+  library: 'Library',
+  volunteers: 'Volunteer',
+  jobs: 'Jobs',
+  businesses: 'Business'
+};
+
 const navItems = [
   { key: 'home', label: 'Home', icon: Home },
+  { key: 'prayer', label: 'Prayer', icon: ShieldCheck },
+  { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'events', label: 'Events', icon: CalendarDays },
   { key: 'organizations', label: 'Masjids', icon: Building2 },
   { key: 'network', label: 'Network', icon: Users },
@@ -45,7 +62,8 @@ const navItems = [
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
 ];
 
-const mobileNavKeys = ['home', 'organizations', 'network', 'volunteers', 'profile'];
+const leftNavKeys = ['organizations', 'events', 'library', 'volunteers', 'jobs', 'businesses', 'dashboard'];
+const mobileNavKeys = ['home', 'prayer', 'messages', 'network', 'profile'];
 
 function token() {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -69,6 +87,32 @@ function isImamAccount(user) {
 
 function isUserAccount(user) {
   return user?.accountType === 'USER';
+}
+
+function userPreferenceLabels(user) {
+  const saved = Array.isArray(user?.interests) ? user.interests : [];
+  const known = saved.filter((item) => [...coreInterestLabels, ...optionalInterestLabels].includes(item));
+  return new Set([...coreInterestLabels, ...(known.length ? known : optionalInterestLabels)]);
+}
+
+function hasPreference(user, navKey) {
+  const label = interestByNavKey[navKey];
+  return !label || userPreferenceLabels(user).has(label);
+}
+
+function calculateAge(dateOfBirth) {
+  if (!dateOfBirth) return null;
+  const birthDate = new Date(dateOfBirth);
+  if (!Number.isFinite(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age -= 1;
+  return age;
+}
+
+function canUseJobs(user) {
+  return calculateAge(user?.dateOfBirth) >= 18;
 }
 
 function initials(name = 'UC') {
@@ -95,6 +139,12 @@ function displayRoleLabel(accountType = 'USER') {
 
 function listToText(value) {
   return Array.isArray(value) ? value.join(', ') : value || '';
+}
+
+function toDateInput(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : '';
 }
 
 function textToList(value) {
@@ -145,7 +195,7 @@ async function showPrayerNotification(title, body, tag) {
   new Notification(title, { body, tag });
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, theme, toggleTheme }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, openSettings }) {
   const [navOpen, setNavOpen] = useState(false);
   function navigate(key) {
     setTab(key);
@@ -175,9 +225,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         </div>
         <div className="top-actions">
           <button className="icon-button" aria-label="Notifications"><Bell size={20} /></button>
-          <button className="icon-button" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <button className="icon-button" onClick={openSettings} aria-label="Open settings"><Settings size={20} /></button>
           <button className="post-button" onClick={() => navigate(canPost(user) ? 'dashboard' : 'events')}><Plus size={18} /><span>{canPost(user) ? 'Create' : 'Event'}</span></button>
           <button className="dm-top-button" onClick={() => navigate('messages')} aria-label="Open messages">
   <Mail size={22} />
@@ -206,9 +254,11 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
 }
 
 function NavigationList({ tab, setTab, user, hasDashboardAccess }) {
-  const visibleNav = navItems.filter((item) => {
+  const visibleNav = navItems.filter((item) => leftNavKeys.includes(item.key)).filter((item) => {
     if (item.key === 'dashboard') return canManageOrgs(user) || hasDashboardAccess || isImamAccount(user);
+    if (!hasPreference(user, item.key)) return false;
     if (isOrganizationAccount(user) && ['volunteers', 'jobs', 'businesses'].includes(item.key)) return false;
+    if (item.key === 'jobs' && !canUseJobs(user)) return false;
     return true;
   });
   return (
@@ -257,7 +307,7 @@ function HomeScreen({ user, posts, masjids, locationStatus, requestLocation, pra
         <PostFeed posts={posts} openOrganization={openOrganization} />
       </section>
       <aside className="right-rail">
-        <PrayerWidget prayerTimes={prayerTimes} />
+        {orgAccount ? <MasjidPrayerManagerNotice setTab={setTab} /> : <PrayerWidget prayerTimes={prayerTimes} />}
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
         <section className="panel">
           <div className="section-title"><h2>Account</h2><button onClick={() => setTab('profile')}>Edit</button></div>
@@ -309,6 +359,40 @@ function PrayerWidget({ prayerTimes }) {
   );
 }
 
+function MasjidPrayerManagerNotice({ setTab }) {
+  return (
+    <section className="panel prayer-panel">
+      <div className="section-title"><div><p className="eyebrow">Masjid tools</p><h2>Prayer times</h2></div><ShieldCheck size={22} /></div>
+      <p>Update your own iqamah and prayer notes from the masjid dashboard.</p>
+      <button className="primary-button" onClick={() => setTab('dashboard')}>Open dashboard</button>
+    </section>
+  );
+}
+
+function PrayerScreen({ user, prayerTimes, myOrganizations, setTab }) {
+  if (isOrganizationAccount(user)) {
+    return (
+      <Page title="Prayer" subtitle="Masjid accounts edit their own public prayer schedule from the dashboard.">
+        <MasjidPrayerManagerNotice setTab={setTab} />
+        <div className="card-grid two">
+          {myOrganizations.map((org) => (
+            <article className="organization-card" key={org.id}>
+              <h3>{org.name}</h3>
+              <p>{org.prayerNotes || 'No prayer notes added yet.'}</p>
+              <TagRow tags={[org.iqamahTimes?.Fajr && `Fajr ${org.iqamahTimes.Fajr}`, org.iqamahTimes?.Dhuhr && `Dhuhr ${org.iqamahTimes.Dhuhr}`, org.iqamahTimes?.Asr && `Asr ${org.iqamahTimes.Asr}`, org.iqamahTimes?.Maghrib && `Maghrib ${org.iqamahTimes.Maghrib}`, org.iqamahTimes?.Isha && `Isha ${org.iqamahTimes.Isha}`].filter(Boolean)} />
+            </article>
+          ))}
+        </div>
+      </Page>
+    );
+  }
+  return (
+    <Page title="Prayer" subtitle="Daily prayer times based on your current location.">
+      <PrayerWidget prayerTimes={prayerTimes} />
+    </Page>
+  );
+}
+
 function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganization }) {
   return (
     <section className="panel nearby-panel">
@@ -345,6 +429,12 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
   }
   return (
     <Page title="Events" subtitle="Create, register for, and delete events you own. Admins can delete any event.">
+      {isOrganizationAccount(user) && (
+        <section className="panel role-notice">
+          <strong>Masjid account</strong>
+          <p>Event attendance registration is for community member accounts. Manage your own events and attendees from the dashboard.</p>
+        </section>
+      )}
       <div className="card-grid two">
         {events.map((event) => {
           const canDelete = user.accountType === 'ADMIN' || event.createdById === user.id || event.createdBy?.id === user.id || myOrganizations.some((org) => org.id === event.organizationId);
@@ -363,7 +453,7 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
               {registration && <div className="check-row"><span>Your status</span><strong>{registration.status}</strong></div>}
               <div className="card-footer">
                 <span>{event.organization?.name || (event.createdBy?.name ? `By ${event.createdBy.name}` : 'Community event')}</span>
-                {registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
+                {isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
               </div>
             </article>
           );
@@ -797,7 +887,8 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
   const verifiedTotal = visible.reduce((sum, item) => sum + (item.applications?.[0]?.approvedHours || 0), 0);
   const [activeOpportunity, setActiveOpportunity] = useState(null);
   const [applicationForms, setApplicationForms] = useState({});
-  const userCanApply = isUserAccount(user);
+  const ageAllowed = type !== 'JOB' || canUseJobs(user);
+  const userCanApply = isUserAccount(user) && ageAllowed;
   const activeQuestions = activeOpportunity ? normalizeList(activeOpportunity.applicationQuestions || activeOpportunity.questions) : [];
   function updateApplicationForm(id, field, value) {
     setApplicationForms((current) => ({ ...current, [id]: { ...(current[id] || {}), [field]: value } }));
@@ -820,8 +911,8 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
     <Page title={title} subtitle={subtitle}>
       {!userCanApply && (
         <section className="panel role-notice">
-          <strong>Organization account</strong>
-          <p>Masjid and MSA accounts manage listings from the dashboard. Applying is reserved for community member accounts.</p>
+          <strong>{isUserAccount(user) ? 'Age restricted' : 'Organization account'}</strong>
+          <p>{isUserAccount(user) ? 'Job applications require a saved date of birth showing you are 18 or older.' : 'Masjid and MSA accounts manage listings from the dashboard. Applying is reserved for community member accounts.'}</p>
         </section>
       )}
       {type === 'VOLUNTEER' && (
@@ -894,6 +985,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
   const profile = viewedUser || user;
   const [form, setForm] = useState(() => ({
     name: profile.name || '',
+    dateOfBirth: toDateInput(profile.dateOfBirth),
     city: profile.city || '',
     location: profile.location || '',
     bio: profile.bio || '',
@@ -911,6 +1003,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
   useEffect(() => {
     setForm({
       name: profile.name || '',
+      dateOfBirth: toDateInput(profile.dateOfBirth),
       city: profile.city || '',
       location: profile.location || '',
       bio: profile.bio || '',
@@ -944,7 +1037,9 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
         {editingSelf ? (
           <form className="profile-form" onSubmit={submit}>
             <div className="form-grid">
-              {['name', 'city', 'location', 'availability', 'avatarUrl', 'bannerUrl'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
+              <input placeholder="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              <input type="date" value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} aria-label="Date of birth" />
+              {['city', 'location', 'availability', 'avatarUrl', 'bannerUrl'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
             </div>
             <p className="helper-text">Avatar and banner images make profiles feel complete across feed, networking, and messaging.</p>
             <textarea placeholder="Bio" value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} />
@@ -992,6 +1087,67 @@ function ReadOnlyProfile({ profile }) {
 
 function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
+}
+
+function SettingsScreen({ user, onSave }) {
+  const selected = userPreferenceLabels(user);
+  const [form, setForm] = useState(() => ({
+    dateOfBirth: toDateInput(user.dateOfBirth),
+    interests: optionalInterestLabels.filter((label) => selected.has(label))
+  }));
+
+  useEffect(() => {
+    const nextSelected = userPreferenceLabels(user);
+    setForm({
+      dateOfBirth: toDateInput(user.dateOfBirth),
+      interests: optionalInterestLabels.filter((label) => nextSelected.has(label))
+    });
+  }, [user.id, user.dateOfBirth, (user.interests || []).join('|')]);
+
+  function toggleOptional(label) {
+    setForm((current) => ({
+      ...current,
+      interests: current.interests.includes(label)
+        ? current.interests.filter((item) => item !== label)
+        : [...current.interests, label]
+    }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    const updated = await api('/api/me', {
+      method: 'PUT',
+      body: JSON.stringify({ dateOfBirth: form.dateOfBirth, interests: [...coreInterestLabels, ...form.interests] })
+    });
+    onSave(updated);
+  }
+
+  return (
+    <Page title="Settings" subtitle="Update account preferences and category visibility.">
+      <form className="panel settings-panel" onSubmit={submit}>
+        <div className="section-title"><div><p className="eyebrow">Account</p><h2>Preferences</h2></div><Settings size={20} /></div>
+        <label className="field-label">
+          <span>Date of birth</span>
+          <input type="date" value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} />
+        </label>
+        <section className="interest-picker settings-picker">
+          <div>
+            <strong>Always available</strong>
+            <p>{coreInterestLabels.join(', ')}</p>
+          </div>
+          <div className="interest-options">
+            {optionalInterestLabels.map((label) => (
+              <label key={label} className="check-toggle">
+                <input type="checkbox" checked={form.interests.includes(label)} onChange={() => toggleOptional(label)} disabled={label === 'Jobs' && !canUseJobs({ ...user, dateOfBirth: form.dateOfBirth })} />
+                {label}{label === 'Jobs' && !canUseJobs({ ...user, dateOfBirth: form.dateOfBirth }) ? ' (18+)' : ''}
+              </label>
+            ))}
+          </div>
+        </section>
+        <button className="primary-button">Save preferences</button>
+      </form>
+    </Page>
+  );
 }
 
 function ImamDashboard({ user, social, setTab }) {
@@ -1903,7 +2059,7 @@ export default function App() {
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
   const [masjids, setMasjids] = useState([]);
   const [prayerTimes, setPrayerTimes] = useState(prayers);
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
 
   async function bootstrap() {
     if (!token()) return;
@@ -2301,10 +2457,6 @@ export default function App() {
     else setTab(result.tab);
   }
 
-  function toggleTheme() {
-    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
-  }
-
   const otherUsers = users.filter((person) => person.id !== user?.id);
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -2321,10 +2473,11 @@ export default function App() {
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
   }, [searchQuery, users, posts, masjids, events, opportunities]);
 
-  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} /></div>;
+  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} /></div>;
 
   const screens = {
     home: <HomeScreen user={user} posts={posts} masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} />,
+    prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} myOrganizations={myOrganizations} setTab={setTab} />,
     events: <EventsScreen user={user} events={events} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
@@ -2336,16 +2489,17 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
+    settings: <SettingsScreen user={user} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} startMessage={startMessage} />
   };
 
   return (
     <>
-      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)} theme={theme} toggleTheme={toggleTheme}>
+      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)} openSettings={() => setTab('settings')}>
         {screens[tab] || screens.home}
       </Shell>
       <section className="mobile-bottom-nav">
-        {navItems.filter((item) => mobileNavKeys.includes(item.key)).filter((item) => !(isOrganizationAccount(user) && ['volunteers', 'jobs'].includes(item.key))).map((item) => {
+        {navItems.filter((item) => mobileNavKeys.includes(item.key)).map((item) => {
           const Icon = item.icon;
           return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span></button>;
         })}
