@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import nodemailer from 'nodemailer';
 import rateLimit from 'express-rate-limit';
 import Redis from 'ioredis';
 import { createServer } from 'http';
@@ -300,8 +301,23 @@ function publicResetLink(email, rawToken) {
 
 async function sendPasswordResetEmail(user, rawToken) {
   const resetLink = publicResetLink(user.email, rawToken);
-  const message = `Reset your Ummah Connect password: ${resetLink}`;
-  console.log(`[password-reset] ${user.email}: ${message}`);
+  if (process.env.SMTP_HOST) {
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
+    });
+    await transporter.sendMail({
+      from: process.env.MAIL_FROM || 'Ummah Connect <no-reply@ummahconnect.app>',
+      to: user.email,
+      subject: 'Reset your Ummah Connect password',
+      text: `Use this link to reset your password: ${resetLink}`,
+      html: `<p>Use this link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p><p>This link expires in 1 hour.</p>`
+    });
+  } else {
+    console.log(`[password-reset] ${user.email}: Reset your Ummah Connect password: ${resetLink}`);
+  }
   return resetLink;
 }
 
