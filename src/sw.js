@@ -1,18 +1,15 @@
-self.addEventListener('install', (event) => {
-  event.waitUntil(self.skipWaiting());
-});
+import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
+cleanupOutdatedCaches();
+precacheAndRoute(self.__WB_MANIFEST);
 
 self.addEventListener('message', (event) => {
   if (event.data?.type !== 'SHOW_PRAYER_NOTIFICATION') return;
   const { title, body } = event.data;
   event.waitUntil(self.registration.showNotification(title, {
     body,
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
     tag: event.data.tag || 'ummah-connect-prayer'
   }));
 });

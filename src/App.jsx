@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   BarChart3,
@@ -7,6 +8,7 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
   HeartHandshake,
   Home,
   Library,
@@ -45,7 +47,51 @@ const navItems = [
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
 ];
 
-const mobileNavKeys = ['home', 'organizations', 'network', 'volunteers', 'profile'];
+const mobileNavKeys = ['home', 'network', 'messages', 'events', 'profile'];
+
+function pathForTab(key, id) {
+  const paths = {
+    home: '/home',
+    events: id ? `/events/${id}` : '/events',
+    post: '/events/new',
+    organizations: '/masjids',
+    masjidProfile: id ? `/masjids/${id}` : '/masjids',
+    network: '/network',
+    volunteers: '/network/volunteers',
+    jobs: '/network/jobs',
+    library: '/library',
+    businesses: '/businesses',
+    messages: id ? `/messages/${id}` : '/messages',
+    profile: id ? `/profile/${id}` : '/profile/me',
+    profileEdit: '/profile/edit',
+    dashboard: '/settings'
+  };
+  return paths[key] || '/home';
+}
+
+function tabForPath(pathname) {
+  if (pathname === '/' || pathname === '/home') return 'home';
+  if (pathname === '/login' || pathname === '/register') return 'auth';
+  if (pathname.startsWith('/events/new')) return 'post';
+  if (pathname.startsWith('/events')) return 'events';
+  if (pathname.startsWith('/masjids/') && pathname !== '/masjids') return 'masjidProfile';
+  if (pathname.startsWith('/masjids')) return 'organizations';
+  if (pathname.startsWith('/network/jobs')) return 'jobs';
+  if (pathname.startsWith('/network/volunteers')) return 'volunteers';
+  if (pathname.startsWith('/network')) return 'network';
+  if (pathname.startsWith('/messages')) return 'messages';
+  if (pathname.startsWith('/profile/edit')) return 'profile';
+  if (pathname.startsWith('/profile')) return 'profile';
+  if (pathname.startsWith('/library')) return 'library';
+  if (pathname.startsWith('/businesses')) return 'businesses';
+  if (pathname.startsWith('/settings')) return 'dashboard';
+  return 'home';
+}
+
+function routeId(pathname, prefix) {
+  if (!pathname.startsWith(prefix)) return '';
+  return decodeURIComponent(pathname.slice(prefix.length).split('/')[0] || '');
+}
 
 function token() {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -145,14 +191,14 @@ async function showPrayerNotification(title, body, tag) {
   new Notification(title, { body, tag });
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, theme, toggleTheme, onNotificationsClick }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, theme, toggleTheme, onNotificationsClick, detailMode = false }) {
   const [navOpen, setNavOpen] = useState(false);
   function navigate(key) {
     setTab(key);
     setNavOpen(false);
   }
   return (
-    <div className="app">
+    <div className={detailMode ? 'app detail-mode' : 'app'}>
       <header className="top-nav">
         <button className="icon-button mobile-menu" onClick={() => setNavOpen(true)} aria-label="Open menu"><Menu size={22} /></button>
         <button className="brand" onClick={() => navigate('home')} aria-label="Ummah Connect home"><span>UC</span><strong>Ummah Connect</strong></button>
@@ -416,7 +462,7 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
   );
 }
 
-function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent, unregisterEvent }) {
+function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent, unregisterEvent, detailEventId, openEvent, onBack }) {
   const [eventQuery, setEventQuery] = useState('');
   const [eventCategory, setEventCategory] = useState('all');
   const [eventDate, setEventDate] = useState('all');
@@ -460,7 +506,9 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
     if (eventHost !== 'all' && host !== eventHost) return false;
     return matchesDate(event);
   });
-  const featuredEvent = selectedEvent || visibleEvents[0] || events[0];
+  const routeEvent = detailEventId ? events.find((event) => String(event.id) === String(detailEventId)) : null;
+  const featuredEvent = routeEvent || selectedEvent || visibleEvents[0] || events[0];
+  const detailMode = Boolean(detailEventId);
   function EventCard({ event }) {
     const canDelete = user.accountType === 'ADMIN' || event.createdById === user.id || event.createdBy?.id === user.id || myOrganizations.some((org) => org.id === event.organizationId);
     const registration = (event.registrations || []).find((item) => item.userId === user.id);
@@ -470,7 +518,7 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
     const category = event.category || event.type || (event.requiresApproval ? 'Approval required' : 'Community');
     return (
       <article className="event-card event-card-upgraded" key={event.id}>
-        <button className="event-banner" type="button" onClick={() => setSelectedEvent(event)} style={{ backgroundImage: `url(${eventImage(event)})` }} aria-label={`View ${event.title}`}>
+        <button className="event-banner" type="button" onClick={() => openEvent(event.id)} style={{ backgroundImage: `url(${eventImage(event)})` }} aria-label={`View ${event.title}`}>
           <span className="event-date-badge"><strong>{date ? date.toLocaleDateString(undefined, { month: 'short' }) : 'TBA'}</strong>{date ? date.getDate() : ''}</span>
         </button>
         <div className="event-top"><span>{category}</span>{canDelete && <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete</button>}</div>
@@ -480,15 +528,16 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
         <div className="meta-line"><MapPin size={16} />{event.location || event.place || 'Location TBA'}</div>
         <TagRow tags={[event.organization?.name || event.createdBy?.name || 'Community event', remaining !== null ? `${remaining} spots left` : `${registeredCount} registered`, event.requiresApproval && 'Approval required', registration && `Your status: ${registration.status}`].filter(Boolean)} />
         <div className="card-footer">
-          <button className="secondary-button" onClick={() => setSelectedEvent(event)}>Details</button>
+          <button className="secondary-button" onClick={() => openEvent(event.id)}>Details</button>
           {registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
         </div>
       </article>
     );
   }
   return (
-    <Page title="Events" subtitle="Discover masjid programs, community gatherings, classes, and approval-based registrations.">
-      <section className="event-discovery">
+    <Page title={detailMode && featuredEvent ? featuredEvent.title : 'Events'} subtitle="Discover masjid programs, community gatherings, classes, and approval-based registrations.">
+      {detailMode && <BackHeader title="Event" subtitle={featuredEvent?.organization?.name || featuredEvent?.createdBy?.name || 'Community'} onBack={onBack} />}
+      <section className={detailMode ? 'event-discovery detail-route' : 'event-discovery'}>
         {featuredEvent && (
           <article className="event-detail-panel panel">
             <div className="event-detail-image" style={{ backgroundImage: `url(${eventImage(featuredEvent)})` }} />
@@ -506,7 +555,7 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
             </div>
           </article>
         )}
-        <section className="filter-panel event-filters">
+        {!detailMode && <section className="filter-panel event-filters">
           <label><Search size={15} /><input placeholder="Search events" value={eventQuery} onChange={(event) => setEventQuery(event.target.value)} /></label>
           <select value={eventCategory} onChange={(event) => setEventCategory(event.target.value)}>{categoryOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All categories' : item}</option>)}</select>
           <select value={eventDate} onChange={(event) => setEventDate(event.target.value)}>
@@ -518,11 +567,11 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
           </select>
           <select value={eventLocation} onChange={(event) => setEventLocation(event.target.value)}>{locationOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All locations' : item}</option>)}</select>
           <select value={eventHost} onChange={(event) => setEventHost(event.target.value)}>{hostOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All masjids' : item}</option>)}</select>
-        </section>
-        <div className="card-grid two">
+        </section>}
+        {!detailMode && <div className="card-grid two">
           {visibleEvents.map((event) => <EventCard key={event.id} event={event} />)}
           {!visibleEvents.length && <section className="panel"><p className="helper-text">No events match those filters yet.</p></section>}
-        </div>
+        </div>}
       </section>
     </Page>
   );
@@ -670,7 +719,10 @@ function MessagesScreen({
   onlineUserIds,
   typingUserIds,
   reactToMessage,
-  unsendMessage
+  unsendMessage,
+  detailMode = false,
+  onThreadOpen,
+  onBackToInbox
 }) {
   const [draft, setDraft] = useState('');
   const [conversationQuery, setConversationQuery] = useState('');
@@ -722,6 +774,7 @@ function MessagesScreen({
 
   async function chooseUser(person) {
     setSelectedUser(person);
+    onThreadOpen?.(person);
     await loadMessages(person.id);
   }
   async function sendMessage() {
@@ -746,8 +799,9 @@ function MessagesScreen({
   }
 
   return (
-    <Page title="Messages" subtitle="Instagram-style inbox for users, masjids, imams, and community organizations.">
-      <div className="messaging-layout">
+    <Page title={detailMode && selectedUser ? selectedUser.name : 'Messages'} subtitle="Instagram-style inbox for users, masjids, imams, and community organizations.">
+      {detailMode && <BackHeader title={selectedUser?.name || 'Messages'} subtitle={selectedUser ? displayRoleLabel(selectedUser.accountType) : 'Conversation'} onBack={onBackToInbox} />}
+      <div className={detailMode ? 'messaging-layout thread-route' : 'messaging-layout'}>
         <section className="panel inbox-list">
           <div className="dm-inbox-summary">
             <strong>{threads.length}</strong><span>Conversations</span>
@@ -861,6 +915,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
   const canFollowMasjid = isUserAccount(user);
   return (
     <Page title={organization.name} subtitle={organization.description || 'Masjid profile with events, opportunities, jobs, prayer times, location, and links.'}>
+      <BackHeader title={organization.name} subtitle={organization.city || organization.address || 'Masjid'} onBack={onBack} />
       <section className="panel masjid-profile">
         <div className="masjid-hero" style={{ backgroundImage: organization.heroImageUrl ? `url(${organization.heroImageUrl})` : undefined }}>
           <div className="org-logo">{organization.imageUrl ? <img src={organization.imageUrl} alt="" /> : initials(organization.name)}</div>
@@ -2346,13 +2401,30 @@ function Page({ title, subtitle, action, children }) {
   return <section className="page"><div className="page-header"><div><p className="eyebrow">Ummah Connect</p><h1>{title}</h1><p>{subtitle}</p></div>{action && <button className="primary-button" onClick={action.onClick}><Plus size={18} />{action.label}</button>}</div>{children}</section>;
 }
 
+function BackHeader({ title, subtitle, onBack }) {
+  return (
+    <div className="back-header">
+      <button className="icon-button" onClick={onBack} aria-label="Go back"><ChevronLeft size={22} /></button>
+      <div>
+        <strong>{title}</strong>
+        {subtitle && <span>{subtitle}</span>}
+      </div>
+    </div>
+  );
+}
+
 function TagRow({ tags = [] }) {
   if (!tags.length) return null;
   return <div className="tag-row">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div>;
 }
 
 export default function App() {
-  const [tab, setTab] = useState('home');
+  const locationRoute = useLocation();
+  const navigate = useNavigate();
+  const tab = tabForPath(locationRoute.pathname);
+  function setTab(key, id) {
+    navigate(pathForTab(key, id));
+  }
   const [user, setUser] = useState(() => {
     const saved = sessionStorage.getItem('user') || localStorage.getItem('user');
     return saved ? JSON.parse(saved) : null;
@@ -2680,7 +2752,7 @@ async function enableNotifications() {
   async function openOrganization(id) {
     const org = await api(`/api/organizations/${id}`);
     setSelectedOrganization(org);
-    setTab('masjidProfile');
+    setTab('masjidProfile', id);
   }
 
   async function followOrganization(id, notifyPrayers = false) {
@@ -2719,14 +2791,44 @@ async function enableNotifications() {
 
   useEffect(() => { bootstrap().catch(() => logout()); }, []);
   useEffect(() => {
+    if (locationRoute.pathname === '/') navigate(user ? '/home' : '/login', { replace: true });
+    if (user && ['/login', '/register'].includes(locationRoute.pathname)) navigate('/home', { replace: true });
+  }, [locationRoute.pathname, navigate, Boolean(user)]);
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('theme', theme);
   }, [theme]);
-  useEffect(() => {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.error);
-  }, []);
   useEffect(() => { if (user) requestLocation(); }, [Boolean(user)]);
   useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
+  useEffect(() => {
+    if (!user || tab !== 'masjidProfile') return;
+    const id = routeId(locationRoute.pathname, '/masjids/');
+    if (id && String(selectedOrganization?.id) !== String(id)) openOrganization(id).catch(console.error);
+  }, [user?.id, tab, locationRoute.pathname, selectedOrganization?.id]);
+  useEffect(() => {
+    if (!user || tab !== 'messages') return;
+    const id = routeId(locationRoute.pathname, '/messages/');
+    if (!id) return;
+    const person = users.find((item) => String(item.id) === String(id));
+    if (person && String(selectedUser?.id) !== String(id)) setSelectedUser(person);
+    if (String(selectedUser?.id) !== String(id)) loadMessages(id).catch(console.error);
+  }, [user?.id, tab, locationRoute.pathname, users, selectedUser?.id]);
+  useEffect(() => {
+    if (!user || tab !== 'profile') return;
+    const id = routeId(locationRoute.pathname, '/profile/');
+    if (!id || id === 'me' || id === 'edit') {
+      if (viewedUser) {
+        setViewedUser(null);
+        loadProfileSocial(user.id).catch(console.error);
+      }
+      return;
+    }
+    const person = users.find((item) => String(item.id) === String(id));
+    if (person && String(viewedUser?.id) !== String(id)) {
+      setViewedUser(person);
+      loadProfileSocial(person.id).catch(console.error);
+    }
+  }, [user?.id, tab, locationRoute.pathname, users, viewedUser?.id]);
   useEffect(() => {
     function refreshOnFocus() {
       if (document.visibilityState === 'visible') {
@@ -2788,19 +2890,19 @@ async function enableNotifications() {
   function afterLogin(nextUser) {
     sessionStorage.setItem('user', JSON.stringify(nextUser));
     setUser(nextUser);
-    setTab('home');
+    navigate('/home', { replace: true });
     setTimeout(() => bootstrap().catch(console.error), 0);
   }
 
   function openProfile(person) {
     setViewedUser(person);
     loadProfileSocial(person.id).catch(console.error);
-    setTab('profile');
+    setTab('profile', person.id);
   }
 
   function startMessage(person) {
     setSelectedUser(person);
-    setTab('messages');
+    setTab('messages', person.id);
     loadMessages(person.id).catch(console.error);
   }
 
@@ -2810,6 +2912,7 @@ async function enableNotifications() {
       if (person) return openProfile(person);
     }
     if (result.kind === 'Masjid') return openOrganization(result.id).catch(console.error);
+    if (result.kind === 'Event') return setTab('events', result.id);
     if (result.kind === 'Job') setTab('jobs');
     else if (result.kind === 'Volunteer') setTab('volunteers');
     else setTab(result.tab);
@@ -2820,6 +2923,9 @@ async function enableNotifications() {
   }
 
   const otherUsers = users.filter((person) => person.id !== user?.id);
+  const routeEventId = tab === 'events' ? routeId(locationRoute.pathname, '/events/') : '';
+  const routeMessageUserId = tab === 'messages' ? routeId(locationRoute.pathname, '/messages/') : '';
+  const isDetailRoute = tab === 'masjidProfile' || Boolean(routeEventId) || Boolean(routeMessageUserId) || (tab === 'profile' && routeId(locationRoute.pathname, '/profile/') && !['me', 'edit'].includes(routeId(locationRoute.pathname, '/profile/')));
   const favoriteMasjids = profileSocial.followingMasjids.filter((org) => org.notifyPrayers);
   const favoriteMasjidIds = new Set(favoriteMasjids.map((org) => org.id));
   const followedMasjidIds = new Set(profileSocial.followingMasjids.map((org) => org.id));
@@ -2843,21 +2949,21 @@ async function enableNotifications() {
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
   }, [searchQuery, users, prioritizedPosts, prioritizedMasjids, prioritizedEvents, prioritizedOpportunities]);
 
-  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} /></div>;
+  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
 
   const screens = {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />,
-    events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
+    events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} onBack={() => navigate(-1)} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
-    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => setTab('organizations')} />,
+    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => navigate(-1)} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
     volunteers: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
     jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
-    messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
-    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
+    messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => setTab('messages')} />,
+    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} />
   };
 
@@ -2876,11 +2982,12 @@ async function enableNotifications() {
   theme={theme}
   toggleTheme={toggleTheme}
   onNotificationsClick={() => setShowNotifications(true)}
+  detailMode={isDetailRoute}
 >
   {screens[tab] || screens.home}
 </Shell>
      
-      <section className="mobile-bottom-nav">
+      <section className={isDetailRoute ? 'mobile-bottom-nav detail-hidden' : 'mobile-bottom-nav'}>
         {navItems.filter((item) => mobileNavKeys.includes(item.key)).filter((item) => !(isOrganizationAccount(user) && ['volunteers', 'jobs'].includes(item.key))).map((item) => {
           const Icon = item.icon;
           return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span></button>;

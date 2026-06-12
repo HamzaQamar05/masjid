@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Moon, Sun } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-export default function AuthScreen({ onLogin, theme, toggleTheme }) {
-  const [mode, setMode] = useState('login');
+export default function AuthScreen({ onLogin, theme, toggleTheme, initialMode = 'login' }) {
+  const [mode, setMode] = useState(initialMode);
   const [form, setForm] = useState({ name: '', email: '', password: '', city: '', bio: '' });
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
 
   async function submit(e) {
     e.preventDefault();
