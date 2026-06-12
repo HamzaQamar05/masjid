@@ -4,13 +4,14 @@ cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
 self.addEventListener('message', (event) => {
-  if (event.data?.type !== 'SHOW_PRAYER_NOTIFICATION') return;
-  const { title, body } = event.data;
+  if (!['SHOW_PRAYER_NOTIFICATION', 'SHOW_APP_NOTIFICATION'].includes(event.data?.type)) return;
+  const { title, body, url } = event.data;
   event.waitUntil(self.registration.showNotification(title, {
     body,
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    tag: event.data.tag || 'ummah-connect-prayer'
+    tag: event.data.tag || 'ummah-connect',
+    data: { url: url || '/' }
   }));
 });
 
