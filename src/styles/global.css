@@ -2558,6 +2558,10 @@ a {
   padding: 12px 0 0;
 }
 
+.back-header {
+  display: none;
+}
+
 :root[data-theme="dark"] .auth-only {
   background: #151d1a;
 }
@@ -2720,10 +2724,10 @@ a {
     position: fixed;
     left: 10px;
     right: 10px;
-    bottom: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
     z-index: 35;
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
     background: rgba(255, 255, 255, 0.94);
     border: 1px solid #d8e2df;
@@ -2756,6 +2760,183 @@ a {
   .mobile-bottom-nav button.active {
     background: #0f766e;
     color: #fff;
+  }
+
+  .mobile-bottom-nav.detail-hidden {
+    display: none;
+  }
+
+  .back-header {
+    position: sticky;
+    top: 58px;
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+    margin: -10px -10px 12px;
+    padding: 8px 12px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    background: rgba(255, 255, 255, 0.96);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(14px);
+  }
+
+  .back-header .icon-button {
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+    border-radius: 50%;
+  }
+
+  .back-header div {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  .back-header strong,
+  .back-header span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .back-header span {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 750;
+  }
+
+  .app {
+    width: 100%;
+    min-height: 100dvh;
+    padding: calc(62px + env(safe-area-inset-top)) 10px calc(88px + env(safe-area-inset-bottom));
+    background: var(--page-bg);
+  }
+
+  .app.detail-mode {
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+
+  .top-nav {
+    padding-top: env(safe-area-inset-top);
+    height: calc(58px + env(safe-area-inset-top));
+  }
+
+  .detail-mode .top-nav .search-wrap,
+  .detail-mode .top-nav .post-button,
+  .detail-mode .top-nav .profile-chip,
+  .detail-mode .top-nav .dm-top-button {
+    display: none;
+  }
+
+  .detail-mode .top-nav {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .detail-mode .main-panel {
+    min-height: calc(100dvh - 72px);
+  }
+
+  .page {
+    gap: 12px;
+  }
+
+  .detail-mode .page-header {
+    display: none;
+  }
+
+  .panel,
+  .composer,
+  .feed-post,
+  .event-card,
+  .organization-card,
+  .person-card,
+  .role-card,
+  .library-card,
+  .business-card,
+  .metric-card,
+  .nearby-card {
+    box-shadow: none;
+  }
+
+  .detail-route .event-detail-panel,
+  .detail-mode .masjid-profile,
+  .detail-mode .profile-detail,
+  .thread-route .message-thread {
+    border-radius: 0;
+    margin-left: -10px;
+    margin-right: -10px;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .detail-route .event-detail-panel {
+    grid-template-columns: 1fr;
+    padding: 0 0 16px;
+    overflow: hidden;
+  }
+
+  .detail-route .event-detail-panel > div:last-child {
+    padding: 0 16px;
+  }
+
+  .detail-route .event-detail-image {
+    min-height: 240px;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .thread-route {
+    display: block;
+  }
+
+  .thread-route .inbox-list {
+    display: none;
+  }
+
+  .thread-route .message-thread {
+    min-height: calc(100dvh - 116px);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .message-list {
+    max-height: none;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .message-composer {
+    bottom: env(safe-area-inset-bottom);
+    padding: 10px 0 max(0px, env(safe-area-inset-bottom));
+  }
+
+  .message-composer textarea {
+    font-size: 16px;
+  }
+
+  .profile-actions,
+  .card-footer,
+  .hub-actions,
+  .nearby-actions {
+    align-items: stretch;
+  }
+
+  .profile-actions > *,
+  .card-footer > *,
+  .hub-actions > *,
+  .nearby-actions > * {
+    min-height: 44px;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
   }
   .network-search-panel {
   display: grid;
@@ -2848,7 +3029,11 @@ a {
   }
 
   .app {
-    padding: 70px 10px 86px;
+    padding: calc(62px + env(safe-area-inset-top)) 10px calc(88px + env(safe-area-inset-bottom));
+  }
+
+  .app.detail-mode {
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
 
   .composer-actions {
@@ -2920,6 +3105,7 @@ a {
 /* Final theme/component overrides intentionally live at the end of the cascade. */
 :root[data-theme="dark"] .top-nav,
 :root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .back-header,
 :root[data-theme="dark"] .profile-card,
 :root[data-theme="dark"] .search-results,
 :root[data-theme="dark"] .mobile-drawer,
