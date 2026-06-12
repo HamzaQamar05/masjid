@@ -15,11 +15,7 @@ dotenv.config();
 const app = express();
 const server = createServer(app);
 const prisma = new PrismaClient();
-const allowedOrigins = [
-  'http://localhost:5173',
-  process.env.FRONTEND_URL,
-  'https://ummah-connect-psi.vercel.app'
-].filter(Boolean);
+
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -78,7 +74,9 @@ const fallbackMasjids = [
 ];
 
 const allowedOrigins = [
+  'http://localhost:5173',
   process.env.FRONTEND_URL,
+  'https://ummah-connect-psi.vercel.app',
   'https://masjid-hamzaqamar05s-projects.vercel.app',
   'https://masjid-fx6xjm2vo-hamzaqamar05s-projects.vercel.app'
 ].filter(Boolean);
