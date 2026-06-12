@@ -12,6 +12,7 @@ import { PrismaClient } from '@prisma/client';
 import webPush from 'web-push';
 
 dotenv.config();
+dotenv.config({ path: '.env.local', override: true });
 
 const app = express();
 const server = createServer(app);

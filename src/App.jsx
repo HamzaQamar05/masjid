@@ -33,6 +33,7 @@ import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganiz
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const notificationTimers = new Map();
+const notifiedMessageIds = new Set();
 
 const navItems = [
   { key: 'home', label: 'Home', icon: Home },
@@ -211,6 +212,23 @@ async function showPrayerNotification(title, body, tag) {
     return;
   }
   new Notification(title, { body, tag });
+}
+
+async function showAppNotification({ title, body, tag, url }) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if ('serviceWorker' in navigator) {
+    const registration = await navigator.serviceWorker.ready;
+    if (registration.active) {
+      registration.active.postMessage({ type: 'SHOW_APP_NOTIFICATION', title, body, tag, url });
+      return;
+    }
+    await registration.showNotification(title, { body, tag, data: { url } });
+    return;
+  }
+  const notification = new Notification(title, { body, tag });
+  notification.onclick = () => {
+    if (url) window.location.assign(url);
+  };
 }
 
 function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, theme, toggleTheme, onNotificationsClick, detailMode = false }) {
@@ -490,7 +508,8 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
 
 function NotificationSetupCard({ notificationState, enablePushNotifications }) {
   const standalone = isStandalonePwa();
-  const unsupported = !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window);
+  const unsupported = !('Notification' in window);
+  const pushUnavailable = !('serviceWorker' in navigator) || !('PushManager' in window);
   return (
     <section className="panel notification-card">
       <div className="section-title">
@@ -501,7 +520,8 @@ function NotificationSetupCard({ notificationState, enablePushNotifications }) {
         <p className="helper-text">This browser does not support PWA push notifications.</p>
       ) : (
         <>
-          <p className="helper-text">{standalone ? 'Running from the installed app. You can receive message and prayer reminders.' : 'On iPhone, add Ummah Connect to your Home Screen and open it from the app icon before enabling notifications.'}</p>
+          <p className="helper-text">{standalone ? 'Running from the installed app. You can receive message and prayer reminders.' : 'On iPhone, add Ummah Connect to your Home Screen and open it from the app icon for full push support. Browser notifications still help while the app is open.'}</p>
+          {pushUnavailable && <p className="helper-text">Full closed-app push is unavailable in this browser, but live message notifications can still work after permission is granted.</p>}
           <div className="manager-row">
             <button className="primary-button" onClick={enablePushNotifications}>{notificationState.permission === 'granted' ? 'Refresh notifications' : 'Enable notifications'}</button>
             <span className="status-pill">{notificationState.permission || 'default'}</span>
@@ -3053,6 +3073,17 @@ export default function App() {
     setSocket(nextSocket);
     nextSocket.on('message:new', (message) => {
       mergeMessage(message);
+      const isIncoming = message.receiverId === user.id && message.senderId !== user.id;
+      const viewingThread = selectedUserIdRef.current && String(selectedUserIdRef.current) === String(message.senderId);
+      if (isIncoming && !viewingThread && !notifiedMessageIds.has(message.id)) {
+        notifiedMessageIds.add(message.id);
+        showAppNotification({
+          title: `New message from ${message.sender?.name || 'Ummah Connect'}`,
+          body: message.content?.slice(0, 120) || 'Open Ummah Connect to view this message.',
+          tag: `message:${message.id}`,
+          url: `/messages/${message.senderId}`
+        }).catch(console.error);
+      }
       loadThreads().catch(console.error);
     });
     nextSocket.on('message:update', (message) => {
