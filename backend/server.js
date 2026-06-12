@@ -77,10 +77,23 @@ const fallbackMasjids = [
   }
 ];
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://masjid-hamzaqamar05s-projects.vercel.app',
+  'https://masjid-fx6xjm2vo-hamzaqamar05s-projects.vercel.app'
+].filter(Boolean);
+
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(null, false);
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    if (origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked: ${origin}`));
   },
   credentials: true
 }));
