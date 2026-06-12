@@ -36,6 +36,8 @@ const notificationTimers = new Map();
 
 const navItems = [
   { key: 'home', label: 'Home', icon: Home },
+  { key: 'prayer', label: 'Prayer', icon: ShieldCheck },
+  { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'events', label: 'Events', icon: CalendarDays },
   { key: 'organizations', label: 'Masjids', icon: Building2 },
   { key: 'network', label: 'Network', icon: Users },
@@ -47,11 +49,12 @@ const navItems = [
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
 ];
 
-const mobileNavKeys = ['home', 'network', 'messages', 'events', 'profile'];
+const mobileNavKeys = ['home', 'prayer', 'messages', 'network', 'profile'];
 
 function pathForTab(key, id) {
   const paths = {
     home: '/home',
+    prayer: '/prayer',
     events: id ? `/events/${id}` : '/events',
     post: '/events/new',
     organizations: '/masjids',
@@ -71,6 +74,7 @@ function pathForTab(key, id) {
 
 function tabForPath(pathname) {
   if (pathname === '/' || pathname === '/home') return 'home';
+  if (pathname.startsWith('/prayer')) return 'prayer';
   if (pathname === '/login' || pathname === '/register') return 'auth';
   if (pathname.startsWith('/events/new')) return 'post';
   if (pathname.startsWith('/events')) return 'events';
@@ -95,6 +99,24 @@ function routeId(pathname, prefix) {
 
 function token() {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
+}
+
+function persistAuth(nextUser, nextToken = token()) {
+  if (nextToken) localStorage.setItem('token', nextToken);
+  if (nextUser) localStorage.setItem('user', JSON.stringify(nextUser));
+  sessionStorage.removeItem('token');
+  sessionStorage.removeItem('user');
+}
+
+function isStandalonePwa() {
+  return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 }
 
 function canPost(user) {
@@ -283,7 +305,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment }) {
+function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment, notificationState, enablePushNotifications }) {
   const orgAccount = isOrganizationAccount(user);
   const favoritePrograms = favoriteMasjids.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program) => ({ ...program, masjid })));
   return (
@@ -304,6 +326,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
         <PostFeed user={user} posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />
       </section>
       <aside className="right-rail">
+        <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
         <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
         <FavoritePrograms programs={favoritePrograms} openOrganization={openOrganization} />
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
@@ -459,6 +482,83 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
         ))}
       </div>
     </section>
+  );
+}
+
+function NotificationSetupCard({ notificationState, enablePushNotifications }) {
+  const standalone = isStandalonePwa();
+  const unsupported = !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window);
+  return (
+    <section className="panel notification-card">
+      <div className="section-title">
+        <div><p className="eyebrow">PWA alerts</p><h2>Notifications</h2></div>
+        <Bell size={22} />
+      </div>
+      {unsupported ? (
+        <p className="helper-text">This browser does not support PWA push notifications.</p>
+      ) : (
+        <>
+          <p className="helper-text">{standalone ? 'Running from the installed app. You can receive message and prayer reminders.' : 'On iPhone, add Ummah Connect to your Home Screen and open it from the app icon before enabling notifications.'}</p>
+          <div className="manager-row">
+            <button className="primary-button" onClick={enablePushNotifications}>{notificationState.permission === 'granted' ? 'Refresh notifications' : 'Enable notifications'}</button>
+            <span className="status-pill">{notificationState.permission || 'default'}</span>
+          </div>
+          {notificationState.message && <p className="helper-text">{notificationState.message}</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
+function PrayerSettingsCard({ user, locationStatus, prayerPreferences, updatePrayerPreferences, requestLocation, saveManualLocation }) {
+  const [manualLocation, setManualLocation] = useState(user.location || user.city || '');
+  const prefs = prayerPreferences || { enabled: false, offsetMinutes: 0, prayers: {} };
+  const prayerNames = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+  return (
+    <section className="panel prayer-settings-card">
+      <div className="section-title"><div><p className="eyebrow">Location</p><h2>Prayer settings</h2></div><MapPin size={22} /></div>
+      <p className="helper-text">{user.location || user.city || 'No saved location yet.'}</p>
+      <p className="helper-text">{locationStatus}</p>
+      <div className="manager-row">
+        <button className="secondary-button" onClick={requestLocation}><Navigation size={16} />Use my current location</button>
+      </div>
+      <form className="compact-location-form" onSubmit={(event) => { event.preventDefault(); saveManualLocation(manualLocation); }}>
+        <input value={manualLocation} onChange={(event) => setManualLocation(event.target.value)} placeholder="City or location" />
+        <button className="secondary-button">Save</button>
+      </form>
+      <label className="check-toggle">
+        <input type="checkbox" checked={prefs.enabled} onChange={(event) => updatePrayerPreferences({ ...prefs, enabled: event.target.checked })} />
+        Enable prayer reminders
+      </label>
+      <div className="prayer-preference-grid">
+        {prayerNames.map((name) => (
+          <label className="check-toggle" key={name}>
+            <input type="checkbox" checked={prefs.prayers?.[name] !== false} onChange={(event) => updatePrayerPreferences({ ...prefs, prayers: { ...prefs.prayers, [name]: event.target.checked } })} />
+            {name}
+          </label>
+        ))}
+      </div>
+      <label className="preference-select">
+        Reminder
+        <select value={prefs.offsetMinutes || 0} onChange={(event) => updatePrayerPreferences({ ...prefs, offsetMinutes: Number(event.target.value) })}>
+          <option value="0">At prayer time</option>
+          <option value="5">5 minutes before</option>
+          <option value="10">10 minutes before</option>
+        </select>
+      </label>
+    </section>
+  );
+}
+
+function PrayerScreen({ user, prayerTimes, favoriteMasjids, locationStatus, requestLocation, notificationState, enablePushNotifications, prayerPreferences, updatePrayerPreferences, saveManualLocation, openOrganization }) {
+  return (
+    <Page title="Prayer" subtitle="Location-based prayer times, saved location, and PWA reminders.">
+      <div className="prayer-app-layout">
+        <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
+        <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
+        <PrayerSettingsCard user={user} locationStatus={locationStatus} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} requestLocation={requestLocation} saveManualLocation={saveManualLocation} />
+      </div>
+    </Page>
   );
 }
 
@@ -725,6 +825,9 @@ function MessagesScreen({
   onBackToInbox
 }) {
   const [draft, setDraft] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [messageError, setMessageError] = useState('');
+  const messageEndRef = useRef(null);
   const [conversationQuery, setConversationQuery] = useState('');
   const [conversationFilter, setConversationFilter] = useState('all');
   const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
@@ -779,11 +882,25 @@ function MessagesScreen({
   }
   async function sendMessage() {
     if (!selectedUser || !draft.trim()) return;
-    await api('/api/messages', { method: 'POST', body: JSON.stringify({ receiverId: selectedUser.id, content: draft }) });
+    const content = draft.trim();
     setDraft('');
-    await loadMessages(selectedUser.id);
-    await loadThreads();
+    setSendingMessage(true);
+    setMessageError('');
+    try {
+      await api('/api/messages', { method: 'POST', body: JSON.stringify({ receiverId: selectedUser.id, content }) });
+      await loadMessages(selectedUser.id);
+      await loadThreads();
+    } catch (error) {
+      setDraft(content);
+      setMessageError(error.message || 'Message failed to send.');
+    } finally {
+      setSendingMessage(false);
+    }
   }
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, selectedUser?.id]);
 
   function onMessageScroll(event) {
     if (event.currentTarget.scrollTop < 24 && messagePage.hasMore && !messagePage.loadingOlder) {
@@ -852,14 +969,16 @@ function MessagesScreen({
                   </div>
                 ))}
                 {typingUserIds.includes(selectedUser.id) && <div className="typing-indicator">{selectedUser.name} is typing...</div>}
+                <div ref={messageEndRef} />
               </div>
               <div className="quick-reply-row">
                 {quickReplies.map((reply) => <button key={reply} onClick={() => setDraft((current) => current ? `${current} ${reply}` : reply)}>{reply}</button>)}
               </div>
               <div className="message-composer">
                 <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKeyDown} placeholder={`Message ${selectedUser.name}`} />
-                <button className="primary-button" onClick={sendMessage} aria-label="Send message"><Send size={18} /></button>
+                <button className="primary-button" onClick={sendMessage} disabled={sendingMessage || !draft.trim()} aria-label="Send message"><Send size={18} /></button>
               </div>
+              {messageError && <p className="message-error">{messageError}</p>}
             </>
           ) : <div className="dm-empty-state"><MessageCircle size={30} /><h2>Select a conversation</h2><p>Search for a user, masjid, imam, or organization to start a direct message.</p></div>}
         </section>
@@ -2437,6 +2556,7 @@ export default function App() {
   const [connections, setConnections] = useState([]);
   const [messages, setMessages] = useState([]);
   const [threads, setThreads] = useState([]);
+  const [unreadTotal, setUnreadTotal] = useState(0);
   const [messagePage, setMessagePage] = useState({ nextCursor: null, hasMore: false, loadingOlder: false });
   const [socket, setSocket] = useState(null);
   const [onlineUserIds, setOnlineUserIds] = useState([]);
@@ -2451,15 +2571,17 @@ export default function App() {
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
   const [masjids, setMasjids] = useState([]);
   const [prayerTimes, setPrayerTimes] = useState(prayers);
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationState, setNotificationState] = useState({ permission: 'default', message: '' });
+  const [prayerPreferences, setPrayerPreferences] = useState({ enabled: false, offsetMinutes: 0, prayers: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true } });
 
   async function bootstrap() {
     if (!token()) return;
     const me = await api('/api/me');
-    sessionStorage.setItem('user', JSON.stringify(me));
+    persistAuth(me);
     setUser(me);
-    await Promise.all([loadNetwork(), loadPosts(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids()]);
+    await Promise.all([loadNetwork(), loadPosts(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids(), loadNotificationPreferences()]);
   }
 
   async function loadNetwork() {
@@ -2527,29 +2649,72 @@ export default function App() {
     orgs.forEach(schedulePrayerNotification);
   }
 
+  async function loadNotificationPreferences() {
+    const loaded = await api('/api/notifications/preferences').catch(() => null);
+    if (!loaded) return;
+    if (loaded.prayerNotificationPreferences) setPrayerPreferences(loaded.prayerNotificationPreferences);
+    setNotificationState({
+      permission: 'Notification' in window ? Notification.permission : 'unsupported',
+      message: loaded.pushConfigured ? `${loaded.subscriptionCount || 0} device subscription${loaded.subscriptionCount === 1 ? '' : 's'} saved.` : 'Push delivery needs VAPID keys on the backend.'
+    });
+    const saved = loaded.location || {};
+    if (saved.latitude && saved.longitude) {
+      setLocation({ label: saved.location || saved.city || 'Saved location', latitude: saved.latitude, longitude: saved.longitude });
+    }
+  }
+
+  async function enablePushNotifications() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setNotificationState({ permission: 'unsupported', message: 'This browser does not support PWA push notifications.' });
+      return;
+    }
+    if (!isStandalonePwa() && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      setNotificationState({ permission: Notification.permission, message: 'On iPhone, add Ummah Connect to your Home Screen and open it from the app icon before enabling notifications.' });
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      setNotificationState({ permission, message: 'Notifications were not enabled.' });
+      return;
+    }
+    const { publicKey, enabled } = await api('/api/notifications/vapid-public-key');
+    if (!enabled || !publicKey) {
+      setNotificationState({ permission, message: 'Backend VAPID keys are not configured yet, but your local permission is enabled.' });
+      return;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    const subscription = existing || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+    await api('/api/notifications/subscriptions', { method: 'POST', body: JSON.stringify({ subscription }) });
+    setNotificationState({ permission, message: 'Notifications are enabled for this device.' });
+  }
+
+  async function updatePrayerPreferences(nextPreferences) {
+    setPrayerPreferences(nextPreferences);
+    const updated = await api('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ prayerNotificationPreferences: nextPreferences }) });
+    setUser(updated);
+    persistAuth(updated);
+  }
+
+  async function saveManualLocation(nextLocation) {
+    const label = nextLocation.trim();
+    if (!label) return;
+    const updated = await api('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ location: { city: label, location: label, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } }) });
+    setUser(updated);
+    persistAuth(updated);
+    setLocationStatus(`Saved ${label}. Use current location anytime for precise prayer times.`);
+  }
+
   async function loadMessages(userId) {
     if (!userId) return;
     const loaded = await api(`/api/messages/${userId}?limit=30`);
     setMessages(loaded.messages || loaded);
     setMessagePage({ nextCursor: loaded.nextCursor || null, hasMore: Boolean(loaded.hasMore), loadingOlder: false });
   }
-async function enableNotifications() {
-  if (!('Notification' in window)) {
-    alert('Notifications are not supported on this browser.');
-    return;
-  }
-
-  const permission = await Notification.requestPermission();
-
-  if (permission === 'granted') {
-    new Notification('Notifications enabled', {
-      body: 'You will now receive Ummah Connect notifications.'
-    });
-  }
-}
   async function loadThreads() {
     const loaded = await api('/api/messages/threads').catch(() => ({ threads: [] }));
     setThreads(Array.isArray(loaded) ? loaded : loaded.threads || []);
+    if (!Array.isArray(loaded)) setUnreadTotal(loaded.unreadTotal || 0);
     if (loaded.onlineUserIds) setOnlineUserIds(loaded.onlineUserIds);
   }
 
@@ -2749,6 +2914,27 @@ async function enableNotifications() {
     notificationTimers.set(key, timer);
   }
 
+  function scheduleLocationPrayerNotifications(times = prayerTimes, preferences = prayerPreferences) {
+    if (!preferences.enabled || !('Notification' in window) || Notification.permission !== 'granted') return;
+    const now = new Date();
+    times.forEach((prayer) => {
+      if (!['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].includes(prayer.name) || preferences.prayers?.[prayer.name] === false) return;
+      const [hour, minute] = String(prayer.adhan || '').split(':').map(Number);
+      if (!Number.isFinite(hour) || !Number.isFinite(minute)) return;
+      const when = new Date();
+      when.setHours(hour, minute - Number(preferences.offsetMinutes || 0), 0, 0);
+      if (when <= now) return;
+      const key = `location:${prayer.name}:${when.toDateString()}:${preferences.offsetMinutes || 0}`;
+      if (notificationTimers.has(key)) clearTimeout(notificationTimers.get(key));
+      const timer = setTimeout(() => {
+        const prefix = preferences.offsetMinutes ? `${preferences.offsetMinutes} minutes until` : '';
+        showPrayerNotification(`${prefix} ${prayer.name} time`.trim(), preferences.offsetMinutes ? `${prayer.name} time starts soon.` : `${prayer.name} time has started.`, key).catch(console.error);
+        notificationTimers.delete(key);
+      }, when.getTime() - now.getTime());
+      notificationTimers.set(key, timer);
+    });
+  }
+
   async function openOrganization(id) {
     const org = await api(`/api/organizations/${id}`);
     setSelectedOrganization(org);
@@ -2779,6 +2965,13 @@ async function enableNotifications() {
         const next = { label: 'Your location', latitude: position.coords.latitude, longitude: position.coords.longitude };
         setLocation(next);
         setLocationStatus('Location enabled. Nearby masjids and prayer times refreshed.');
+        api('/api/notifications/preferences', {
+          method: 'PUT',
+          body: JSON.stringify({ location: { location: next.label, latitude: next.latitude, longitude: next.longitude, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } })
+        }).then((updated) => {
+          setUser(updated);
+          persistAuth(updated);
+        }).catch(console.error);
         loadLocationData(next);
       },
       () => {
@@ -2799,6 +2992,7 @@ async function enableNotifications() {
     localStorage.setItem('theme', theme);
   }, [theme]);
   useEffect(() => { if (user) requestLocation(); }, [Boolean(user)]);
+  useEffect(() => { scheduleLocationPrayerNotifications(prayerTimes, prayerPreferences); }, [prayerTimes, prayerPreferences, notificationState.permission]);
   useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
   useEffect(() => {
     if (!user || tab !== 'masjidProfile') return;
@@ -2853,6 +3047,7 @@ async function enableNotifications() {
       loadThreads().catch(console.error);
     });
     nextSocket.on('presence:update', ({ onlineUserIds: ids = [] }) => setOnlineUserIds(ids));
+    nextSocket.on('messages:unread', ({ unread = 0 }) => setUnreadTotal(unread));
     nextSocket.on('typing:update', ({ userId, isTyping }) => {
       setTypingUserIds((current) => {
         const filtered = current.filter((id) => id !== userId);
@@ -2879,6 +3074,7 @@ async function enableNotifications() {
     setConnections([]);
     setMessages([]);
     setThreads([]);
+    setUnreadTotal(0);
     setSocket((activeSocket) => {
       activeSocket?.disconnect();
       return null;
@@ -2888,7 +3084,7 @@ async function enableNotifications() {
   }
 
   function afterLogin(nextUser) {
-    sessionStorage.setItem('user', JSON.stringify(nextUser));
+    persistAuth(nextUser);
     setUser(nextUser);
     navigate('/home', { replace: true });
     setTimeout(() => bootstrap().catch(console.error), 0);
@@ -2952,7 +3148,8 @@ async function enableNotifications() {
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />,
+    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />,
+    prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} />,
     events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} onBack={() => navigate(-1)} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
@@ -2963,7 +3160,7 @@ async function enableNotifications() {
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => setTab('messages')} />,
-    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
+    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} />
   };
 
@@ -2990,7 +3187,7 @@ async function enableNotifications() {
       <section className={isDetailRoute ? 'mobile-bottom-nav detail-hidden' : 'mobile-bottom-nav'}>
         {navItems.filter((item) => mobileNavKeys.includes(item.key)).filter((item) => !(isOrganizationAccount(user) && ['volunteers', 'jobs'].includes(item.key))).map((item) => {
           const Icon = item.icon;
-          return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span></button>;
+          return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span>{item.key === 'messages' && unreadTotal > 0 && <em>{unreadTotal > 9 ? '9+' : unreadTotal}</em>}</button>;
         })}
       </section>
         {showNotifications && (

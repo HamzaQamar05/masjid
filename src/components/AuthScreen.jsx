@@ -22,10 +22,10 @@ export default function AuthScreen({ onLogin, theme, toggleTheme, initialMode = 
       });
       const data = await res.json();
       if (!res.ok) return alert(data.error || 'Something went wrong');
-      sessionStorage.setItem('token', data.token);
-      sessionStorage.setItem('user', JSON.stringify(data.user));
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
       onLogin(data.user);
     } catch (err) {
       console.error(err);

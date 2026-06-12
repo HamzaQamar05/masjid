@@ -226,6 +226,50 @@
   color: var(--text);
 }
 
+.notification-card,
+.prayer-settings-card,
+.prayer-app-layout {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-location-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.compact-location-form input,
+.preference-select select {
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+.prayer-preference-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.preference-select {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.message-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 @media (max-width: 760px) {
   .messaging-layout {
     grid-template-columns: 1fr;
@@ -2917,6 +2961,60 @@ a {
 
   .message-composer textarea {
     font-size: 16px;
+  }
+
+  .inbox-list button {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    min-height: 64px;
+    padding: 10px;
+  }
+
+  .inbox-list button strong,
+  .inbox-list button p {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .inbox-list button small {
+    justify-self: end;
+    font-size: 11px;
+  }
+
+  .inbox-list button em,
+  .mobile-bottom-nav button em {
+    min-width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #b42318;
+    color: #fff;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 900;
+  }
+
+  .mobile-bottom-nav button {
+    position: relative;
+  }
+
+  .mobile-bottom-nav button em {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+  }
+
+  .prayer-app-layout {
+    margin-left: -10px;
+    margin-right: -10px;
+  }
+
+  .prayer-app-layout > .panel {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
   }
 
   .profile-actions,
