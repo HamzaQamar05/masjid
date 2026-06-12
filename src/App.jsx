@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   BarChart3,
@@ -45,7 +46,51 @@ const navItems = [
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
 ];
 
-const mobileNavKeys = ['home', 'organizations', 'network', 'volunteers', 'profile'];
+const mobileNavKeys = ['home', 'network', 'messages', 'events', 'profile'];
+
+function pathForTab(key, id) {
+  const paths = {
+    home: '/home',
+    events: id ? `/events/${id}` : '/events',
+    post: '/events/new',
+    organizations: '/masjids',
+    masjidProfile: id ? `/masjids/${id}` : '/masjids',
+    network: '/network',
+    volunteers: '/network/volunteers',
+    jobs: '/network/jobs',
+    library: '/library',
+    businesses: '/businesses',
+    messages: id ? `/messages/${id}` : '/messages',
+    profile: id ? `/profile/${id}` : '/profile/me',
+    profileEdit: '/profile/edit',
+    dashboard: '/settings'
+  };
+  return paths[key] || '/home';
+}
+
+function tabForPath(pathname) {
+  if (pathname === '/' || pathname === '/home') return 'home';
+  if (pathname === '/login' || pathname === '/register') return 'auth';
+  if (pathname.startsWith('/events/new')) return 'post';
+  if (pathname.startsWith('/events')) return 'events';
+  if (pathname.startsWith('/masjids/') && pathname !== '/masjids') return 'masjidProfile';
+  if (pathname.startsWith('/masjids')) return 'organizations';
+  if (pathname.startsWith('/network/jobs')) return 'jobs';
+  if (pathname.startsWith('/network/volunteers')) return 'volunteers';
+  if (pathname.startsWith('/network')) return 'network';
+  if (pathname.startsWith('/messages')) return 'messages';
+  if (pathname.startsWith('/profile/edit')) return 'profile';
+  if (pathname.startsWith('/profile')) return 'profile';
+  if (pathname.startsWith('/library')) return 'library';
+  if (pathname.startsWith('/businesses')) return 'businesses';
+  if (pathname.startsWith('/settings')) return 'dashboard';
+  return 'home';
+}
+
+function routeId(pathname, prefix) {
+  if (!pathname.startsWith(prefix)) return '';
+  return decodeURIComponent(pathname.slice(prefix.length).split('/')[0] || '');
+}
 
 function token() {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -2352,7 +2397,12 @@ function TagRow({ tags = [] }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState('home');
+  const locationRoute = useLocation();
+  const navigate = useNavigate();
+  const tab = tabForPath(locationRoute.pathname);
+  function setTab(key, id) {
+    navigate(pathForTab(key, id));
+  }
   const [user, setUser] = useState(() => {
     const saved = sessionStorage.getItem('user') || localStorage.getItem('user');
     return saved ? JSON.parse(saved) : null;
@@ -2680,7 +2730,7 @@ async function enableNotifications() {
   async function openOrganization(id) {
     const org = await api(`/api/organizations/${id}`);
     setSelectedOrganization(org);
-    setTab('masjidProfile');
+    setTab('masjidProfile', id);
   }
 
   async function followOrganization(id, notifyPrayers = false) {
@@ -2719,14 +2769,44 @@ async function enableNotifications() {
 
   useEffect(() => { bootstrap().catch(() => logout()); }, []);
   useEffect(() => {
+    if (locationRoute.pathname === '/') navigate(user ? '/home' : '/login', { replace: true });
+    if (user && ['/login', '/register'].includes(locationRoute.pathname)) navigate('/home', { replace: true });
+  }, [locationRoute.pathname, navigate, Boolean(user)]);
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('theme', theme);
   }, [theme]);
-  useEffect(() => {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.error);
-  }, []);
   useEffect(() => { if (user) requestLocation(); }, [Boolean(user)]);
   useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
+  useEffect(() => {
+    if (!user || tab !== 'masjidProfile') return;
+    const id = routeId(locationRoute.pathname, '/masjids/');
+    if (id && String(selectedOrganization?.id) !== String(id)) openOrganization(id).catch(console.error);
+  }, [user?.id, tab, locationRoute.pathname, selectedOrganization?.id]);
+  useEffect(() => {
+    if (!user || tab !== 'messages') return;
+    const id = routeId(locationRoute.pathname, '/messages/');
+    if (!id) return;
+    const person = users.find((item) => String(item.id) === String(id));
+    if (person && String(selectedUser?.id) !== String(id)) setSelectedUser(person);
+    if (String(selectedUser?.id) !== String(id)) loadMessages(id).catch(console.error);
+  }, [user?.id, tab, locationRoute.pathname, users, selectedUser?.id]);
+  useEffect(() => {
+    if (!user || tab !== 'profile') return;
+    const id = routeId(locationRoute.pathname, '/profile/');
+    if (!id || id === 'me' || id === 'edit') {
+      if (viewedUser) {
+        setViewedUser(null);
+        loadProfileSocial(user.id).catch(console.error);
+      }
+      return;
+    }
+    const person = users.find((item) => String(item.id) === String(id));
+    if (person && String(viewedUser?.id) !== String(id)) {
+      setViewedUser(person);
+      loadProfileSocial(person.id).catch(console.error);
+    }
+  }, [user?.id, tab, locationRoute.pathname, users, viewedUser?.id]);
   useEffect(() => {
     function refreshOnFocus() {
       if (document.visibilityState === 'visible') {
@@ -2788,19 +2868,19 @@ async function enableNotifications() {
   function afterLogin(nextUser) {
     sessionStorage.setItem('user', JSON.stringify(nextUser));
     setUser(nextUser);
-    setTab('home');
+    navigate('/home', { replace: true });
     setTimeout(() => bootstrap().catch(console.error), 0);
   }
 
   function openProfile(person) {
     setViewedUser(person);
     loadProfileSocial(person.id).catch(console.error);
-    setTab('profile');
+    setTab('profile', person.id);
   }
 
   function startMessage(person) {
     setSelectedUser(person);
-    setTab('messages');
+    setTab('messages', person.id);
     loadMessages(person.id).catch(console.error);
   }
 
@@ -2843,21 +2923,21 @@ async function enableNotifications() {
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
   }, [searchQuery, users, prioritizedPosts, prioritizedMasjids, prioritizedEvents, prioritizedOpportunities]);
 
-  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} /></div>;
+  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
 
   const screens = {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />,
     events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
-    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => setTab('organizations')} />,
+    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => navigate(-1)} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
     volunteers: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
     jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} />,
-    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
+    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); sessionStorage.setItem('user', JSON.stringify(updated)); loadNetwork(); }} social={profileSocial} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} />
   };
 
