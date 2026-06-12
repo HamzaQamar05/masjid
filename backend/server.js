@@ -56,37 +56,79 @@ if (vapidPublicKey && vapidPrivateKey) {
 
 const fallbackMasjids = [
   {
-    id: 'fallback-milton-islamic-centre',
-    name: 'Milton Islamic Centre',
+    id: 'fallback-masjid-khadijah',
+    name: 'Masjid Khadijah',
     type: 'Masjid',
     city: 'Milton',
-    address: '8069 Esquesing Line, Milton, ON L9T 9C8',
+    address: '100 Nipissing Rd #7, Milton, ON L9T 5B2',
+    latitude: 43.5208,
+    longitude: -79.8799,
+    website: 'https://www.masjidkhadijah.ca/',
+    imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAG1hTGWxftDLG9i0WQ_2uIZJPisi_2wJDOOAspxSGUSwTYWagkU40-aLxAGKguVNGA5fB4xXmItnNNEawW1sK5b3-5waHTelMmYGv0AhYW7WdHxoxWJu5r164GBDHdFJRKo4KJH=s1360-w1360-h1020-rw',
+    heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAG1hTGWxftDLG9i0WQ_2uIZJPisi_2wJDOOAspxSGUSwTYWagkU40-aLxAGKguVNGA5fB4xXmItnNNEawW1sK5b3-5waHTelMmYGv0AhYW7WdHxoxWJu5r164GBDHdFJRKo4KJH=s1360-w1360-h1020-rw',
+    description: 'Milton masjid profile placeholder. Prayer preferences, programs, and announcements can be customized after onboarding.',
+    verified: true,
+    aliases: ['masjid khadijah']
+  },
+  {
+    id: 'fallback-milton-islamic-centre',
+    name: 'ICCM',
+    type: 'Masjid',
+    city: 'Milton',
+    address: '8069 Esquesing Line, Milton, ON L9T 7L4',
     latitude: 43.5403,
     longitude: -79.8427,
-    website: 'https://miltonislamiccentre.com/',
-    verified: true
+    website: 'https://icna.ca/iccm/',
+    imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEZPUwRU_97UB1etCJ4ev5ES9XmN4n846cQ6Ih5H0Ffb53Iu6OHYwGWYmSD0b3CEIRKaG2q5-qzi-GEzB9A38NscJgrCghhmkCO0fBKsnkw_1pvECHwQ2ajlB2li8BLmsTSpmU9-w=s1360-w1360-h1020-rw',
+    heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEZPUwRU_97UB1etCJ4ev5ES9XmN4n846cQ6Ih5H0Ffb53Iu6OHYwGWYmSD0b3CEIRKaG2q5-qzi-GEzB9A38NscJgrCghhmkCO0fBKsnkw_1pvECHwQ2ajlB2li8BLmsTSpmU9-w=s1360-w1360-h1020-rw',
+    description: 'Islamic Community Centre of Milton profile placeholder. Details can be completed when the masjid is onboarded.',
+    verified: true,
+    aliases: ['iccm', 'islamic community centre of milton', 'milton islamic centre']
   },
   {
     id: 'fallback-hicc',
-    name: 'HICC Masjid',
+    name: 'HICC',
     type: 'Masjid',
     city: 'Oakville',
-    address: '4269 Regional Road 25, Oakville, ON L6M 4E9',
+    address: '4269 Regional Rd 25, Oakville, ON L9E 0K2',
     latitude: 43.4818,
     longitude: -79.8141,
     website: 'https://miltonmasjid.com/',
-    verified: true
+    imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAF_9wZlIKxlIt1WnDcHp_emB27qwNp6BZTHp9HNgnC15Y-97Bhl5PkX_cYvrLVKzlV9S8PikDBpmAQ0g_04y2q0sQS9VNssdw4x90j86qHXLhR2gPq_hQpkm4RjVLIWdyJSm3nSUw=s1360-w1360-h1020-rw',
+    heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAF_9wZlIKxlIt1WnDcHp_emB27qwNp6BZTHp9HNgnC15Y-97Bhl5PkX_cYvrLVKzlV9S8PikDBpmAQ0g_04y2q0sQS9VNssdw4x90j86qHXLhR2gPq_hQpkm4RjVLIWdyJSm3nSUw=s1360-w1360-h1020-rw',
+    description: 'Halton Islamic Community Centre profile placeholder for prayers, programs, and community services.',
+    verified: true,
+    aliases: ['hicc', 'hicc masjid', 'muslim association of milton', 'halton islamic community centre']
   },
   {
     id: 'fallback-imam-bukhari-centre',
     name: 'Imam Bukhari Centre',
     type: 'Masjid',
     city: 'Milton',
-    address: '50 Steeles Avenue East, Unit 7 and 8, Milton, ON L9T 4W9',
+    address: '50 Steeles Ave E Unit-8, Milton, ON L9T 4W9',
     latitude: 43.5239,
     longitude: -79.8891,
-    website: 'http://ahlehadithcanada.org/toronto/',
-    verified: true
+    website: 'https://ahlehadithcanada.org/',
+    imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEp8gOXT75AzDMNd1XH4h5D1rb_90r684Buuhy5zM6LrFMnzhJTMcPf0Phh9GiIvmQCHdchvQZAmX1lTXV-Q2tIIPC2cLXxEMagADr7qfzmA0aqVWruJUAD7T5Pr0YqM7YlP54DDw=s1360-w1360-h1020-rw',
+    heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEp8gOXT75AzDMNd1XH4h5D1rb_90r684Buuhy5zM6LrFMnzhJTMcPf0Phh9GiIvmQCHdchvQZAmX1lTXV-Q2tIIPC2cLXxEMagADr7qfzmA0aqVWruJUAD7T5Pr0YqM7YlP54DDw=s1360-w1360-h1020-rw',
+    description: 'Imam Bukhari Centre profile placeholder for prayer services, classes, and community reminders.',
+    verified: true,
+    aliases: ['imam bukhari centre', 'imam bukhari center']
+  },
+  {
+    id: 'fallback-hlc',
+    name: 'HLC',
+    type: 'Masjid',
+    city: 'Milton',
+    address: 'Derry Rd W, Milton, ON L9E 1G5',
+    latitude: 43.4938,
+    longitude: -79.8768,
+    website: 'https://miltonmasjid.com/',
+    imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAFQhv5kM-N9e90r-azxNOWGwgtbjCX7A7dF1qy3O4weJZ5nObq2ZsTSR7aRyVHCe0CUy2CoUAStxSQZO4nf_rN8RkQFqm0AGeBej0ooE-jHhDprNdi6lGYez8kl407FDxAREaUK=s294-w294-h220-n-k-no',
+    heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAFQhv5kM-N9e90r-azxNOWGwgtbjCX7A7dF1qy3O4weJZ5nObq2ZsTSR7aRyVHCe0CUy2CoUAStxSQZO4nf_rN8RkQFqm0AGeBej0ooE-jHhDprNdi6lGYez8kl407FDxAREaUK=s294-w294-h220-n-k-no',
+    description: 'Halton Learning Centre musalla profile placeholder. Program details can be completed after onboarding.',
+    verified: true,
+    aliases: ['hlc', 'halton learning centre', 'halton learning center']
   }
 ];
 
@@ -279,7 +321,7 @@ async function canManageOrganization(user, organizationId) {
 
 async function ensureFallbackOrganizations() {
   for (const masjid of fallbackMasjids) {
-    const existing = await prisma.organization.findFirst({ where: { name: masjid.name } });
+    const existing = await prisma.organization.findFirst({ where: { name: { in: [masjid.name, ...(masjid.aliases || [])] } } });
     if (!existing) {
       await prisma.organization.create({
         data: {
@@ -290,13 +332,64 @@ async function ensureFallbackOrganizations() {
           website: masjid.website,
           latitude: masjid.latitude,
           longitude: masjid.longitude,
-          description: `${masjid.name} community profile. Admins can claim and customize this page during onboarding.`,
+          imageUrl: masjid.imageUrl,
+          heroImageUrl: masjid.heroImageUrl,
+          description: masjid.description || `${masjid.name} community profile. Admins can claim and customize this page during onboarding.`,
           verified: masjid.verified,
           facilities: 'Prayer hall, community programs, events'
         }
       });
+    } else {
+      await prisma.organization.update({
+        where: { id: existing.id },
+        data: {
+          city: existing.city || masjid.city,
+          address: existing.address || masjid.address,
+          website: existing.website || masjid.website,
+          latitude: existing.latitude ?? masjid.latitude,
+          longitude: existing.longitude ?? masjid.longitude,
+          imageUrl: existing.imageUrl || masjid.imageUrl,
+          heroImageUrl: existing.heroImageUrl || masjid.heroImageUrl,
+          description: existing.description || masjid.description,
+          verified: existing.verified || masjid.verified
+        }
+      });
     }
   }
+}
+
+function normalizedMasjidName(value = '') {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\b(masjid|mosque|centre|center|islamic|community|the)\b/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function matchingFallbackMasjid(item = {}) {
+  const normalized = normalizedMasjidName(item.name);
+  return fallbackMasjids.find((masjid) => {
+    const names = [masjid.name, ...(masjid.aliases || [])];
+    return names.some((name) => {
+      const candidate = normalizedMasjidName(name);
+      return candidate && (candidate === normalized || normalized.includes(candidate) || candidate.includes(normalized));
+    });
+  });
+}
+
+function enrichMasjid(item = {}) {
+  const fallback = matchingFallbackMasjid(item);
+  if (!fallback) return item;
+  const { aliases, ...publicFallback } = fallback;
+  return {
+    ...publicFallback,
+    ...item,
+    city: item.city || fallback.city,
+    address: item.address || fallback.address,
+    latitude: item.latitude ?? fallback.latitude,
+    longitude: item.longitude ?? fallback.longitude,
+    website: item.website || fallback.website,
+    imageUrl: item.imageUrl || fallback.imageUrl,
+    heroImageUrl: item.heroImageUrl || fallback.heroImageUrl,
+    description: item.description || fallback.description,
+    verified: item.verified || fallback.verified
+  };
 }
 
 function createToken(user) {
@@ -1450,7 +1543,7 @@ app.get('/api/location/masjids', async (req, res) => {
       },
       orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
     });
-    const sqlResults = sqlMasjids.map((org) => publicOrganization(org, null));
+    const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, null)));
 
     const query = `
       [out:json][timeout:12];
@@ -1484,11 +1577,11 @@ app.get('/api/location/masjids', async (req, res) => {
         source: 'OpenStreetMap'
       };
     }).filter((item) => item.latitude && item.longitude && item.name !== 'Unnamed masjid');
-    const seen = new Set(sqlResults.map((item) => item.name.toLowerCase()));
-    const supplemental = masjids.length ? masjids : fallbackMasjids;
+    const seen = new Set(sqlResults.map((item) => normalizedMasjidName(item.name)));
+    const supplemental = [...fallbackMasjids, ...masjids.map(enrichMasjid)];
     const finalMasjids = [
       ...sqlResults,
-      ...supplemental.filter((item) => !seen.has(item.name.toLowerCase()))
+      ...supplemental.filter((item) => !seen.has(normalizedMasjidName(item.name)))
     ];
     res.json(withDistance(finalMasjids, latitude, longitude));
   } catch (err) {
@@ -1505,9 +1598,9 @@ app.get('/api/location/masjids', async (req, res) => {
         },
         orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
       });
-      const sqlResults = sqlMasjids.map((org) => publicOrganization(org, null));
-      const seen = new Set(sqlResults.map((item) => item.name.toLowerCase()));
-      return res.json(withDistance([...sqlResults, ...fallbackMasjids.filter((item) => !seen.has(item.name.toLowerCase()))], latitude, longitude));
+      const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, null)));
+      const seen = new Set(sqlResults.map((item) => normalizedMasjidName(item.name)));
+      return res.json(withDistance([...sqlResults, ...fallbackMasjids.filter((item) => !seen.has(normalizedMasjidName(item.name)))], latitude, longitude));
     } catch {
       res.json(withDistance(fallbackMasjids, latitude, longitude));
     }

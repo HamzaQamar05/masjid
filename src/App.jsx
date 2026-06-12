@@ -200,6 +200,32 @@ function distanceText(item) {
   return `${item.distanceKm.toFixed ? item.distanceKm.toFixed(1) : item.distanceKm} km away`;
 }
 
+function distanceKmBetween(origin, item) {
+  if (!origin?.latitude || !origin?.longitude || !item?.latitude || !item?.longitude) return null;
+  const toRad = (degrees) => (degrees * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(Number(item.latitude) - Number(origin.latitude));
+  const dLng = toRad(Number(item.longitude) - Number(origin.longitude));
+  const lat1 = toRad(Number(origin.latitude));
+  const lat2 = toRad(Number(item.latitude));
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const distanceKm = earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(2)) : null;
+}
+
+function withLocalDistance(items = [], origin) {
+  return [...items].map((item) => {
+    const distanceKm = item.distanceKm ?? distanceKmBetween(origin, item);
+    if (distanceKm == null) return item;
+    return {
+      ...item,
+      distanceKm,
+      walkingMinutes: item.walkingMinutes ?? Math.max(3, Math.round((distanceKm / 5) * 60)),
+      drivingMinutes: item.drivingMinutes ?? Math.max(2, Math.round((distanceKm / 35) * 60))
+    };
+  }).sort((a, b) => (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY));
+}
+
 async function showPrayerNotification(title, body, tag) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if ('serviceWorker' in navigator) {
@@ -479,6 +505,16 @@ function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization, not
 }
 
 function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganization }) {
+  function openMasjid(masjid) {
+    if (openOrganization) openOrganization(masjid.id);
+  }
+
+  function handleCardKey(event, masjid) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openMasjid(masjid);
+  }
+
   return (
     <section className="panel nearby-panel">
       <div className="section-title">
@@ -488,16 +524,23 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
       <p className="helper-text">{locationStatus}</p>
       <div className="nearby-list">
         {masjids.map((masjid) => (
-          <article className="nearby-card" key={masjid.id}>
-            <div>
-              <h3>{masjid.name}</h3>
+          <article className="nearby-card" key={masjid.id} role={openOrganization ? 'button' : undefined} tabIndex={openOrganization ? 0 : undefined} onClick={() => openMasjid(masjid)} onKeyDown={(event) => handleCardKey(event, masjid)}>
+            <div className="nearby-image">
+              {masjid.imageUrl || masjid.heroImageUrl || masjid.cover ? <img src={masjid.imageUrl || masjid.heroImageUrl || masjid.cover} alt="" /> : <span>{initials(masjid.name)}</span>}
+            </div>
+            <div className="nearby-copy">
+              <div className="nearby-title-row">
+                <h3>{masjid.name}</h3>
+                {masjid.verified && <span>Verified</span>}
+              </div>
               <p>{masjid.address || masjid.city || 'Address unavailable'}</p>
-              <p>{distanceText(masjid)}{masjid.walkingMinutes ? ` - ${masjid.walkingMinutes} min walk - ${masjid.drivingMinutes} min drive` : ''}</p>
-              <p>{masjid.followerCount || 0} followers - {(masjid.events || []).length} events - {(masjid.opportunities || []).length} opportunities</p>
+              <p className="nearby-distance">{distanceText(masjid)}{masjid.walkingMinutes ? ` - ${masjid.walkingMinutes} min walk - ${masjid.drivingMinutes} min drive` : ''}</p>
+              <p className="nearby-summary">{masjid.description || `${masjid.followerCount || masjid.followers || 0} followers - ${(masjid.events || []).length} events - ${(masjid.opportunities || []).length} opportunities`}</p>
             </div>
             <div className="nearby-actions">
-              {openOrganization && <button className="secondary-button" onClick={() => openOrganization(masjid.id)}>Profile</button>}
-              <a className="secondary-button" href={directionsUrl(masjid)} target="_blank" rel="noreferrer">Directions</a>
+              {openOrganization && <button className="secondary-button" onClick={(event) => { event.stopPropagation(); openOrganization(masjid.id); }}>Profile</button>}
+              {masjid.website && <a className="secondary-button" href={masjid.website} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Website</a>}
+              <a className="secondary-button" href={directionsUrl(masjid)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Directions</a>
             </div>
           </article>
         ))}
@@ -1052,19 +1095,37 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
   const opportunities = organization.opportunities || [];
   const jobs = opportunities.filter((item) => item.type === 'JOB');
   const volunteer = opportunities.filter((item) => item.type !== 'JOB');
-  const iqamah = organization.iqamahTimes || {};
+  const iqamah = organization.iqamahTimes || organization.iqamah || {};
   const classes = organization.classes || organization.programs || [];
+  const facilities = normalizeList(organization.facilities);
+  const profileImage = organization.imageUrl || organization.heroImageUrl || organization.cover;
+  const heroImage = organization.heroImageUrl || organization.cover || organization.imageUrl;
+  const followerCount = organization.followerCount ?? organization.followers ?? 0;
+  const tags = [
+    organization.verified ? 'Verified masjid' : null,
+    organization.city,
+    organization.type,
+    ...(organization.tags || [])
+  ].filter(Boolean);
   const canFollowMasjid = isUserAccount(user);
   return (
     <Page title={organization.name} subtitle={organization.description || 'Masjid profile with events, opportunities, jobs, prayer times, location, and links.'}>
       <BackHeader title={organization.name} subtitle={organization.city || organization.address || 'Masjid'} onBack={onBack} />
       <section className="panel masjid-profile">
-        <div className="masjid-hero" style={{ backgroundImage: organization.heroImageUrl ? `url(${organization.heroImageUrl})` : undefined }}>
-          <div className="org-logo">{organization.imageUrl ? <img src={organization.imageUrl} alt="" /> : initials(organization.name)}</div>
+        <div className="masjid-hero" style={{ backgroundImage: heroImage ? `url(${heroImage})` : undefined }}>
+          <div className="org-logo">{profileImage ? <img src={profileImage} alt="" /> : initials(organization.name)}</div>
           <div>
             <h2>{organization.name}</h2>
             <p>{organization.address || organization.city || 'Location not added yet'}</p>
-            <p>{organization.followerCount || 0} followers - {organization.peopleCount || 0} team members</p>
+            <p>{followerCount} followers - {organization.peopleCount || 0} team members</p>
+          </div>
+        </div>
+        <div className="masjid-profile-summary">
+          <TagRow tags={tags} />
+          <p>{organization.description || 'This masjid profile is ready for onboarding details, prayer preferences, events, and announcements.'}</p>
+          <div className="profile-info-grid">
+            <div><span>Address</span><strong>{organization.address || organization.city || 'Location not added yet'}</strong></div>
+            <div><span>Website</span><strong>{organization.website ? organization.website.replace(/^https?:\/\//, '').replace(/\/$/, '') : 'Not added yet'}</strong></div>
           </div>
         </div>
         <div className="profile-actions">
@@ -1139,7 +1200,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
             <div className="section-title"><h2>Links</h2></div>
             <p>{organization.phone || 'Phone not added'}</p>
             <p>{organization.email || 'Email not added'}</p>
-            <p>{organization.facilities || 'Facilities not added'}</p>
+            <p>{facilities.length ? facilities.join(' - ') : 'Facilities not added'}</p>
           </section>
         </aside>
       </div>
@@ -2906,11 +2967,11 @@ export default function App() {
         api(`/api/location/masjids?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}`),
         api(`/api/prayer-times?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}&date=${Math.floor(Date.now() / 1000)}`)
       ]);
-      setMasjids(masjidData);
+      setMasjids(withLocalDistance(masjidData, nextLocation));
       const timings = prayerData.timings || {};
       setPrayerTimes(prayers.map((item) => ({ ...item, adhan: (timings[item.name] || item.adhan).slice(0, 5) })));
     } catch {
-      setMasjids(seedOrganizations);
+      setMasjids(withLocalDistance(seedOrganizations, nextLocation));
       setPrayerTimes(prayers);
     }
   }
