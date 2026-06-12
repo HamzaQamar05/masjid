@@ -327,7 +327,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
       </section>
       <aside className="right-rail">
         <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
-        <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
+        <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
         <FavoritePrograms programs={favoritePrograms} openOrganization={openOrganization} />
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
         <section className="panel">
@@ -439,7 +439,7 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
   );
 }
 
-function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization }) {
+function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization, notificationState, enablePushNotifications }) {
   const favorite = favoriteMasjids[0];
   const iqamah = favorite?.iqamahTimes || {};
   return (
@@ -453,6 +453,9 @@ function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization }) {
       </div>
       {favorite?.prayerNotes && <p className="helper-text">{favorite.prayerNotes}</p>}
       {favorite && openOrganization && <button className="secondary-button prayer-profile-button" onClick={() => openOrganization(favorite.id)}>Open masjid profile</button>}
+      {notificationState?.permission !== 'granted' && enablePushNotifications && (
+        <button className="primary-button prayer-profile-button" onClick={enablePushNotifications}>Enable prayer notifications</button>
+      )}
     </section>
   );
 }
@@ -554,7 +557,7 @@ function PrayerScreen({ user, prayerTimes, favoriteMasjids, locationStatus, requ
   return (
     <Page title="Prayer" subtitle="Location-based prayer times, saved location, and PWA reminders.">
       <div className="prayer-app-layout">
-        <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} />
+        <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
         <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
         <PrayerSettingsCard user={user} locationStatus={locationStatus} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} requestLocation={requestLocation} saveManualLocation={saveManualLocation} />
       </div>
@@ -2680,6 +2683,7 @@ export default function App() {
     const { publicKey, enabled } = await api('/api/notifications/vapid-public-key');
     if (!enabled || !publicKey) {
       setNotificationState({ permission, message: 'Backend VAPID keys are not configured yet, but your local permission is enabled.' });
+      if (!prayerPreferences.enabled) updatePrayerPreferences({ ...prayerPreferences, enabled: true }).catch(console.error);
       return;
     }
     const registration = await navigator.serviceWorker.ready;
@@ -2687,6 +2691,7 @@ export default function App() {
     const subscription = existing || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
     await api('/api/notifications/subscriptions', { method: 'POST', body: JSON.stringify({ subscription }) });
     setNotificationState({ permission, message: 'Notifications are enabled for this device.' });
+    if (!prayerPreferences.enabled) updatePrayerPreferences({ ...prayerPreferences, enabled: true }).catch(console.error);
   }
 
   async function updatePrayerPreferences(nextPreferences) {
@@ -2936,7 +2941,9 @@ export default function App() {
   }
 
   async function openOrganization(id) {
-    const org = await api(`/api/organizations/${id}`);
+    const localOrg = masjids.find((item) => String(item.id) === String(id)) || seedOrganizations.find((item) => String(item.id) === String(id));
+    const org = await api(`/api/organizations/${id}`).catch(() => localOrg);
+    if (!org) return alert('This masjid profile is not available yet.');
     setSelectedOrganization(org);
     setTab('masjidProfile', id);
   }
@@ -3002,7 +3009,13 @@ export default function App() {
   useEffect(() => {
     if (!user || tab !== 'messages') return;
     const id = routeId(locationRoute.pathname, '/messages/');
-    if (!id) return;
+    if (!id) {
+      if (selectedUser) {
+        setSelectedUser(null);
+        setMessages([]);
+      }
+      return;
+    }
     const person = users.find((item) => String(item.id) === String(id));
     if (person && String(selectedUser?.id) !== String(id)) setSelectedUser(person);
     if (String(selectedUser?.id) !== String(id)) loadMessages(id).catch(console.error);
@@ -3159,7 +3172,7 @@ export default function App() {
     jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
-    messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => setTab('messages')} />,
+    messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} />
   };
