@@ -3521,3 +3521,384 @@ a {
 :root[data-theme="dark"] .dm-dot {
   color: #ffffff;
 }
+
+/* Mobile app shell overrides: keep desktop intact, make phones feel native. */
+@media (max-width: 880px) {
+  html,
+  body,
+  #root {
+    min-height: 100dvh;
+    background: var(--page-bg);
+  }
+
+  body {
+    overscroll-behavior-y: contain;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app {
+    width: 100%;
+    max-width: none;
+    padding: calc(56px + env(safe-area-inset-top)) 0 calc(74px + env(safe-area-inset-bottom));
+    margin: 0;
+  }
+
+  .app.detail-mode {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .main-panel,
+  .page,
+  .feed-column,
+  .stack,
+  .stack-list {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .top-nav {
+    height: calc(54px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 12px 0;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 10px;
+    background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+  }
+
+  .brand {
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .brand span {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .top-actions {
+    gap: 6px;
+  }
+
+  .top-actions .icon-button,
+  .dm-top-button,
+  .post-button {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    min-height: 38px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .top-actions .post-button {
+    display: none;
+  }
+
+  .mobile-menu {
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+    border-radius: 50%;
+  }
+
+  .page {
+    gap: 10px;
+  }
+
+  .page-header {
+    min-height: auto;
+    padding: 14px 16px 10px;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text);
+  }
+
+  .page-header h1 {
+    color: var(--text);
+    font-size: 24px;
+    line-height: 1.1;
+  }
+
+  .page-header p {
+    max-width: 100%;
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .page-header .eyebrow {
+    display: none;
+  }
+
+  .content-grid,
+  .right-rail,
+  .card-grid.two,
+  .card-grid.three,
+  .organization-grid,
+  .metric-grid,
+  .admin-grid,
+  .event-discovery,
+  .messaging-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .right-rail {
+    display: contents;
+  }
+
+  .panel,
+  .composer,
+  .feed-post,
+  .event-card,
+  .organization-card,
+  .person-card,
+  .role-card,
+  .library-card,
+  .business-card,
+  .metric-card,
+  .nearby-card,
+  .profile-card {
+    width: 100%;
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--panel-bg);
+  }
+
+  .composer {
+    padding: 12px 14px;
+  }
+
+  .composer-main button {
+    min-height: 42px;
+    border-radius: 999px;
+    font-size: 13px;
+  }
+
+  .composer-actions {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .composer-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .composer-actions button {
+    flex: 0 0 auto;
+    min-width: 112px;
+    min-height: 38px;
+    border-radius: 999px;
+  }
+
+  .feed-post,
+  .mini-row {
+    padding: 14px 16px;
+  }
+
+  .feed-post h2 {
+    font-size: 19px;
+  }
+
+  .post-image,
+  .event-banner,
+  .event-detail-image,
+  .profile-banner,
+  .person-banner {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .post-social-row {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    scrollbar-width: none;
+  }
+
+  .post-social-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .post-social-row button {
+    flex: 0 0 auto;
+    min-width: 94px;
+    border-radius: 999px;
+  }
+
+  .mobile-bottom-nav {
+    left: 14px;
+    right: 14px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    height: 58px;
+    padding: 6px;
+    border-radius: 22px;
+    background: color-mix(in srgb, var(--panel-bg) 92%, transparent);
+    border-color: color-mix(in srgb, var(--border) 86%, transparent);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+  }
+
+  .mobile-bottom-nav button {
+    min-height: 46px;
+    border-radius: 17px;
+    gap: 1px;
+  }
+
+  .mobile-bottom-nav button.active {
+    background: var(--brand);
+    color: #fff;
+  }
+
+  .mobile-drawer {
+    width: min(330px, 86vw);
+    padding: calc(14px + env(safe-area-inset-top)) 14px 14px;
+    background: var(--panel-bg);
+  }
+
+  .drawer-profile,
+  .side-nav button,
+  .mobile-logout {
+    border-radius: 14px;
+  }
+
+  .side-nav button {
+    min-height: 48px;
+    box-shadow: none;
+  }
+
+  .inbox-list {
+    padding: 0;
+  }
+
+  .dm-inbox-summary,
+  .dm-search,
+  .dm-filter-row {
+    margin: 10px 12px;
+  }
+
+  .inbox-list button {
+    min-height: 68px;
+    padding: 10px 14px;
+    border-radius: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-bg);
+  }
+
+  .dm-avatar,
+  .org-logo {
+    border-radius: 50%;
+  }
+
+  .thread-route .message-thread {
+    min-height: calc(100dvh - 108px - env(safe-area-inset-top));
+  }
+
+  .message-thread {
+    border: 0;
+  }
+
+  .thread-head {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .message-list {
+    padding: 12px 12px 4px;
+  }
+
+  .chat-bubble {
+    max-width: 78%;
+    border-radius: 18px;
+    padding: 9px 12px;
+  }
+
+  .chat-bubble.sent {
+    border-bottom-right-radius: 6px;
+  }
+
+  .chat-bubble.received {
+    border-bottom-left-radius: 6px;
+  }
+
+  .quick-reply-row {
+    padding: 6px 12px 0;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .quick-reply-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .quick-reply-row button {
+    flex: 0 0 auto;
+  }
+
+  .message-composer {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 8px;
+    padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+  }
+
+  .message-composer textarea {
+    min-height: 42px;
+    max-height: 96px;
+    border-radius: 18px;
+  }
+
+  .message-composer .primary-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    border-radius: 50%;
+    padding: 0;
+  }
+
+  .profile-detail,
+  .profile-social,
+  .masjid-profile,
+  .prayer-app-layout > .panel {
+    border-radius: 0;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .profile-header-card {
+    padding: 0 16px 14px;
+  }
+
+  .profile-actions,
+  .card-footer,
+  .hub-actions,
+  .nearby-actions,
+  .manager-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .profile-actions > *,
+  .card-footer > *,
+  .hub-actions > *,
+  .nearby-actions > *,
+  .manager-row > * {
+    flex: 1 1 auto;
+    min-width: min(150px, 100%);
+  }
+
+  .primary-button,
+  .secondary-button {
+    border-radius: 999px;
+  }
+}
