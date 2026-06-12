@@ -2863,8 +2863,22 @@ async function enableNotifications() {
 
   return (
     <>
-      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)} theme={theme} toggleTheme={toggleTheme}>
-        {screens[tab] || screens.home}onNotificationsClick={() => 
+      <Shell
+  user={user}
+  tab={tab}
+  setTab={setTab}
+  searchQuery={searchQuery}
+  setSearchQuery={setSearchQuery}
+  searchResults={searchResults}
+  onSearchSelect={handleSearchSelect}
+  onLogout={logout}
+  hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)}
+  theme={theme}
+  toggleTheme={toggleTheme}
+  onNotificationsClick={() => setShowNotifications(true)}
+>
+  {screens[tab] || screens.home}
+</Shell>
       </Shell>
       <section className="mobile-bottom-nav">
         {navItems.filter((item) => mobileNavKeys.includes(item.key)).filter((item) => !(isOrganizationAccount(user) && ['volunteers', 'jobs'].includes(item.key))).map((item) => {
