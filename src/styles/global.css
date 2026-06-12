@@ -3630,6 +3630,59 @@ a {
   color: #ffffff;
 }
 
+/* Account preference controls */
+.interest-picker,
+.settings-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.interest-picker {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.interest-picker strong,
+.field-label span {
+  color: var(--text);
+  font-weight: 900;
+}
+
+.interest-picker p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.interest-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.field-label {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label input {
+  width: min(360px, 100%);
+}
+
+.reset-message {
+  width: min(520px, 100%);
+  overflow-wrap: anywhere;
+}
+
+.auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 14px;
+}
+
 /* Mobile app shell overrides: keep desktop intact, make phones feel native. */
 @media (max-width: 880px) {
   html,

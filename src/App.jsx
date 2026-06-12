@@ -17,13 +17,12 @@ import {
   MapPin,
   Menu,
   MessageCircle,
-  Moon,
   Navigation,
   Plus,
   Search,
   Send,
+  Settings,
   ShieldCheck,
-  Sun,
   UserCheck,
   Users,
   X
@@ -34,6 +33,22 @@ import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganiz
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const notificationTimers = new Map();
 const notifiedMessageIds = new Set();
+
+const coreInterestLabels = ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile'];
+const optionalInterestLabels = ['Events', 'Library', 'Volunteer', 'Jobs', 'Business'];
+const interestByNavKey = {
+  home: 'Home',
+  prayer: 'Prayer',
+  messages: 'Messages',
+  organizations: 'Masjids',
+  network: 'Network',
+  profile: 'Profile',
+  events: 'Events',
+  library: 'Library',
+  volunteers: 'Volunteer',
+  jobs: 'Jobs',
+  businesses: 'Business'
+};
 
 const navItems = [
   { key: 'home', label: 'Home', icon: Home },
@@ -50,6 +65,7 @@ const navItems = [
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
 ];
 
+const leftNavKeys = ['organizations', 'events', 'library', 'volunteers', 'jobs', 'businesses', 'dashboard'];
 const mobileNavKeys = ['home', 'prayer', 'messages', 'network', 'profile'];
 
 function pathForTab(key, id) {
@@ -68,7 +84,8 @@ function pathForTab(key, id) {
     messages: id ? `/messages/${id}` : '/messages',
     profile: id ? `/profile/${id}` : '/profile/me',
     profileEdit: '/profile/edit',
-    dashboard: '/settings'
+    dashboard: '/dashboard',
+    settings: '/settings'
   };
   return paths[key] || '/home';
 }
@@ -89,7 +106,8 @@ function tabForPath(pathname) {
   if (pathname.startsWith('/profile')) return 'profile';
   if (pathname.startsWith('/library')) return 'library';
   if (pathname.startsWith('/businesses')) return 'businesses';
-  if (pathname.startsWith('/settings')) return 'dashboard';
+  if (pathname.startsWith('/dashboard')) return 'dashboard';
+  if (pathname.startsWith('/settings')) return 'settings';
   return 'home';
 }
 
@@ -97,7 +115,6 @@ function routeId(pathname, prefix) {
   if (!pathname.startsWith(prefix)) return '';
   return decodeURIComponent(pathname.slice(prefix.length).split('/')[0] || '');
 }
-
 function token() {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
 }
@@ -140,6 +157,32 @@ function isUserAccount(user) {
   return user?.accountType === 'USER';
 }
 
+function userPreferenceLabels(user) {
+  const saved = Array.isArray(user?.interests) ? user.interests : [];
+  const known = saved.filter((item) => [...coreInterestLabels, ...optionalInterestLabels].includes(item));
+  return new Set([...coreInterestLabels, ...(known.length ? known : optionalInterestLabels)]);
+}
+
+function hasPreference(user, navKey) {
+  const label = interestByNavKey[navKey];
+  return !label || userPreferenceLabels(user).has(label);
+}
+
+function calculateAge(dateOfBirth) {
+  if (!dateOfBirth) return null;
+  const birthDate = new Date(dateOfBirth);
+  if (!Number.isFinite(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age -= 1;
+  return age;
+}
+
+function canUseJobs(user) {
+  return calculateAge(user?.dateOfBirth) >= 18;
+}
+
 function initials(name = 'UC') {
   return name.split(' ').filter(Boolean).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
 }
@@ -164,6 +207,12 @@ function displayRoleLabel(accountType = 'USER') {
 
 function listToText(value) {
   return Array.isArray(value) ? value.join(', ') : value || '';
+}
+
+function toDateInput(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : '';
 }
 
 function textToList(value) {
@@ -257,7 +306,7 @@ async function showAppNotification({ title, body, tag, url }) {
   };
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, theme, toggleTheme, onNotificationsClick, detailMode = false }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, onNotificationsClick, openSettings, detailMode = false }) {
   const [navOpen, setNavOpen] = useState(false);
   function navigate(key) {
     setTab(key);
@@ -287,9 +336,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         </div>
         <div className="top-actions">
           <button className="icon-button" onClick={onNotificationsClick} aria-label="Notifications"><Bell size={20} /></button>
-          <button className="icon-button" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <button className="icon-button" onClick={openSettings} aria-label="Open settings"><Settings size={20} /></button>
           <button className="post-button" onClick={() => navigate(canPost(user) ? 'dashboard' : 'events')}><Plus size={18} /><span>{canPost(user) ? 'Create' : 'Event'}</span></button>
           <button className="dm-top-button" onClick={() => navigate('messages')} aria-label="Open messages">
   <Mail size={22} />
@@ -318,9 +365,11 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
 }
 
 function NavigationList({ tab, setTab, user, hasDashboardAccess }) {
-  const visibleNav = navItems.filter((item) => {
+  const visibleNav = navItems.filter((item) => leftNavKeys.includes(item.key)).filter((item) => {
     if (item.key === 'dashboard') return canManageOrgs(user) || hasDashboardAccess || isImamAccount(user);
+    if (!hasPreference(user, item.key)) return false;
     if (isOrganizationAccount(user) && ['volunteers', 'jobs', 'businesses'].includes(item.key)) return false;
+    if (item.key === 'jobs' && !canUseJobs(user)) return false;
     return true;
   });
   return (
@@ -371,7 +420,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
       </section>
       <aside className="right-rail">
         <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
-        <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
+        {orgAccount ? <MasjidPrayerManagerNotice setTab={setTab} /> : <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />}
         <FavoritePrograms programs={favoritePrograms} openOrganization={openOrganization} />
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
         <section className="panel">
@@ -504,6 +553,16 @@ function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization, not
   );
 }
 
+function MasjidPrayerManagerNotice({ setTab }) {
+  return (
+    <section className="panel prayer-panel">
+      <div className="section-title"><div><p className="eyebrow">Masjid tools</p><h2>Prayer times</h2></div><ShieldCheck size={22} /></div>
+      <p>Update your own iqamah and prayer notes from the masjid dashboard.</p>
+      <button className="primary-button" onClick={() => setTab('dashboard')}>Open dashboard</button>
+    </section>
+  );
+}
+
 function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganization }) {
   function openMasjid(masjid) {
     if (openOrganization) openOrganization(masjid.id);
@@ -616,7 +675,23 @@ function PrayerSettingsCard({ user, locationStatus, prayerPreferences, updatePra
   );
 }
 
-function PrayerScreen({ user, prayerTimes, favoriteMasjids, locationStatus, requestLocation, notificationState, enablePushNotifications, prayerPreferences, updatePrayerPreferences, saveManualLocation, openOrganization }) {
+function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = [], locationStatus, requestLocation, notificationState, enablePushNotifications, prayerPreferences, updatePrayerPreferences, saveManualLocation, openOrganization, setTab }) {
+  if (isOrganizationAccount(user)) {
+    return (
+      <Page title="Prayer" subtitle="Masjid accounts edit their own public prayer schedule from the dashboard.">
+        <MasjidPrayerManagerNotice setTab={setTab} />
+        <div className="card-grid two">
+          {myOrganizations.map((org) => (
+            <article className="organization-card" key={org.id}>
+              <h3>{org.name}</h3>
+              <p>{org.prayerNotes || 'No prayer notes added yet.'}</p>
+              <TagRow tags={[org.iqamahTimes?.Fajr && `Fajr ${org.iqamahTimes.Fajr}`, org.iqamahTimes?.Dhuhr && `Dhuhr ${org.iqamahTimes.Dhuhr}`, org.iqamahTimes?.Asr && `Asr ${org.iqamahTimes.Asr}`, org.iqamahTimes?.Maghrib && `Maghrib ${org.iqamahTimes.Maghrib}`, org.iqamahTimes?.Isha && `Isha ${org.iqamahTimes.Isha}`].filter(Boolean)} />
+            </article>
+          ))}
+        </div>
+      </Page>
+    );
+  }
   return (
     <Page title="Prayer" subtitle="Location-based prayer times, saved location, and PWA reminders.">
       <div className="prayer-app-layout">
@@ -695,13 +770,19 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
         <TagRow tags={[event.organization?.name || event.createdBy?.name || 'Community event', remaining !== null ? `${remaining} spots left` : `${registeredCount} registered`, event.requiresApproval && 'Approval required', registration && `Your status: ${registration.status}`].filter(Boolean)} />
         <div className="card-footer">
           <button className="secondary-button" onClick={() => openEvent(event.id)}>Details</button>
-          {registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
+          {isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
         </div>
       </article>
     );
   }
   return (
     <Page title={detailMode && featuredEvent ? featuredEvent.title : 'Events'} subtitle="Discover masjid programs, community gatherings, classes, and approval-based registrations.">
+      {isOrganizationAccount(user) && (
+        <section className="panel role-notice">
+          <strong>Masjid account</strong>
+          <p>Event attendance registration is for community member accounts. Manage your own events and attendees from the dashboard.</p>
+        </section>
+      )}
       {detailMode && <BackHeader title="Event" subtitle={featuredEvent?.organization?.name || featuredEvent?.createdBy?.name || 'Community'} onBack={onBack} />}
       <section className={detailMode ? 'event-discovery detail-route' : 'event-discovery'}>
         {featuredEvent && (
@@ -715,7 +796,7 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
               <div className="meta-line"><MapPin size={16} />{featuredEvent.location || featuredEvent.place || 'Location TBA'}</div>
               <TagRow tags={[(featuredEvent.category || featuredEvent.type || 'Community'), featuredEvent.requiresApproval && 'Approval required', featuredEvent.capacity && `${featuredEvent.capacity} capacity`].filter(Boolean)} />
               <div className="hub-actions">
-                {(featuredEvent.registrations || []).find((item) => item.userId === user.id) ? <button className="secondary-button" onClick={() => unregisterEvent(featuredEvent.id)}>Cancel registration</button> : <button className="primary-button" onClick={() => registerEvent(featuredEvent.id)}>{featuredEvent.requiresApproval ? 'Request entry' : 'Register'}</button>}
+                {isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : (featuredEvent.registrations || []).find((item) => item.userId === user.id) ? <button className="secondary-button" onClick={() => unregisterEvent(featuredEvent.id)}>Cancel registration</button> : <button className="primary-button" onClick={() => registerEvent(featuredEvent.id)}>{featuredEvent.requiresApproval ? 'Request entry' : 'Register'}</button>}
                 {(featuredEvent.location || featuredEvent.place) && <a className="secondary-button" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(featuredEvent.location || featuredEvent.place)}`} target="_blank" rel="noreferrer">Map</a>}
               </div>
             </div>
@@ -1272,7 +1353,8 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
   const verifiedTotal = visible.reduce((sum, item) => sum + (item.applications?.[0]?.approvedHours || 0), 0);
   const [activeOpportunity, setActiveOpportunity] = useState(null);
   const [applicationForms, setApplicationForms] = useState({});
-  const userCanApply = isUserAccount(user);
+  const ageAllowed = type !== 'JOB' || canUseJobs(user);
+  const userCanApply = isUserAccount(user) && ageAllowed;
   const activeQuestions = activeOpportunity ? normalizeList(activeOpportunity.applicationQuestions || activeOpportunity.questions) : [];
   function updateApplicationForm(id, field, value) {
     setApplicationForms((current) => ({ ...current, [id]: { ...(current[id] || {}), [field]: value } }));
@@ -1295,8 +1377,8 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
     <Page title={title} subtitle={subtitle}>
       {!userCanApply && (
         <section className="panel role-notice">
-          <strong>Organization account</strong>
-          <p>Masjid and MSA accounts manage listings from the dashboard. Applying is reserved for community member accounts.</p>
+          <strong>{isUserAccount(user) ? 'Age restricted' : 'Organization account'}</strong>
+          <p>{isUserAccount(user) ? 'Job applications require a saved date of birth showing you are 18 or older.' : 'Masjid and MSA accounts manage listings from the dashboard. Applying is reserved for community member accounts.'}</p>
         </section>
       )}
       {type === 'VOLUNTEER' && (
@@ -1395,6 +1477,7 @@ async function unfavoriteMasjid(orgId) {
 }
   const [form, setForm] = useState(() => ({
     name: profile.name || '',
+    dateOfBirth: toDateInput(profile.dateOfBirth),
     city: profile.city || '',
     location: profile.location || '',
     bio: profile.bio || '',
@@ -1412,6 +1495,7 @@ async function unfavoriteMasjid(orgId) {
   useEffect(() => {
     setForm({
       name: profile.name || '',
+      dateOfBirth: toDateInput(profile.dateOfBirth),
       city: profile.city || '',
       location: profile.location || '',
       bio: profile.bio || '',
@@ -1498,14 +1582,9 @@ async function unfavoriteMasjid(orgId) {
         {editMode && editingSelf ? (
           <form className="profile-form clean-edit-form" onSubmit={submit}>
             <div className="form-grid">
-              {['name', 'city', 'location', 'availability', 'avatarUrl', 'bannerUrl'].map((field) => (
-                <input
-                  key={field}
-                  placeholder={field}
-                  value={form[field]}
-                  onChange={(event) => setForm({ ...form, [field]: event.target.value })}
-                />
-              ))}
+              <input placeholder="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              <input type="date" value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} aria-label="Date of birth" />
+              {['city', 'location', 'availability', 'avatarUrl', 'bannerUrl'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
             </div>
 
             <textarea placeholder="Bio" value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} />
@@ -1655,6 +1734,67 @@ function ReadOnlyProfile({ profile }) {
 
 function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
+}
+
+function SettingsScreen({ user, onSave }) {
+  const selected = userPreferenceLabels(user);
+  const [form, setForm] = useState(() => ({
+    dateOfBirth: toDateInput(user.dateOfBirth),
+    interests: optionalInterestLabels.filter((label) => selected.has(label))
+  }));
+
+  useEffect(() => {
+    const nextSelected = userPreferenceLabels(user);
+    setForm({
+      dateOfBirth: toDateInput(user.dateOfBirth),
+      interests: optionalInterestLabels.filter((label) => nextSelected.has(label))
+    });
+  }, [user.id, user.dateOfBirth, (user.interests || []).join('|')]);
+
+  function toggleOptional(label) {
+    setForm((current) => ({
+      ...current,
+      interests: current.interests.includes(label)
+        ? current.interests.filter((item) => item !== label)
+        : [...current.interests, label]
+    }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    const updated = await api('/api/me', {
+      method: 'PUT',
+      body: JSON.stringify({ dateOfBirth: form.dateOfBirth, interests: [...coreInterestLabels, ...form.interests] })
+    });
+    onSave(updated);
+  }
+
+  return (
+    <Page title="Settings" subtitle="Update account preferences and category visibility.">
+      <form className="panel settings-panel" onSubmit={submit}>
+        <div className="section-title"><div><p className="eyebrow">Account</p><h2>Preferences</h2></div><Settings size={20} /></div>
+        <label className="field-label">
+          <span>Date of birth</span>
+          <input type="date" value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} />
+        </label>
+        <section className="interest-picker settings-picker">
+          <div>
+            <strong>Always available</strong>
+            <p>{coreInterestLabels.join(', ')}</p>
+          </div>
+          <div className="interest-options">
+            {optionalInterestLabels.map((label) => (
+              <label key={label} className="check-toggle">
+                <input type="checkbox" checked={form.interests.includes(label)} onChange={() => toggleOptional(label)} disabled={label === 'Jobs' && !canUseJobs({ ...user, dateOfBirth: form.dateOfBirth })} />
+                {label}{label === 'Jobs' && !canUseJobs({ ...user, dateOfBirth: form.dateOfBirth }) ? ' (18+)' : ''}
+              </label>
+            ))}
+          </div>
+        </section>
+        <button className="primary-button">Save preferences</button>
+      </form>
+    </Page>
+  );
 }
 
 function ImamDashboard({ user, social, setTab }) {
@@ -3219,10 +3359,6 @@ export default function App() {
     else setTab(result.tab);
   }
 
-  function toggleTheme() {
-    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
-  }
-
   const otherUsers = users.filter((person) => person.id !== user?.id);
   const routeEventId = tab === 'events' ? routeId(locationRoute.pathname, '/events/') : '';
   const routeMessageUserId = tab === 'messages' ? routeId(locationRoute.pathname, '/messages/') : '';
@@ -3250,11 +3386,11 @@ export default function App() {
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
   }, [searchQuery, users, prioritizedPosts, prioritizedMasjids, prioritizedEvents, prioritizedOpportunities]);
 
-  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} theme={theme} toggleTheme={toggleTheme} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
+  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
 
   const screens = {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />,
-    prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} />,
+    prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} />,
     events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} onBack={() => navigate(-1)} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
@@ -3266,31 +3402,31 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} />,
+    settings: <SettingsScreen user={user} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} />
   };
 
   return (
     <>
       <Shell
-  user={user}
-  tab={tab}
-  setTab={setTab}
-  searchQuery={searchQuery}
-  setSearchQuery={setSearchQuery}
-  searchResults={searchResults}
-  onSearchSelect={handleSearchSelect}
-  onLogout={logout}
-  hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)}
-  theme={theme}
-  toggleTheme={toggleTheme}
-  onNotificationsClick={() => setShowNotifications(true)}
-  detailMode={isDetailRoute}
->
-  {screens[tab] || screens.home}
-</Shell>
+        user={user}
+        tab={tab}
+        setTab={setTab}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        searchResults={searchResults}
+        onSearchSelect={handleSearchSelect}
+        onLogout={logout}
+        hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)}
+        onNotificationsClick={() => setShowNotifications(true)}
+        openSettings={() => setTab('settings')}
+        detailMode={isDetailRoute}
+      >
+        {screens[tab] || screens.home}
+      </Shell>
      
       <section className={isDetailRoute ? 'mobile-bottom-nav detail-hidden' : 'mobile-bottom-nav'}>
-        {navItems.filter((item) => mobileNavKeys.includes(item.key)).filter((item) => !(isOrganizationAccount(user) && ['volunteers', 'jobs'].includes(item.key))).map((item) => {
+        {navItems.filter((item) => mobileNavKeys.includes(item.key)).map((item) => {
           const Icon = item.icon;
           return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span>{item.key === 'messages' && unreadTotal > 0 && <em>{unreadTotal > 9 ? '9+' : unreadTotal}</em>}</button>;
         })}
