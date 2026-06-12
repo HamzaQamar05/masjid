@@ -9,6 +9,7 @@ import { createServer } from 'http';
 import { randomBytes } from 'crypto';
 import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
+import webPush from 'web-push';
 
 dotenv.config();
 
@@ -33,6 +34,9 @@ const io = new Server(server, {
 const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 }) : null;
 const memoryCache = new Map();
 const onlineUsers = new Map();
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || '';
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
+const vapidSubject = process.env.VAPID_SUBJECT || process.env.FRONTEND_URL || 'mailto:admin@ummahconnect.app';
 const messageLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 45,
@@ -43,6 +47,10 @@ const messageLimiter = rateLimit({
 if (redis) {
   redis.connect().catch((error) => console.error('Redis unavailable, using memory fallback', error.message));
   redis.on('error', (error) => console.error('Redis error', error.message));
+}
+
+if (vapidPublicKey && vapidPrivateKey) {
+  webPush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 }
 
 const fallbackMasjids = [
@@ -185,6 +193,11 @@ function publicUser(user) {
     availability: user.availability,
     avatarUrl: user.avatarUrl,
     bannerUrl: user.bannerUrl,
+    latitude: user.latitude,
+    longitude: user.longitude,
+    timezone: user.timezone,
+    prayerMethod: user.prayerMethod,
+    prayerNotificationPreferences: user.prayerNotificationPreferences,
     createdAt: user.createdAt
   };
 }
@@ -286,7 +299,7 @@ async function ensureFallbackOrganizations() {
 }
 
 function createToken(user) {
-  return jwt.sign({ id: user.id, accountType: user.accountType }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '7d' });
+  return jwt.sign({ id: user.id, accountType: user.accountType }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: process.env.JWT_EXPIRES_IN || '30d' });
 }
 
 function threadIdFor(a, b) {
@@ -364,6 +377,39 @@ function emitPresence() {
 
 async function emitUnread(userId) {
   io.to(userRoom(userId)).emit('messages:unread', { unread: await unreadCount(userId) });
+}
+
+function normalizePrayerPreferences(value = {}) {
+  const allowedPrayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+  const prayers = value.prayers && typeof value.prayers === 'object' ? value.prayers : {};
+  const offsetMinutes = [0, 5, 10].includes(Number(value.offsetMinutes)) ? Number(value.offsetMinutes) : 0;
+  return {
+    enabled: Boolean(value.enabled),
+    offsetMinutes,
+    prayers: Object.fromEntries(allowedPrayers.map((name) => [name, prayers[name] !== false]))
+  };
+}
+
+async function sendPushToUser(userId, payload) {
+  if (!vapidPublicKey || !vapidPrivateKey) return { sent: 0, disabled: true };
+  const subscriptions = await prisma.pushSubscription.findMany({ where: { userId } });
+  let sent = 0;
+  await Promise.all(subscriptions.map(async (subscription) => {
+    try {
+      await webPush.sendNotification({
+        endpoint: subscription.endpoint,
+        keys: subscription.keys
+      }, JSON.stringify(payload));
+      sent += 1;
+    } catch (error) {
+      if ([404, 410].includes(error.statusCode)) {
+        await prisma.pushSubscription.deleteMany({ where: { endpoint: subscription.endpoint } });
+      } else {
+        console.error('Push notification failed', error.statusCode || error.message);
+      }
+    }
+  }));
+  return { sent, disabled: false };
 }
 
 async function auth(req, res, next) {
@@ -478,6 +524,11 @@ app.put('/api/me', auth, async (req, res) => {
     education: req.body.education,
     experience: req.body.experience,
     availability: req.body.availability,
+    latitude: req.body.latitude === undefined ? undefined : Number(req.body.latitude),
+    longitude: req.body.longitude === undefined ? undefined : Number(req.body.longitude),
+    timezone: req.body.timezone,
+    prayerMethod: req.body.prayerMethod,
+    prayerNotificationPreferences: req.body.prayerNotificationPreferences === undefined ? undefined : normalizePrayerPreferences(req.body.prayerNotificationPreferences),
     skills: normalizeList(req.body.skills),
     interests: normalizeList(req.body.interests),
     languages: normalizeList(req.body.languages),
@@ -488,6 +539,66 @@ app.put('/api/me', auth, async (req, res) => {
   Object.keys(data).forEach((key) => data[key] === undefined && delete data[key]);
   const user = await prisma.user.update({ where: { id: req.user.id }, data });
   res.json(publicUser(user));
+});
+
+app.get('/api/notifications/vapid-public-key', auth, (_, res) => {
+  res.json({ publicKey: vapidPublicKey, enabled: Boolean(vapidPublicKey && vapidPrivateKey) });
+});
+
+app.get('/api/notifications/preferences', auth, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  const subscriptions = await prisma.pushSubscription.count({ where: { userId: req.user.id } });
+  res.json({
+    pushConfigured: Boolean(vapidPublicKey && vapidPrivateKey),
+    subscriptionCount: subscriptions,
+    location: {
+      city: user.city,
+      location: user.location,
+      latitude: user.latitude,
+      longitude: user.longitude,
+      timezone: user.timezone,
+      prayerMethod: user.prayerMethod
+    },
+    prayerNotificationPreferences: normalizePrayerPreferences(user.prayerNotificationPreferences || { enabled: false })
+  });
+});
+
+app.put('/api/notifications/preferences', auth, async (req, res) => {
+  const data = {};
+  if (req.body.location) {
+    const { city, location, latitude, longitude, timezone, prayerMethod } = req.body.location;
+    data.city = city;
+    data.location = location;
+    data.latitude = latitude == null ? null : Number(latitude);
+    data.longitude = longitude == null ? null : Number(longitude);
+    data.timezone = timezone || null;
+    data.prayerMethod = prayerMethod || null;
+  }
+  if (req.body.prayerNotificationPreferences) {
+    data.prayerNotificationPreferences = normalizePrayerPreferences(req.body.prayerNotificationPreferences);
+  }
+  const user = await prisma.user.update({ where: { id: req.user.id }, data });
+  res.json(publicUser(user));
+});
+
+app.post('/api/notifications/subscriptions', auth, async (req, res) => {
+  const { endpoint, keys } = req.body.subscription || req.body;
+  if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ error: 'Valid push subscription is required' });
+  const subscription = await prisma.pushSubscription.upsert({
+    where: { endpoint },
+    update: { userId: req.user.id, keys, userAgent: req.headers['user-agent'] || null },
+    create: { userId: req.user.id, endpoint, keys, userAgent: req.headers['user-agent'] || null }
+  });
+  res.json({ ok: true, id: subscription.id, pushConfigured: Boolean(vapidPublicKey && vapidPrivateKey) });
+});
+
+app.delete('/api/notifications/subscriptions', auth, async (req, res) => {
+  if (req.body?.endpoint) {
+    await prisma.pushSubscription.deleteMany({ where: { endpoint: req.body.endpoint, userId: req.user.id } });
+  } else {
+    await prisma.pushSubscription.deleteMany({ where: { userId: req.user.id } });
+  }
+  res.json({ ok: true });
 });
 
 app.get('/api/users', auth, async (req, res) => {
@@ -1264,6 +1375,14 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
   const serialized = serializeMessage(message);
   io.to(threadRoom(req.user.id, receiverId)).emit('message:new', serialized);
   io.to(userRoom(receiverId)).emit('message:new', serialized);
+  await sendPushToUser(receiverId, {
+    type: 'message',
+    title: `New message from ${message.sender.name}`,
+    body: content.trim().slice(0, 120),
+    url: `/messages/${req.user.id}`,
+    messageId: message.id,
+    senderId: req.user.id
+  });
   await emitUnread(receiverId);
   res.json(serialized);
 });
