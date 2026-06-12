@@ -2863,7 +2863,7 @@ async function enableNotifications() {
 
   return (
     <>
-      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)} theme={theme} toggleTheme={toggleTheme} setShowNotifications(true)}>
+      <Shell user={user} tab={tab} setTab={setTab} searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} onSearchSelect={handleSearchSelect} onLogout={logout} hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)} theme={theme} toggleTheme={toggleTheme}>
         {screens[tab] || screens.home}onNotificationsClick={() => 
       </Shell>
       <section className="mobile-bottom-nav">
