@@ -2879,7 +2879,7 @@ async function enableNotifications() {
 >
   {screens[tab] || screens.home}
 </Shell>
-      </Shell>
+     
       <section className="mobile-bottom-nav">
         {navItems.filter((item) => mobileNavKeys.includes(item.key)).filter((item) => !(isOrganizationAccount(user) && ['volunteers', 'jobs'].includes(item.key))).map((item) => {
           const Icon = item.icon;
