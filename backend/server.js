@@ -30,7 +30,6 @@ const io = new Server(server, {
     credentials: true
   }
 });
-});
 const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 }) : null;
 const memoryCache = new Map();
 const onlineUsers = new Map();
