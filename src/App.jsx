@@ -281,6 +281,38 @@ function textToList(value) {
   return value.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+const standardPrayerKeys = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha', 'Jumuah'];
+const emptyAdditionalPrayer = { name: '', time: '', notes: '' };
+const emptyTemporaryPrayer = { name: '', time: '', startsAt: '', endsAt: '', notes: '' };
+
+function cleanPrayerRows(rows = [], temporary = false) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => ({
+      id: row.id || `${temporary ? 'temp' : 'custom'}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: (row.name || '').trim(),
+      time: (row.time || '').trim(),
+      notes: (row.notes || '').trim(),
+      ...(temporary ? { startsAt: row.startsAt || '', endsAt: row.endsAt || '' } : {})
+    }))
+    .filter((row) => row.name || row.time || row.notes || row.startsAt || row.endsAt);
+}
+
+function buildPrayerEditForm(org = {}) {
+  const iqamah = org.iqamahTimes || {};
+  return {
+    Fajr: iqamah.Fajr || iqamah.fajr || '',
+    Dhuhr: iqamah.Dhuhr || iqamah.dhuhr || '',
+    Asr: iqamah.Asr || iqamah.asr || '',
+    Maghrib: iqamah.Maghrib || iqamah.maghrib || '',
+    Isha: iqamah.Isha || iqamah.isha || '',
+    Jumuah: iqamah.Jumuah || iqamah.jumuah || '',
+    prayerNotes: org.prayerNotes || iqamah.notes || '',
+    additionalPrayers: cleanPrayerRows(iqamah.additionalPrayers || []),
+    temporaryPrayers: cleanPrayerRows(iqamah.temporaryPrayers || [], true)
+  };
+}
+
 function normalizeList(value) {
   if (Array.isArray(value)) return value;
   if (!value) return [];
@@ -2198,6 +2230,10 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const [peopleQuery, setPeopleQuery] = useState('');
   const [editingOrgId, setEditingOrgId] = useState('');
   const [editOrgForm, setEditOrgForm] = useState({});
+  const [editingPrayerOrgId, setEditingPrayerOrgId] = useState('');
+  const [editPrayerForm, setEditPrayerForm] = useState(buildPrayerEditForm());
+  const [newPrayerDraft, setNewPrayerDraft] = useState(emptyAdditionalPrayer);
+  const [temporaryPrayerDraft, setTemporaryPrayerDraft] = useState(emptyTemporaryPrayer);
   const [editingPostId, setEditingPostId] = useState('');
   const [editPostForm, setEditPostForm] = useState({});
   const [editingEventId, setEditingEventId] = useState('');
@@ -2286,6 +2322,8 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   function openDashboardSection(section) {
     setEditingOrgId('');
     setEditOrgForm({});
+    setEditingPrayerOrgId('');
+    setEditPrayerForm(buildPrayerEditForm());
     cancelContentEdits();
     setActiveSection(section);
   }
@@ -2296,6 +2334,8 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   function closeDashboardSection() {
     setEditingOrgId('');
     setEditOrgForm({});
+    setEditingPrayerOrgId('');
+    setEditPrayerForm(buildPrayerEditForm());
     cancelContentEdits();
     setActiveSection('');
   }
@@ -2701,30 +2741,59 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
       instagramUrl: org.instagramUrl || '',
       facebookUrl: org.facebookUrl || '',
       latitude: org.latitude || '',
-      longitude: org.longitude || '',
-      fajr: org.iqamahTimes?.Fajr || '',
-      dhuhr: org.iqamahTimes?.Dhuhr || '',
-      asr: org.iqamahTimes?.Asr || '',
-      maghrib: org.iqamahTimes?.Maghrib || '',
-      isha: org.iqamahTimes?.Isha || '',
-      jumuah: org.iqamahTimes?.Jumuah || org.iqamahTimes?.jumuah || '',
-      prayerNotes: org.prayerNotes || org.iqamahTimes?.notes || ''
+      longitude: org.longitude || ''
     });
   }
   async function submitEditOrg(event) {
     event.preventDefault();
-    const iqamahTimes = {
-      Fajr: editOrgForm.fajr,
-      Dhuhr: editOrgForm.dhuhr,
-      Asr: editOrgForm.asr,
-      Maghrib: editOrgForm.maghrib,
-      Isha: editOrgForm.isha,
-      Jumuah: editOrgForm.jumuah,
-      notes: editOrgForm.prayerNotes
-    };
-    await updateOrganization(editingOrgId, { ...editOrgForm, iqamahTimes });
+    await updateOrganization(editingOrgId, editOrgForm);
     setEditingOrgId('');
     setEditOrgForm({});
+  }
+  function startEditPrayers(org) {
+    setEditingPrayerOrgId(org.id);
+    setEditPrayerForm(buildPrayerEditForm(org));
+    setNewPrayerDraft(emptyAdditionalPrayer);
+    setTemporaryPrayerDraft(emptyTemporaryPrayer);
+  }
+  function updatePrayerRow(kind, index, field, value) {
+    setEditPrayerForm((current) => ({
+      ...current,
+      [kind]: (current[kind] || []).map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row)
+    }));
+  }
+  function removePrayerRow(kind, index) {
+    setEditPrayerForm((current) => ({
+      ...current,
+      [kind]: (current[kind] || []).filter((_, rowIndex) => rowIndex !== index)
+    }));
+  }
+  function addAdditionalPrayer() {
+    if (!newPrayerDraft.name.trim()) return alert('Prayer name is required.');
+    setEditPrayerForm((current) => ({
+      ...current,
+      additionalPrayers: [...(current.additionalPrayers || []), { ...newPrayerDraft, id: `custom-${Date.now()}` }]
+    }));
+    setNewPrayerDraft(emptyAdditionalPrayer);
+  }
+  function addTemporaryPrayer() {
+    if (!temporaryPrayerDraft.name.trim()) return alert('Temporary prayer name is required.');
+    setEditPrayerForm((current) => ({
+      ...current,
+      temporaryPrayers: [...(current.temporaryPrayers || []), { ...temporaryPrayerDraft, id: `temp-${Date.now()}` }]
+    }));
+    setTemporaryPrayerDraft(emptyTemporaryPrayer);
+  }
+  async function submitEditPrayers(event, org) {
+    event.preventDefault();
+    const iqamahTimes = standardPrayerKeys.reduce((times, key) => ({ ...times, [key]: editPrayerForm[key] || '' }), {
+      notes: editPrayerForm.prayerNotes || '',
+      additionalPrayers: cleanPrayerRows(editPrayerForm.additionalPrayers || []),
+      temporaryPrayers: cleanPrayerRows(editPrayerForm.temporaryPrayers || [], true)
+    });
+    await updateOrganization(org.id, { iqamahTimes, prayerNotes: editPrayerForm.prayerNotes || '' });
+    setEditingPrayerOrgId('');
+    setEditPrayerForm(buildPrayerEditForm());
   }
   return (
     <Page>
@@ -3192,7 +3261,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
 
           {showOrgPanels && scopedOrganizations.map((org) => (
             <section className={showProfileTools ? 'panel org-feature-panel profile-tools-panel' : 'panel org-feature-panel'} key={org.id}>
-              {showProfileTools && <div className="section-title"><h2>{org.name}</h2><button onClick={() => startEditOrg(org)}>Edit profile</button><span>{org.followerCount || 0} followers</span><span>{org.peopleCount || 0} team</span></div>}
+              {showProfileTools && <div className="section-title"><h2>{org.name}</h2><button onClick={() => startEditPrayers(org)}>Edit prayers</button><span>{org.followerCount || 0} followers</span><span>{org.peopleCount || 0} team</span></div>}
               {showProfileTools && editingOrgId === org.id && (
                 <form className="profile-form manager-edit-form" onSubmit={submitEditOrg}>
                   <div className="form-grid">
@@ -3203,12 +3272,6 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                   </div>
                   <textarea placeholder="Description" value={editOrgForm.description || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, description: event.target.value })} />
                   <textarea placeholder="Facilities" value={editOrgForm.facilities || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, facilities: event.target.value })} />
-                  <div className="section-title compact-title"><h3>Prayer Times Management</h3><span>Profile visible</span></div>
-                  <div className="form-grid">
-                    {['fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'jumuah'].map((field) => <input key={field} placeholder={`${field} iqamah, e.g. 05:30`} value={editOrgForm[field] || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, [field]: event.target.value })} />)}
-                  </div>
-                  <textarea placeholder="Prayer notes or announcements" value={editOrgForm.prayerNotes || ''} onChange={(event) => setEditOrgForm({ ...editOrgForm, prayerNotes: event.target.value })} />
-                  <p className="helper-text">Prayer notes and Jumuah are saved with the masjid profile. Ramadan mode can build on this same profile surface.</p>
                   <div className="profile-actions">
                     <button className="primary-button">Save masjid profile</button>
                     <button className="secondary-button" type="button" onClick={() => setEditingOrgId('')}>Cancel</button>
@@ -3217,17 +3280,91 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
               )}
               {showSection('prayerTimes') && (
                 <div className="manager-section">
-                  <div className="section-title compact-title"><h3>Jamaat & Iqamah Times</h3><span>Shown on public profile</span></div>
+                  <div className="section-title compact-title"><h3>Edit Prayers</h3><span>Shown on public profile</span></div>
                   <div className="prayer-grid detailed manager-prayer-grid">
-                    {['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha', 'Jumuah'].map((name) => (
+                    {standardPrayerKeys.map((name) => (
                       <div key={name}><span>{name}</span><strong>{org.iqamahTimes?.[name] || org.iqamahTimes?.[name.toLowerCase()] || 'Not set'}</strong><em>Iqamah / jamaat</em></div>
                     ))}
                   </div>
+                  {(org.iqamahTimes?.additionalPrayers || []).length > 0 && (
+                    <div className="stack-list">
+                      {(org.iqamahTimes.additionalPrayers || []).map((prayer, index) => (
+                        <article className="mini-row" key={prayer.id || `${prayer.name}-${index}`}>
+                          <strong>{prayer.name}</strong>
+                          <span>{prayer.time || 'Time not set'}</span>
+                          {prayer.notes && <p>{prayer.notes}</p>}
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                  {(org.iqamahTimes?.temporaryPrayers || []).length > 0 && (
+                    <div className="stack-list">
+                      {(org.iqamahTimes.temporaryPrayers || []).map((prayer, index) => (
+                        <article className="mini-row" key={prayer.id || `${prayer.name}-${index}`}>
+                          <strong>{prayer.name}</strong>
+                          <span>{prayer.time || 'Time not set'}{prayer.startsAt || prayer.endsAt ? ` - ${prayer.startsAt || 'now'} to ${prayer.endsAt || 'until removed'}` : ''}</span>
+                          {prayer.notes && <p>{prayer.notes}</p>}
+                        </article>
+                      ))}
+                    </div>
+                  )}
                   {org.prayerNotes && <p className="helper-text">{org.prayerNotes}</p>}
                   <div className="manager-row">
-                    <span>Update jamaat times, Jumuah, and prayer notes for users who follow this masjid or enable prayer notifications.</span>
-                    <button onClick={() => startEditOrg(org)}>Change times</button>
+                    <span>Update standard prayers, add new prayers, add temporary prayers, and save prayer notes.</span>
+                    <button onClick={() => startEditPrayers(org)}>Edit prayers</button>
                   </div>
+                  {editingPrayerOrgId === org.id && (
+                    <form className="profile-form manager-edit-form" onSubmit={(event) => submitEditPrayers(event, org)}>
+                      <div className="section-title compact-title"><h3>Standard prayers</h3><span>Iqamah / jamaat</span></div>
+                      <div className="form-grid">
+                        {standardPrayerKeys.map((name) => (
+                          <input key={name} placeholder={`${name} iqamah, e.g. 05:30`} value={editPrayerForm[name] || ''} onChange={(event) => setEditPrayerForm({ ...editPrayerForm, [name]: event.target.value })} />
+                        ))}
+                      </div>
+                      <textarea placeholder="Prayer notes or announcements" value={editPrayerForm.prayerNotes || ''} onChange={(event) => setEditPrayerForm({ ...editPrayerForm, prayerNotes: event.target.value })} />
+
+                      <div className="section-title compact-title"><h3>Additional prayers</h3><span>Add new prayer</span></div>
+                      {(editPrayerForm.additionalPrayers || []).map((row, index) => (
+                        <div className="form-grid" key={row.id || index}>
+                          <input placeholder="Prayer name" value={row.name || ''} onChange={(event) => updatePrayerRow('additionalPrayers', index, 'name', event.target.value)} />
+                          <input placeholder="Time" value={row.time || ''} onChange={(event) => updatePrayerRow('additionalPrayers', index, 'time', event.target.value)} />
+                          <input placeholder="Notes" value={row.notes || ''} onChange={(event) => updatePrayerRow('additionalPrayers', index, 'notes', event.target.value)} />
+                          <button className="secondary-button danger" type="button" onClick={() => removePrayerRow('additionalPrayers', index)}>Remove</button>
+                        </div>
+                      ))}
+                      <div className="form-grid">
+                        <input placeholder="New prayer name, e.g. Taraweeh" value={newPrayerDraft.name} onChange={(event) => setNewPrayerDraft({ ...newPrayerDraft, name: event.target.value })} />
+                        <input placeholder="Time, e.g. After Isha" value={newPrayerDraft.time} onChange={(event) => setNewPrayerDraft({ ...newPrayerDraft, time: event.target.value })} />
+                        <input placeholder="Notes optional" value={newPrayerDraft.notes} onChange={(event) => setNewPrayerDraft({ ...newPrayerDraft, notes: event.target.value })} />
+                        <button className="secondary-button" type="button" onClick={addAdditionalPrayer}>Add new prayer</button>
+                      </div>
+
+                      <div className="section-title compact-title"><h3>Temporary prayers</h3><span>Ramadan, Eid, special dates</span></div>
+                      {(editPrayerForm.temporaryPrayers || []).map((row, index) => (
+                        <div className="form-grid" key={row.id || index}>
+                          <input placeholder="Temporary prayer name" value={row.name || ''} onChange={(event) => updatePrayerRow('temporaryPrayers', index, 'name', event.target.value)} />
+                          <input placeholder="Time" value={row.time || ''} onChange={(event) => updatePrayerRow('temporaryPrayers', index, 'time', event.target.value)} />
+                          <input type="date" value={row.startsAt || ''} onChange={(event) => updatePrayerRow('temporaryPrayers', index, 'startsAt', event.target.value)} />
+                          <input type="date" value={row.endsAt || ''} onChange={(event) => updatePrayerRow('temporaryPrayers', index, 'endsAt', event.target.value)} />
+                          <input placeholder="Notes" value={row.notes || ''} onChange={(event) => updatePrayerRow('temporaryPrayers', index, 'notes', event.target.value)} />
+                          <button className="secondary-button danger" type="button" onClick={() => removePrayerRow('temporaryPrayers', index)}>Remove</button>
+                        </div>
+                      ))}
+                      <div className="form-grid">
+                        <input placeholder="Temporary prayer name, e.g. Eid Salah" value={temporaryPrayerDraft.name} onChange={(event) => setTemporaryPrayerDraft({ ...temporaryPrayerDraft, name: event.target.value })} />
+                        <input placeholder="Time" value={temporaryPrayerDraft.time} onChange={(event) => setTemporaryPrayerDraft({ ...temporaryPrayerDraft, time: event.target.value })} />
+                        <input type="date" value={temporaryPrayerDraft.startsAt} onChange={(event) => setTemporaryPrayerDraft({ ...temporaryPrayerDraft, startsAt: event.target.value })} />
+                        <input type="date" value={temporaryPrayerDraft.endsAt} onChange={(event) => setTemporaryPrayerDraft({ ...temporaryPrayerDraft, endsAt: event.target.value })} />
+                        <input placeholder="Notes optional" value={temporaryPrayerDraft.notes} onChange={(event) => setTemporaryPrayerDraft({ ...temporaryPrayerDraft, notes: event.target.value })} />
+                        <button className="secondary-button" type="button" onClick={addTemporaryPrayer}>Add temporary prayer</button>
+                      </div>
+
+                      <div className="profile-actions">
+                        <button className="primary-button">Save prayers</button>
+                        <button className="secondary-button" type="button" onClick={() => setEditingPrayerOrgId('')}>Cancel</button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               )}
               {showApplications && (
