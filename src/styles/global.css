@@ -4123,6 +4123,48 @@ button.mini-org-avatar {
     overflow-x: clip;
   }
 
+  .main-panel.page-motion {
+    will-change: transform, opacity;
+    pointer-events: none;
+  }
+
+  .main-panel.page-motion.slide-next {
+    animation: mobileSlideNext 240ms cubic-bezier(0.22, 0.8, 0.22, 1);
+  }
+
+  .main-panel.page-motion.slide-prev {
+    animation: mobileSlidePrev 240ms cubic-bezier(0.22, 0.8, 0.22, 1);
+  }
+
+  @keyframes mobileSlideNext {
+    from {
+      opacity: 0.72;
+      transform: translate3d(32px, 0, 0) scale(0.992);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes mobileSlidePrev {
+    from {
+      opacity: 0.72;
+      transform: translate3d(-32px, 0, 0) scale(0.992);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .main-panel.page-motion.slide-next,
+    .main-panel.page-motion.slide-prev {
+      animation: none;
+    }
+  }
+
   .top-nav {
     height: var(--mobile-top-height);
     padding: env(safe-area-inset-top) 12px 0;

@@ -368,12 +368,27 @@ async function showAppNotification({ title, body, tag, url }) {
 
 function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, onNotificationsClick, openSettings, detailMode = false, mobileTabs = mobileNavKeys }) {
   const [navOpen, setNavOpen] = useState(false);
+  const [pageMotion, setPageMotion] = useState('');
+  const previousTab = useRef(tab);
   const touchStart = useRef(null);
   const touchHandled = useRef(false);
   function navigate(key) {
     setTab(key);
     setNavOpen(false);
   }
+  useEffect(() => {
+    if (previousTab.current === tab) return undefined;
+    const previousIndex = mobileTabs.indexOf(previousTab.current);
+    const nextIndex = mobileTabs.indexOf(tab);
+    previousTab.current = tab;
+    if (detailMode || previousIndex === -1 || nextIndex === -1) {
+      setPageMotion('');
+      return undefined;
+    }
+    setPageMotion(nextIndex > previousIndex ? 'slide-next' : 'slide-prev');
+    const timer = window.setTimeout(() => setPageMotion(''), 260);
+    return () => window.clearTimeout(timer);
+  }, [tab, detailMode, mobileTabs.join('|')]);
   function onTouchStart(event) {
     if (event.touches.length !== 1) return;
     const touch = event.touches[0];
@@ -467,7 +482,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         <ProfileSummary user={user} onLogout={onLogout} setTab={navigate} />
         <NavigationList tab={tab} setTab={navigate} user={user} hasDashboardAccess={hasDashboardAccess} />
       </aside>
-      <main className="main-panel" data-swipe-surface="true">{children}</main>
+      <main className={pageMotion ? `main-panel page-motion ${pageMotion}` : 'main-panel'} data-swipe-surface="true">{children}</main>
     </div>
   );
 }
