@@ -2119,6 +2119,22 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
     return local.toISOString().slice(0, 16);
   }
+  function eventAttendanceStats(eventItem) {
+    const registrations = eventItem.registrations || [];
+    const checkedIn = registrations.filter((registration) => registration.status === 'ATTENDED').length;
+    const noShow = registrations.filter((registration) => registration.status === 'NO_SHOW').length;
+    const pending = registrations.filter((registration) => registration.status === 'PENDING').length;
+    const approved = registrations.filter((registration) => registration.status === 'APPROVED').length;
+    const denied = registrations.filter((registration) => registration.status === 'DENIED').length;
+    return {
+      registered: registrations.length - denied,
+      checkedIn,
+      noShow,
+      pending,
+      approved,
+      denied
+    };
+  }
   async function editPost(post) {
     const title = prompt('Post title', post.title || '');
     if (title === null) return;
@@ -2639,30 +2655,40 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                 <div className="manager-section">
                   <div className="section-title compact-title"><h3>Events</h3><span>{(org.events || []).length}</span></div>
                   <div className="stack-list">
-                    {(org.events || []).length ? (org.events || []).map((event) => (
-                      <article className="mini-row" key={event.id}>
+                    {(org.events || []).length ? (org.events || []).map((event) => {
+                      const stats = eventAttendanceStats(event);
+                      return (
+                      <article className="mini-row event-registration-card" key={event.id}>
                         <strong>{event.title}</strong>
-                        <span>{new Date(event.startTime).toLocaleString()} - {(event.registrations || []).length} attendees</span>
+                        <span>{new Date(event.startTime).toLocaleString()}</span>
                         <p>{event.location || 'Location TBA'}</p>
+                        <div className="event-attendance-grid">
+                          <div><strong>{stats.registered}</strong><span>Registered</span></div>
+                          <div><strong>{stats.checkedIn}</strong><span>Checked In</span></div>
+                          <div><strong>{stats.noShow}</strong><span>No Show</span></div>
+                        </div>
                         <div className="manager-row">
-                          <span>{(event.registrations || []).filter((registration) => registration.status === 'PENDING').length} pending, {(event.registrations || []).filter((registration) => registration.status === 'APPROVED').length} approved, {(event.registrations || []).filter((registration) => registration.status === 'ATTENDED').length} attended</span>
+                          <span>{stats.pending} pending, {stats.approved} approved, {stats.denied} denied</span>
                           <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
-                          <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'ATTENDED', fromStatus: 'APPROVED' })}>Mark approved attended</button>
+                          <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'ATTENDED', fromStatus: 'APPROVED' })}>Check in approved</button>
+                          <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'NO_SHOW', fromStatus: 'APPROVED' })}>No-show approved</button>
                           <button onClick={() => editEvent(event)}>Edit event</button>
                           <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
                         </div>
                         {(event.registrations || []).map((registration) => (
-                          <div className="manager-row" key={registration.id}>
+                          <div className="manager-row attendee-row" key={registration.id}>
                             <span>{registration.user?.name || 'User'} - {registration.status}</span>
                             <button onClick={() => updateRegistration(event.id, registration.id, 'APPROVED')}>Approve</button>
                             <button onClick={() => updateRegistration(event.id, registration.id, 'DENIED')}>Deny</button>
-                            <button onClick={() => updateRegistration(event.id, registration.id, 'ATTENDED')}>Attended</button>
+                            <button onClick={() => updateRegistration(event.id, registration.id, 'ATTENDED')}>Check in</button>
+                            <button onClick={() => updateRegistration(event.id, registration.id, 'NO_SHOW')}>No show</button>
                             {registration.user && <button onClick={() => startMessage(registration.user)}>Message</button>}
                             {registration.user && <button onClick={() => openProfile(registration.user)}>Profile</button>}
                           </div>
                         ))}
                       </article>
-                    )) : <p className="helper-text">No events match this dashboard filter yet.</p>}
+                      );
+                    }) : <p className="helper-text">No events match this dashboard filter yet.</p>}
                   </div>
                 </div>
               )}

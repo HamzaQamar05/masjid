@@ -1382,7 +1382,7 @@ app.put('/api/events/:eventId/registrations/:registrationId', auth, async (req, 
   if (!canManage) return res.status(403).json({ error: 'Only event managers can update attendance' });
   const existingRegistration = await prisma.eventRegistration.findUnique({ where: { id: req.params.registrationId } });
   if (!existingRegistration || existingRegistration.eventId !== event.id) return res.status(404).json({ error: 'Registration not found for this event' });
-  const status = ['APPROVED', 'DENIED', 'ATTENDED'].includes(req.body.status) ? req.body.status : 'APPROVED';
+  const status = ['APPROVED', 'DENIED', 'ATTENDED', 'NO_SHOW'].includes(req.body.status) ? req.body.status : 'APPROVED';
   const registration = await prisma.eventRegistration.update({ where: { id: req.params.registrationId }, data: { status } });
   res.json(registration);
 });
@@ -1392,9 +1392,9 @@ app.put('/api/events/:eventId/registrations', auth, async (req, res) => {
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const canManage = event.createdById === req.user.id || req.user.accountType === 'ADMIN' || (event.organizationId && await canManageOrganization(req.user, event.organizationId));
   if (!canManage) return res.status(403).json({ error: 'Only event managers can update attendance' });
-  const status = ['APPROVED', 'DENIED', 'ATTENDED'].includes(req.body.status) ? req.body.status : 'APPROVED';
+  const status = ['APPROVED', 'DENIED', 'ATTENDED', 'NO_SHOW'].includes(req.body.status) ? req.body.status : 'APPROVED';
   const where = { eventId: event.id };
-  if (req.body.fromStatus && ['PENDING', 'APPROVED', 'DENIED', 'ATTENDED'].includes(req.body.fromStatus)) where.status = req.body.fromStatus;
+  if (req.body.fromStatus && ['PENDING', 'APPROVED', 'DENIED', 'ATTENDED', 'NO_SHOW'].includes(req.body.fromStatus)) where.status = req.body.fromStatus;
   const result = await prisma.eventRegistration.updateMany({ where, data: { status } });
   res.json({ updated: result.count, status });
 });
