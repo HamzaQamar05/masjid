@@ -2133,7 +2133,7 @@ function ImamDashboard({ user, social, setTab }) {
   );
 }
 
-function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
+function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, onboardOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
@@ -2149,10 +2149,11 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [dashboardQuery, setDashboardQuery] = useState('');
   const [activeSection, setActiveSection] = useState('');
-  const [adminCategory, setAdminCategory] = useState('masjid');
+  const [adminCategory, setAdminCategory] = useState(user.accountType === 'ADMIN' ? 'platform' : 'masjid');
   const [adminUserQuery, setAdminUserQuery] = useState('');
   const [selectedAdminUserId, setSelectedAdminUserId] = useState('');
   const [adminWarnings, setAdminWarnings] = useState([]);
+  const [onboardForm, setOnboardForm] = useState({ organizationId: '', ownerName: '', ownerEmail: '' });
   const query = dashboardQuery.trim().toLowerCase();
   const accountQuery = adminUserQuery.trim().toLowerCase();
   const peopleSearch = peopleQuery.trim().toLowerCase();
@@ -2214,6 +2215,8 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     volunteers: scopedOrganizations.reduce((sum, org) => sum + (org.opportunities || []).filter((item) => item.type !== 'JOB').length, 0)
   };
   const selectedOrg = myOrganizations.find((org) => org.id === selectedOrgId) || scopedOrganizations[0] || myOrganizations[0];
+  const onboardingOrg = myOrganizations.find((org) => org.id === onboardForm.organizationId) || myOrganizations.find((org) => !org.verified) || myOrganizations[0];
+  const unverifiedOrganizations = myOrganizations.filter((org) => !org.verified);
   const selectedOrgEvents = selectedOrg?.events || [];
   const selectedOrgApplications = (selectedOrg?.opportunities || []).flatMap((opportunity) => (opportunity.applications || []).map((application) => ({ opportunity, application })));
   const selectedOrgPendingApplications = selectedOrgApplications.filter(({ application }) => application.status === 'PENDING').length;
@@ -2338,6 +2341,16 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     const created = await createOrganization(orgForm);
     if (created?.temporaryPassword) alert(`Masjid login created for ${orgForm.ownerEmail}. Temporary password: ${created.temporaryPassword}`);
     setOrgForm(emptyOrgForm);
+  }
+  async function submitOnboard(event) {
+    event.preventDefault();
+    const organizationId = onboardForm.organizationId || onboardingOrg?.id;
+    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!onboardForm.ownerEmail.trim()) return alert('Masjid admin login email is required.');
+    const result = await onboardOrganization(organizationId, onboardForm);
+    if (result?.temporaryPassword) alert(`Masjid account created for ${onboardForm.ownerEmail}. Temporary password: ${result.temporaryPassword}`);
+    else alert(`Masjid account connected for ${onboardForm.ownerEmail}.`);
+    setOnboardForm({ organizationId: '', ownerName: '', ownerEmail: '' });
   }
   async function submitOpp(event) {
     event.preventDefault();
@@ -2552,6 +2565,69 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
       {user.accountType === 'ADMIN' && adminCategory === 'platform' && (
         <div className="content-grid platform-admin-grid">
           <section className="feed-column">
+            <section className="panel platform-admin-panel">
+              <div className="section-title">
+                <div><p className="eyebrow">Masjid onboarding</p><h2>Create and Claim Masjids</h2></div>
+                <span>{unverifiedOrganizations.length} unverified</span>
+              </div>
+              <div className="metric-grid compact">
+                <article className="metric-card"><span>Total masjids</span><strong>{myOrganizations.length}</strong><em>Profiles in discovery</em></article>
+                <article className="metric-card"><span>Unverified</span><strong>{unverifiedOrganizations.length}</strong><em>Need operator account</em></article>
+                <article className="metric-card"><span>Verified</span><strong>{myOrganizations.length - unverifiedOrganizations.length}</strong><em>Onboarded accounts</em></article>
+              </div>
+              <form className="profile-form onboarding-form" onSubmit={submitOnboard}>
+                <div className="form-grid">
+                  <select value={onboardForm.organizationId || onboardingOrg?.id || ''} onChange={(event) => setOnboardForm({ ...onboardForm, organizationId: event.target.value })}>
+                    <option value="">Select masjid to onboard</option>
+                    {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name} - {org.verified ? 'verified' : 'unverified'}</option>)}
+                  </select>
+                  <input placeholder="Masjid admin name" value={onboardForm.ownerName} onChange={(event) => setOnboardForm({ ...onboardForm, ownerName: event.target.value })} />
+                  <input required placeholder="Masjid admin login email" value={onboardForm.ownerEmail} onChange={(event) => setOnboardForm({ ...onboardForm, ownerEmail: event.target.value })} />
+                </div>
+                <p className="helper-text">This creates or upgrades a MASJID/MSA account, attaches it as owner of the selected masjid, and marks the profile verified. Use this for Imam Bukhari Centre after selecting it above.</p>
+                <button className="primary-button">Create masjid account and verify</button>
+              </form>
+              <div className="stack-list onboarding-list">
+                {unverifiedOrganizations.slice(0, 8).map((org) => (
+                  <article className="mini-row" key={org.id}>
+                    <strong>{org.name}</strong>
+                    <span>{org.address || org.city || 'No address saved'}</span>
+                    <TagRow tags={[org.type || 'MASJID', 'Unverified', org.ownerId ? 'Owner linked' : 'No operator account'].filter(Boolean)} />
+                    <div className="manager-row">
+                      <button type="button" onClick={() => setOnboardForm({ organizationId: org.id, ownerName: `${org.name} Admin`, ownerEmail: org.email || '' })}>Onboard</button>
+                      <button type="button" onClick={() => openOrganization(org.id)}>Preview</button>
+                    </div>
+                  </article>
+                ))}
+                {!unverifiedOrganizations.length && <p className="helper-text">All visible masjids are onboarded.</p>}
+              </div>
+            </section>
+            <section className="panel">
+              <div className="section-title"><h2>Add New Masjid Manually</h2><span>Starts unverified</span></div>
+              <form className="profile-form" onSubmit={submitOrg}>
+                <div className="form-grid">
+                  <input required placeholder="Masjid name" value={orgForm.name} onChange={(event) => setOrgForm({ ...orgForm, name: event.target.value })} />
+                  <select value={orgForm.type} onChange={(event) => setOrgForm({ ...orgForm, type: event.target.value })}><option value="MASJID">Masjid</option><option value="MSA">MSA</option></select>
+                  <input placeholder="City" value={orgForm.city} onChange={(event) => setOrgForm({ ...orgForm, city: event.target.value })} />
+                  <input placeholder="Address" value={orgForm.address} onChange={(event) => setOrgForm({ ...orgForm, address: event.target.value })} />
+                  <input placeholder="Website" value={orgForm.website} onChange={(event) => setOrgForm({ ...orgForm, website: event.target.value })} />
+                  <input placeholder="Public email" value={orgForm.email} onChange={(event) => setOrgForm({ ...orgForm, email: event.target.value })} />
+                  <input placeholder="Phone" value={orgForm.phone} onChange={(event) => setOrgForm({ ...orgForm, phone: event.target.value })} />
+                  <input placeholder="Optional operator email to onboard now" value={orgForm.ownerEmail} onChange={(event) => setOrgForm({ ...orgForm, ownerEmail: event.target.value })} />
+                  <input placeholder="Logo image URL" value={orgForm.imageUrl} onChange={(event) => setOrgForm({ ...orgForm, imageUrl: event.target.value })} />
+                  <input placeholder="Hero image URL" value={orgForm.heroImageUrl} onChange={(event) => setOrgForm({ ...orgForm, heroImageUrl: event.target.value })} />
+                  <input placeholder="Donation URL" value={orgForm.donationUrl} onChange={(event) => setOrgForm({ ...orgForm, donationUrl: event.target.value })} />
+                  <input placeholder="Instagram URL" value={orgForm.instagramUrl} onChange={(event) => setOrgForm({ ...orgForm, instagramUrl: event.target.value })} />
+                  <input placeholder="Facebook URL" value={orgForm.facebookUrl} onChange={(event) => setOrgForm({ ...orgForm, facebookUrl: event.target.value })} />
+                  <input placeholder="Latitude" value={orgForm.latitude} onChange={(event) => setOrgForm({ ...orgForm, latitude: event.target.value })} />
+                  <input placeholder="Longitude" value={orgForm.longitude} onChange={(event) => setOrgForm({ ...orgForm, longitude: event.target.value })} />
+                </div>
+                <textarea placeholder="Description" value={orgForm.description} onChange={(event) => setOrgForm({ ...orgForm, description: event.target.value })} />
+                <textarea placeholder="Facilities, programs, parking, accessibility notes" value={orgForm.facilities} onChange={(event) => setOrgForm({ ...orgForm, facilities: event.target.value })} />
+                <p className="helper-text">Leave operator email blank to create a discovery profile only. Add the operator email now to create the masjid login and verify immediately.</p>
+                <button className="primary-button">Create masjid profile</button>
+              </form>
+            </section>
             <section className="panel platform-admin-panel">
               <div className="section-title"><div><p className="eyebrow">Admin admin</p><h2>Account Management</h2></div><span>{platformUsers.length}</span></div>
               <div className="filter-panel">
@@ -3571,8 +3647,15 @@ export default function App() {
 
   async function createOrganization(form) {
     const created = await api('/api/organizations', { method: 'POST', body: JSON.stringify(form) });
-    await Promise.all([loadMyOrganizations(), loadLocationData(location)]);
+    await Promise.all([loadNetwork(), loadMyOrganizations(), loadLocationData(location)]);
     return created;
+  }
+
+  async function onboardOrganization(id, form) {
+    const onboarded = await api(`/api/organizations/${id}/onboard`, { method: 'POST', body: JSON.stringify(form) });
+    await Promise.all([loadNetwork(), loadMyOrganizations(), loadLocationData(location)]);
+    if (selectedOrganization?.id === id && onboarded?.organization) setSelectedOrganization(onboarded.organization);
+    return onboarded;
   }
 
   async function updateOrganization(id, form) {
@@ -3961,7 +4044,7 @@ export default function App() {
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} />,
     settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} />,
-    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
+    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };
 
   return (

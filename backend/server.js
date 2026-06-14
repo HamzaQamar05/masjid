@@ -68,7 +68,7 @@ const fallbackMasjids = [
     imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAG1hTGWxftDLG9i0WQ_2uIZJPisi_2wJDOOAspxSGUSwTYWagkU40-aLxAGKguVNGA5fB4xXmItnNNEawW1sK5b3-5waHTelMmYGv0AhYW7WdHxoxWJu5r164GBDHdFJRKo4KJH=s1360-w1360-h1020-rw',
     heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAG1hTGWxftDLG9i0WQ_2uIZJPisi_2wJDOOAspxSGUSwTYWagkU40-aLxAGKguVNGA5fB4xXmItnNNEawW1sK5b3-5waHTelMmYGv0AhYW7WdHxoxWJu5r164GBDHdFJRKo4KJH=s1360-w1360-h1020-rw',
     description: 'Milton masjid profile placeholder. Prayer preferences, programs, and announcements can be customized after onboarding.',
-    verified: true,
+    verified: false,
     aliases: ['masjid khadijah']
   },
   {
@@ -83,7 +83,7 @@ const fallbackMasjids = [
     imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEZPUwRU_97UB1etCJ4ev5ES9XmN4n846cQ6Ih5H0Ffb53Iu6OHYwGWYmSD0b3CEIRKaG2q5-qzi-GEzB9A38NscJgrCghhmkCO0fBKsnkw_1pvECHwQ2ajlB2li8BLmsTSpmU9-w=s1360-w1360-h1020-rw',
     heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEZPUwRU_97UB1etCJ4ev5ES9XmN4n846cQ6Ih5H0Ffb53Iu6OHYwGWYmSD0b3CEIRKaG2q5-qzi-GEzB9A38NscJgrCghhmkCO0fBKsnkw_1pvECHwQ2ajlB2li8BLmsTSpmU9-w=s1360-w1360-h1020-rw',
     description: 'Islamic Community Centre of Milton profile placeholder. Details can be completed when the masjid is onboarded.',
-    verified: true,
+    verified: false,
     aliases: ['iccm', 'islamic community centre of milton', 'milton islamic centre']
   },
   {
@@ -98,7 +98,7 @@ const fallbackMasjids = [
     imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAF_9wZlIKxlIt1WnDcHp_emB27qwNp6BZTHp9HNgnC15Y-97Bhl5PkX_cYvrLVKzlV9S8PikDBpmAQ0g_04y2q0sQS9VNssdw4x90j86qHXLhR2gPq_hQpkm4RjVLIWdyJSm3nSUw=s1360-w1360-h1020-rw',
     heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAF_9wZlIKxlIt1WnDcHp_emB27qwNp6BZTHp9HNgnC15Y-97Bhl5PkX_cYvrLVKzlV9S8PikDBpmAQ0g_04y2q0sQS9VNssdw4x90j86qHXLhR2gPq_hQpkm4RjVLIWdyJSm3nSUw=s1360-w1360-h1020-rw',
     description: 'Halton Islamic Community Centre profile placeholder for prayers, programs, and community services.',
-    verified: true,
+    verified: false,
     aliases: ['hicc', 'hicc masjid', 'muslim association of milton', 'halton islamic community centre']
   },
   {
@@ -123,7 +123,7 @@ const fallbackMasjids = [
       { id: 'ibc-friday-halaqa', title: 'Friday Halaqa Series', teacher: 'Imam Bukhari Centre', dayTime: 'Fridays', description: 'Ongoing Friday halaqa programming listed by the centre.', registrationLink: 'https://ahlehadithcanada.org/toronto/' }
     ],
     facilities: 'Daily prayers, Jumuah, current programs, recorded lectures, donation support',
-    verified: true,
+    verified: false,
     aliases: ['imam bukhari centre', 'imam bukhari center']
   },
   {
@@ -138,7 +138,7 @@ const fallbackMasjids = [
     imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAFQhv5kM-N9e90r-azxNOWGwgtbjCX7A7dF1qy3O4weJZ5nObq2ZsTSR7aRyVHCe0CUy2CoUAStxSQZO4nf_rN8RkQFqm0AGeBej0ooE-jHhDprNdi6lGYez8kl407FDxAREaUK=s294-w294-h220-n-k-no',
     heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAFQhv5kM-N9e90r-azxNOWGwgtbjCX7A7dF1qy3O4weJZ5nObq2ZsTSR7aRyVHCe0CUy2CoUAStxSQZO4nf_rN8RkQFqm0AGeBej0ooE-jHhDprNdi6lGYez8kl407FDxAREaUK=s294-w294-h220-n-k-no',
     description: 'Halton Learning Centre musalla profile placeholder. Program details can be completed after onboarding.',
-    verified: true,
+    verified: false,
     aliases: ['hlc', 'halton learning centre', 'halton learning center']
   }
 ];
@@ -411,11 +411,12 @@ async function ensureFallbackOrganizations() {
           iqamahTimes: masjid.iqamahTimes,
           prayerNotes: masjid.prayerNotes,
           classes: masjid.classes,
-          verified: masjid.verified,
+          verified: false,
           facilities: masjid.facilities || 'Prayer hall, community programs, events'
         }
       });
     } else {
+      const existingOwner = existing.ownerId ? await prisma.user.findUnique({ where: { id: existing.ownerId } }) : null;
       await prisma.organization.update({
         where: { id: existing.id },
         data: {
@@ -433,7 +434,7 @@ async function ensureFallbackOrganizations() {
           prayerNotes: existing.prayerNotes || masjid.prayerNotes,
           classes: existing.classes || masjid.classes,
           facilities: existing.facilities || masjid.facilities,
-          verified: existing.verified || masjid.verified
+          verified: Boolean(existing.verified && existing.claimed && ['MASJID', 'MSA'].includes(existingOwner?.accountType))
         }
       });
     }
@@ -470,7 +471,7 @@ function enrichMasjid(item = {}) {
     imageUrl: item.imageUrl || fallback.imageUrl,
     heroImageUrl: item.heroImageUrl || fallback.heroImageUrl,
     description: item.description || fallback.description,
-    verified: item.verified || fallback.verified
+    verified: Boolean(item.verified)
   };
 }
 
@@ -664,6 +665,43 @@ function requireAdmin(req, res, next) {
 
 function organizationType(value) {
   return ['MASJID', 'MSA'].includes(String(value || '').toUpperCase()) ? String(value).toUpperCase() : 'MASJID';
+}
+
+async function createOrUpdateOrganizationOwner({ organization, ownerEmail, ownerName }) {
+  const email = String(ownerEmail || '').trim().toLowerCase();
+  if (!email) throw new Error('Masjid admin login email is required');
+  const accountType = organizationType(organization.type) === 'MSA' ? 'MSA' : 'MASJID';
+  let temporaryPassword = null;
+  let owner = await prisma.user.findUnique({ where: { email } });
+  if (owner) {
+    owner = await prisma.user.update({
+      where: { id: owner.id },
+      data: {
+        accountType,
+        name: ownerName || owner.name || `${organization.name} Admin`,
+        city: owner.city || organization.city || null,
+        location: owner.location || organization.address || null
+      }
+    });
+  } else {
+    temporaryPassword = `Ummah-${randomBytes(4).toString('hex')}`;
+    owner = await prisma.user.create({
+      data: {
+        name: ownerName || `${organization.name} Admin`,
+        email,
+        passwordHash: await bcrypt.hash(temporaryPassword, 10),
+        accountType,
+        city: organization.city,
+        location: organization.address
+      }
+    });
+  }
+  await prisma.organizationPerson.upsert({
+    where: { organizationId_userId: { organizationId: organization.id, userId: owner.id } },
+    create: { organizationId: organization.id, userId: owner.id, roleLabel: 'Owner / Masjid Admin' },
+    update: { roleLabel: 'Owner / Masjid Admin' }
+  });
+  return { owner, temporaryPassword };
 }
 
 function distanceKm(from, to) {
@@ -1121,9 +1159,9 @@ app.post('/api/organizations', auth, async (req, res) => {
   if (req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Only platform admins can create masjid or MSA profiles' });
   const { name, type, city, address, website, email, phone, description, facilities, latitude, longitude, imageUrl, heroImageUrl, donationUrl, instagramUrl, facebookUrl, prayerTimes, iqamahTimes, prayerNotes, classes, ownerEmail } = req.body;
   const orgType = organizationType(type);
-  let ownerId = req.user.id;
+  let ownerId = null;
   let temporaryPassword = null;
-  const loginEmail = String(ownerEmail || email || '').trim().toLowerCase();
+  const loginEmail = String(ownerEmail || '').trim().toLowerCase();
   if (loginEmail) {
     const accountType = orgType === 'MSA' ? 'MSA' : 'MASJID';
     const existingOwner = await prisma.user.findUnique({ where: { email: loginEmail } });
@@ -1168,10 +1206,17 @@ app.post('/api/organizations', auth, async (req, res) => {
       prayerNotes,
       classes: Array.isArray(classes) ? classes : null,
       ownerId,
-      claimed: true,
-      verified: req.user.accountType === 'ADMIN'
+      claimed: Boolean(loginEmail),
+      verified: Boolean(loginEmail)
     }
   });
+  if (ownerId) {
+    await prisma.organizationPerson.upsert({
+      where: { organizationId_userId: { organizationId: org.id, userId: ownerId } },
+      create: { organizationId: org.id, userId: ownerId, roleLabel: 'Owner / Masjid Admin' },
+      update: { roleLabel: 'Owner / Masjid Admin' }
+    });
+  }
   res.json({ ...org, temporaryPassword });
 });
 
@@ -1213,6 +1258,37 @@ app.put('/api/organizations/:id', auth, async (req, res) => {
   if (req.body.longitude !== undefined) data.longitude = req.body.longitude === '' ? null : Number(req.body.longitude);
   const org = await prisma.organization.update({ where: { id: req.params.id }, data });
   res.json(org);
+});
+
+app.post('/api/organizations/:id/onboard', auth, requireAdmin, async (req, res) => {
+  const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+  try {
+    const { owner, temporaryPassword } = await createOrUpdateOrganizationOwner({
+      organization,
+      ownerEmail: req.body.ownerEmail,
+      ownerName: String(req.body.ownerName || '').trim()
+    });
+    const updated = await prisma.organization.update({
+      where: { id: organization.id },
+      data: {
+        ownerId: owner.id,
+        claimed: true,
+        verified: true
+      },
+      include: {
+        followers: { include: { user: true } },
+        favoritedBy: true,
+        people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
+        posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
+        events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
+        opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } }
+      }
+    });
+    res.json({ organization: publicOrganization(updated, req.user.id), owner: publicUser(owner), temporaryPassword, existingUser: !temporaryPassword });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not onboard masjid' });
+  }
 });
 
 app.get('/api/posts', auth, async (req, res) => {
