@@ -39,19 +39,25 @@ export const seedOrganizations = [
     address: 'Unit 7 and 8, 50 Steeles Avenue East, Milton, ON',
     latitude: 43.5239,
     longitude: -79.8891,
-    website: 'https://ahlehadithcanada.org/',
+    website: 'https://ahlehadithcanada.org/toronto/',
     email: 'toronto@ahlehadithcanada.org',
     phone: '+1-647-549-7909',
     verified: true,
-    followers: 3840,
+    followers: 0,
     imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEp8gOXT75AzDMNd1XH4h5D1rb_90r684Buuhy5zM6LrFMnzhJTMcPf0Phh9GiIvmQCHdchvQZAmX1lTXV-Q2tIIPC2cLXxEMagADr7qfzmA0aqVWruJUAD7T5Pr0YqM7YlP54DDw=s1360-w1360-h1020-rw',
     heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEp8gOXT75AzDMNd1XH4h5D1rb_90r684Buuhy5zM6LrFMnzhJTMcPf0Phh9GiIvmQCHdchvQZAmX1lTXV-Q2tIIPC2cLXxEMagADr7qfzmA0aqVWruJUAD7T5Pr0YqM7YlP54DDw=s1360-w1360-h1020-rw',
     cover: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEp8gOXT75AzDMNd1XH4h5D1rb_90r684Buuhy5zM6LrFMnzhJTMcPf0Phh9GiIvmQCHdchvQZAmX1lTXV-Q2tIIPC2cLXxEMagADr7qfzmA0aqVWruJUAD7T5Pr0YqM7YlP54DDw=s1360-w1360-h1020-rw',
-    tags: ['Prayer', 'Education', 'Lectures', 'Family'],
-    facilities: ['Jummah', 'Classes', 'Community programs'],
-    iqamah: { Fajr: '5:00', Dhuhr: '1:45', Asr: '6:00', Maghrib: '9:06', Isha: '10:50' },
-    campaign: { name: 'Classroom expansion', goal: 50000, raised: 31200 },
-    description: 'A community centre focused on Islamic education, prayer services, programs, and access to qualified scholars.'
+    tags: ['Prayer', 'Education', 'Lectures', 'Programs'],
+    facilities: ['Daily prayers', 'Jumuah', 'Current programs', 'Recorded lectures', 'Donation support'],
+    iqamah: { Fajr: '4:14 AM', Dhuhr: '2:00 PM', Asr: '5:41 PM', Maghrib: '9:09 PM', Isha: '10:54 PM', Jumuah: '2:00 PM' },
+    prayerNotes: 'Prayer timings shown from Ahle Hadith Society of Canada Toronto page for Sunday, Jun 14, 2026. Jumuah is listed at 2:00 PM.',
+    classes: [
+      { id: 'ibc-ittiba', title: 'Ittiba and rejection of Taqlid', teacher: 'Ahle-Hadith Society of Canada', dayTime: 'Current program', description: 'Series of virtual lectures in English on foundations and distinctive features of the methodology.', registrationLink: 'https://ahlehadithcanada.org/toronto/' },
+      { id: 'ibc-ahadith-worship', title: 'Ahadith of Worship', teacher: 'Faculty of Hadith of Toronto', dayTime: 'Current program', description: 'Arabic lecture series with simultaneous translation.', registrationLink: 'https://ahlehadithcanada.org/toronto/' },
+      { id: 'ibc-friday-halaqa', title: 'Friday Halaqa Series', teacher: 'Imam Bukhari Centre', dayTime: 'Fridays', description: 'Ongoing Friday halaqa programming listed by the centre.', registrationLink: 'https://ahlehadithcanada.org/toronto/' }
+    ],
+    campaign: { name: "Support the Da'wah", goal: 190000, raised: 125000 },
+    description: "Imam Bukhari Centre is part of the Ahle-Hadith Society of Canada Toronto community, offering daily prayers, Jumu'ah, current programs, lectures, announcements, and donation-supported da'wah work."
   },
   {
     id: 'fallback-hlc',

@@ -109,10 +109,20 @@ const fallbackMasjids = [
     address: '50 Steeles Ave E Unit-8, Milton, ON L9T 4W9',
     latitude: 43.5239,
     longitude: -79.8891,
-    website: 'https://ahlehadithcanada.org/',
+    website: 'https://ahlehadithcanada.org/toronto/',
+    email: 'toronto@ahlehadithcanada.org',
+    phone: '+1-647-549-7909',
     imageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEp8gOXT75AzDMNd1XH4h5D1rb_90r684Buuhy5zM6LrFMnzhJTMcPf0Phh9GiIvmQCHdchvQZAmX1lTXV-Q2tIIPC2cLXxEMagADr7qfzmA0aqVWruJUAD7T5Pr0YqM7YlP54DDw=s1360-w1360-h1020-rw',
     heroImageUrl: 'https://lh3.googleusercontent.com/gps-cs-s/APNQkAEp8gOXT75AzDMNd1XH4h5D1rb_90r684Buuhy5zM6LrFMnzhJTMcPf0Phh9GiIvmQCHdchvQZAmX1lTXV-Q2tIIPC2cLXxEMagADr7qfzmA0aqVWruJUAD7T5Pr0YqM7YlP54DDw=s1360-w1360-h1020-rw',
-    description: 'Imam Bukhari Centre profile placeholder for prayer services, classes, and community reminders.',
+    description: "Imam Bukhari Centre is part of the Ahle-Hadith Society of Canada Toronto community, offering daily prayers, Jumu'ah, current programs, lectures, announcements, and donation-supported da'wah work.",
+    iqamahTimes: { Fajr: '4:14 AM', Dhuhr: '2:00 PM', Asr: '5:41 PM', Maghrib: '9:09 PM', Isha: '10:54 PM', Jumuah: '2:00 PM' },
+    prayerNotes: 'Prayer timings shown from Ahle Hadith Society of Canada Toronto page for Sunday, Jun 14, 2026. Jumuah is listed at 2:00 PM.',
+    classes: [
+      { id: 'ibc-ittiba', title: 'Ittiba and rejection of Taqlid', teacher: 'Ahle-Hadith Society of Canada', dayTime: 'Current program', description: 'Series of virtual lectures in English on foundations and distinctive features of the methodology.', registrationLink: 'https://ahlehadithcanada.org/toronto/' },
+      { id: 'ibc-ahadith-worship', title: 'Ahadith of Worship', teacher: 'Faculty of Hadith of Toronto', dayTime: 'Current program', description: 'Arabic lecture series with simultaneous translation.', registrationLink: 'https://ahlehadithcanada.org/toronto/' },
+      { id: 'ibc-friday-halaqa', title: 'Friday Halaqa Series', teacher: 'Imam Bukhari Centre', dayTime: 'Fridays', description: 'Ongoing Friday halaqa programming listed by the centre.', registrationLink: 'https://ahlehadithcanada.org/toronto/' }
+    ],
+    facilities: 'Daily prayers, Jumuah, current programs, recorded lectures, donation support',
     verified: true,
     aliases: ['imam bukhari centre', 'imam bukhari center']
   },
@@ -391,13 +401,18 @@ async function ensureFallbackOrganizations() {
           city: masjid.city,
           address: masjid.address,
           website: masjid.website,
+          email: masjid.email,
+          phone: masjid.phone,
           latitude: masjid.latitude,
           longitude: masjid.longitude,
           imageUrl: masjid.imageUrl,
           heroImageUrl: masjid.heroImageUrl,
           description: masjid.description || `${masjid.name} community profile. Admins can claim and customize this page during onboarding.`,
+          iqamahTimes: masjid.iqamahTimes,
+          prayerNotes: masjid.prayerNotes,
+          classes: masjid.classes,
           verified: masjid.verified,
-          facilities: 'Prayer hall, community programs, events'
+          facilities: masjid.facilities || 'Prayer hall, community programs, events'
         }
       });
     } else {
@@ -407,11 +422,17 @@ async function ensureFallbackOrganizations() {
           city: existing.city || masjid.city,
           address: existing.address || masjid.address,
           website: existing.website || masjid.website,
+          email: existing.email || masjid.email,
+          phone: existing.phone || masjid.phone,
           latitude: existing.latitude ?? masjid.latitude,
           longitude: existing.longitude ?? masjid.longitude,
           imageUrl: existing.imageUrl || masjid.imageUrl,
           heroImageUrl: existing.heroImageUrl || masjid.heroImageUrl,
-          description: existing.description || masjid.description,
+          description: !existing.description || /placeholder/i.test(existing.description) ? masjid.description : existing.description,
+          iqamahTimes: existing.iqamahTimes || masjid.iqamahTimes,
+          prayerNotes: existing.prayerNotes || masjid.prayerNotes,
+          classes: existing.classes || masjid.classes,
+          facilities: existing.facilities || masjid.facilities,
           verified: existing.verified || masjid.verified
         }
       });

@@ -1188,8 +1188,8 @@ a {
   height: 92px;
   border-radius: 8px;
   overflow: hidden;
-  background: linear-gradient(135deg, #e5f3ef, #f7faf9);
-  color: #0f766e;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 16%, var(--panel-soft)), var(--panel-bg));
+  color: var(--brand-strong);
   display: grid;
   place-items: center;
   font-size: 24px;
@@ -1216,10 +1216,10 @@ a {
 }
 
 .nearby-title-row span {
-  border: 1px solid #cfe5df;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: #0f766e;
-  background: #eef8f5;
+  color: var(--brand-strong);
+  background: var(--panel-soft);
   font-size: 11px;
   font-weight: 900;
   padding: 4px 8px;
@@ -1232,13 +1232,13 @@ a {
 }
 
 .nearby-card p {
-  color: #5d716b;
+  color: var(--muted);
   line-height: 1.4;
   margin: 0;
 }
 
 .nearby-distance {
-  color: #10231e !important;
+  color: var(--text);
   font-weight: 900;
 }
 
@@ -3750,6 +3750,26 @@ button.mini-org-avatar {
 :root[data-theme="dark"] span,
 :root[data-theme="dark"] small {
   color: var(--muted);
+}
+
+:root[data-theme="dark"] .nearby-distance,
+:root[data-theme="dark"] .nearby-card h3,
+:root[data-theme="dark"] .profile-info-grid strong,
+:root[data-theme="dark"] .masjid-stat-strip strong {
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .nearby-title-row span,
+:root[data-theme="dark"] .tag-row span,
+:root[data-theme="dark"] .status-pill {
+  background: var(--panel-soft);
+  border-color: var(--border);
+  color: var(--brand-strong);
+}
+
+:root[data-theme="dark"] .nearby-image {
+  background: linear-gradient(135deg, #23332f, #18211f);
+  color: var(--brand-strong);
 }
 
 :root[data-theme="dark"] a,
