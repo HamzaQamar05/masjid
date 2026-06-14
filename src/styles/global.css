@@ -5285,6 +5285,146 @@ button.mini-org-avatar {
   .mobile-bottom-nav {
     max-width: 100%;
   }
+
+  .profile-card,
+  .composer,
+  .event-card,
+  .organization-card,
+  .person-card,
+  .role-card,
+  .library-card,
+  .business-card,
+  .metric-card,
+  .nearby-card,
+  .profile-detail,
+  .profile-social,
+  .masjid-profile,
+  .masjid-hub,
+  .dashboard-menu-grid,
+  .operator-management-grid,
+  .analytics-strip,
+  .inbox-preview-list,
+  .event-attendance-grid,
+  .post-social-row,
+  .profile-actions,
+  .card-footer,
+  .nearby-actions,
+  .manager-row,
+  .filter-panel,
+  .event-filters,
+  .prayer-app-layout {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  .event-card *,
+  .organization-card *,
+  .person-card *,
+  .role-card *,
+  .library-card *,
+  .business-card *,
+  .metric-card *,
+  .nearby-card *,
+  .profile-card *,
+  .panel *,
+  .feed-post * {
+    max-width: 100%;
+  }
+
+  .content-grid,
+  .card-grid,
+  .card-grid.two,
+  .card-grid.three,
+  .organization-grid,
+  .metric-grid,
+  .admin-grid,
+  .event-discovery,
+  .messaging-layout,
+  .dashboard-menu-grid,
+  .operator-management-grid,
+  .analytics-strip,
+  .event-attendance-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-menu-grid,
+  .operator-management-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(74px, 100%), 1fr));
+  }
+
+  .analytics-strip,
+  .event-attendance-grid,
+  .dm-inbox-summary {
+    grid-template-columns: repeat(auto-fit, minmax(min(118px, 100%), 1fr));
+  }
+
+  .post-social-row,
+  .profile-actions,
+  .card-footer,
+  .nearby-actions,
+  .manager-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(112px, 100%), 1fr));
+    gap: 8px;
+  }
+
+  .post-social-row button,
+  .profile-actions > *,
+  .card-footer > *,
+  .nearby-actions > *,
+  .manager-row > * {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .filter-panel,
+  .event-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filter-panel > *,
+  .event-filters > *,
+  .filter-panel input,
+  .event-filters input,
+  .filter-panel select,
+  .event-filters select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .nearby-card {
+    grid-template-columns: minmax(72px, 28%) minmax(0, 1fr);
+  }
+
+  .nearby-image {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .table-scroll,
+  table {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .mobile-bottom-nav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    overflow: hidden;
+  }
+
+  .mobile-bottom-nav button {
+    min-width: 0;
+    padding-inline: 2px;
+  }
+
+  .mobile-bottom-nav button span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 @media (max-width: 370px) {
@@ -5334,5 +5474,57 @@ button.mini-org-avatar {
   .mobile-bottom-nav {
     padding-left: 8px;
     padding-right: 8px;
+  }
+}
+
+@media (max-width: 340px) {
+  .top-nav {
+    grid-template-columns: 32px minmax(24px, 1fr) auto;
+    padding-left: max(6px, env(safe-area-inset-left));
+    padding-right: max(4px, env(safe-area-inset-right));
+  }
+
+  .mobile-menu,
+  .top-actions .icon-button,
+  .dm-top-button {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    min-height: 30px;
+  }
+
+  .brand span {
+    width: 30px;
+    height: 30px;
+    font-size: 12px;
+  }
+
+  .composer-actions,
+  .hub-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .composer-actions button,
+  .hub-actions > * {
+    justify-content: center;
+  }
+
+  .feed-post,
+  .panel,
+  .composer {
+    padding-inline: 8px;
+  }
+
+  .mobile-bottom-nav {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .mobile-bottom-nav button {
+    min-height: 42px;
+  }
+
+  .mobile-bottom-nav button span {
+    font-size: 10px;
   }
 }
