@@ -4099,6 +4099,45 @@ button.mini-org-avatar {
   gap: 10px;
 }
 
+.auth-date-field {
+  width: 100%;
+}
+
+.auth-form .auth-date-field input {
+  width: 100%;
+}
+
+.auth-interest-picker {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.auth-interest-picker .interest-picker-head {
+  min-width: 0;
+}
+
+.auth-interest-picker .interest-options {
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+}
+
+.auth-interest-picker .check-toggle {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.auth-interest-picker .check-toggle input {
+  flex: 0 0 auto;
+}
+
 .field-label {
   display: grid;
   gap: 8px;

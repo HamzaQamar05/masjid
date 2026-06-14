@@ -18,7 +18,7 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
     city: '',
     bio: '',
     resetToken,
-    interests: []
+    interests: [...optionalInterests]
   });
 
   useEffect(() => {
@@ -84,13 +84,16 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
         {mode === 'register' && (
           <>
             <input required placeholder="Name / organization" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-            <input required type="date" value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} aria-label="Date of birth" />
+            <label className="field-label auth-date-field">
+              <span>Date of birth</span>
+              <input required type="date" value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} />
+            </label>
             <input placeholder="City" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
             <textarea placeholder="Short bio" value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} />
-            <section className="interest-picker">
-              <div>
-                <strong>Included</strong>
-                <p>{requiredInterests.join(', ')}</p>
+            <section className="interest-picker auth-interest-picker">
+              <div className="interest-picker-head">
+                <strong>Categories</strong>
+                <p>All categories are selected by default. Core app tabs are always included.</p>
               </div>
               <div className="interest-options">
                 {optionalInterests.map((interest) => (
