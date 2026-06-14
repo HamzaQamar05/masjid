@@ -1390,15 +1390,16 @@ a {
 .masjid-hub {
   display: grid;
   gap: 12px;
-  padding: 14px;
+  padding: 12px;
+  box-shadow: 0 10px 28px rgba(20, 36, 31, 0.08);
 }
 
 .masjid-hub-hero {
-  min-height: 92px;
+  min-height: 78px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px;
   border-radius: 8px;
   background:
     linear-gradient(135deg, rgba(16, 35, 30, 0.9), rgba(15, 118, 110, 0.76)),
@@ -1416,7 +1417,7 @@ a {
 }
 
 .masjid-hub-hero h2 {
-  font-size: clamp(18px, 3.8vw, 24px);
+  font-size: clamp(17px, 3.6vw, 22px);
   line-height: 1.12;
 }
 
@@ -1427,22 +1428,22 @@ a {
 
 .masjid-hub-hero p {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.35;
 }
 
 .hub-logo {
-  width: 54px;
-  height: 54px;
-  flex: 0 0 54px;
-  font-size: 17px;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  font-size: 15px;
   border: 3px solid rgba(255, 255, 255, 0.82);
 }
 
 .hub-stats {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .hub-stats article {
@@ -1450,7 +1451,7 @@ a {
   background: #f8fbfa;
   border: 1px solid #dce6e3;
   border-radius: 8px;
-  padding: 11px;
+  padding: 8px;
 }
 
 .hub-stats span,
@@ -1463,7 +1464,7 @@ a {
 .hub-stats strong {
   display: block;
   margin-top: 3px;
-  font-size: 22px;
+  font-size: 17px;
 }
 
 .hub-actions {
@@ -1475,13 +1476,13 @@ a {
 .dashboard-menu-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 7px;
 }
 
 .dashboard-menu-grid button {
   min-width: 0;
-  aspect-ratio: 1 / 0.92;
-  min-height: 90px;
+  aspect-ratio: 1 / 0.82;
+  min-height: 72px;
   border: 1px solid #dce6e3;
   border-radius: 8px;
   background:
@@ -1490,22 +1491,22 @@ a {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 8px;
-  padding: 10px 7px;
+  gap: 6px;
+  padding: 8px 5px;
   text-align: center;
   box-shadow: 0 8px 18px rgba(20, 36, 31, 0.06);
 }
 
 .dashboard-menu-grid button svg {
   color: #0f766e;
-  width: 23px;
-  height: 23px;
+  width: 20px;
+  height: 20px;
 }
 
 .dashboard-menu-grid button span {
   color: #17221d;
   font-weight: 900;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.15;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -1528,12 +1529,12 @@ a {
 }
 
 .feature-screen-topbar {
-  min-height: calc(64px + env(safe-area-inset-top));
+  min-height: calc(58px + env(safe-area-inset-top));
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
   background: rgba(255, 255, 255, 0.94);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(14px);
@@ -1562,14 +1563,109 @@ a {
   width: min(860px, 100%);
   margin: 0 auto;
   overflow: auto;
-  padding: 12px 12px calc(22px + env(safe-area-inset-bottom));
+  padding: 8px 8px calc(18px + env(safe-area-inset-bottom));
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 8px;
 }
 
 .feature-screen-content > .panel {
   margin: 0;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: none;
+}
+
+.feature-screen-content .org-feature-panel {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.feature-screen-content .profile-tools-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  padding: 12px;
+}
+
+.feature-screen-content .manager-section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+  gap: 8px;
+}
+
+.feature-screen-content .section-title {
+  align-items: center;
+  min-height: 32px;
+}
+
+.feature-screen-content .section-title h2,
+.feature-screen-content .section-title h3 {
+  font-size: 16px;
+}
+
+.feature-screen-content .stack-list,
+.feature-screen-content .application-portal {
+  gap: 7px;
+}
+
+.feature-screen-content .mini-row,
+.feature-screen-content .application-card {
+  padding: 10px;
+  gap: 5px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.feature-screen-content .mini-row strong,
+.feature-screen-content .application-card strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.feature-screen-content .mini-row span,
+.feature-screen-content .mini-row p,
+.feature-screen-content .application-card span,
+.feature-screen-content .application-card p {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.feature-screen-content .manager-row {
+  gap: 6px;
+  padding-top: 7px;
+  margin-top: 5px;
+}
+
+.feature-screen-content .manager-row span {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+.feature-screen-content .manager-row button,
+.feature-screen-content .manager-row .secondary-button {
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.feature-screen-content .profile-form,
+.feature-screen-content .manager-edit-form {
+  gap: 8px;
+}
+
+.feature-screen-content .form-grid {
+  gap: 7px;
+}
+
+.feature-screen-content .profile-form input,
+.feature-screen-content .profile-form select,
+.feature-screen-content .profile-form textarea {
+  min-height: 38px;
+  border-radius: 8px;
+  font-size: 13px;
 }
 
 .card-grid,
@@ -4215,4 +4311,84 @@ a {
   .secondary-button {
     border-radius: 999px;
   }
+}
+
+.feature-screen-content .manager-row > * {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.feature-screen-content .manager-row span,
+.feature-screen-content .manager-row p,
+.feature-screen-content .manager-row small {
+  flex: 1 1 100%;
+}
+
+@media (max-width: 560px) {
+  .masjid-hub {
+    padding: 10px;
+  }
+
+  .masjid-hub-hero {
+    min-height: 74px;
+  }
+
+  .dashboard-menu-grid button {
+    min-height: 68px;
+  }
+
+  .feature-screen-content .panel {
+    padding: 10px;
+  }
+}
+
+:root[data-theme="dark"] .masjid-feature-screen {
+  background: var(--page-bg);
+}
+
+:root[data-theme="dark"] .feature-screen-topbar {
+  background: rgba(25, 33, 31, 0.96);
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] .feature-screen-topbar strong {
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .feature-screen-topbar span {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .feature-screen-topbar .icon-button,
+:root[data-theme="dark"] .dashboard-menu-grid button {
+  background: var(--panel-soft);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .dashboard-menu-grid button:hover,
+:root[data-theme="dark"] .dashboard-menu-grid button.active {
+  background: #203b37;
+  border-color: var(--brand);
+}
+
+:root[data-theme="dark"] .feature-screen-content .org-feature-panel {
+  background: transparent;
+  border-color: transparent;
+}
+
+:root[data-theme="dark"] .feature-screen-content .profile-tools-panel,
+:root[data-theme="dark"] .feature-screen-content > .panel,
+:root[data-theme="dark"] .feature-screen-content .mini-row,
+:root[data-theme="dark"] .feature-screen-content .application-card {
+  background: var(--panel-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .feature-screen-content .manager-row button,
+:root[data-theme="dark"] .feature-screen-content .manager-row .secondary-button {
+  background: var(--panel-soft);
+  border-color: var(--border);
+  color: var(--text);
 }
