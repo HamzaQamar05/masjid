@@ -1864,7 +1864,7 @@ function ImamDashboard({ user, social, setTab }) {
   );
 }
 
-function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage }) {
+function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
@@ -1949,6 +1949,10 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     setEditOrgForm({});
     setActiveSection(section);
   }
+  function openAnnouncementComposer() {
+    setPostForm((current) => ({ ...current, type: 'ANNOUNCEMENT' }));
+    openDashboardSection('posts');
+  }
   function closeDashboardSection() {
     setEditingOrgId('');
     setEditOrgForm({});
@@ -1972,6 +1976,39 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'applications', label: 'Application Portal', count: metrics.applications, detail: 'All applicants', icon: Building2 },
     { key: 'committee', label: 'Jamaat / Committee', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Leadership', icon: Users },
     { key: 'userView', label: 'Preview User View', count: selectedOrg ? 'Open' : 'Add profile', detail: 'Public profile', icon: Home }
+  ];
+  const snapshotItems = [
+    { label: 'Followers', value: selectedOrg?.followerCount || metrics.followers, tone: 'calm' },
+    { label: 'New applications', value: selectedOrgPendingApplications || metrics.pendingApplications, tone: metrics.pendingApplications ? 'urgent' : 'calm' },
+    { label: 'Unread messages', value: unreadMessages, tone: unreadMessages ? 'urgent' : 'calm' }
+  ];
+  const quickActions = [
+    { label: 'New Event', icon: CalendarDays, action: () => openDashboardSection('events'), primary: true },
+    { label: 'New Post', icon: Plus, action: () => openDashboardSection('posts') },
+    { label: 'New Program', icon: Library, action: () => openDashboardSection('programs') },
+    { label: 'Announcement', icon: Send, action: openAnnouncementComposer }
+  ];
+  const attentionItems = [
+    { key: 'messages', label: 'Messages', count: unreadMessages, icon: Mail, action: () => setTab?.('messages') },
+    { key: 'volunteerApplications', label: 'Volunteer Applications', count: allApplications.filter(({ opportunity }) => opportunity.type !== 'JOB').length, icon: HeartHandshake, action: () => openDashboardSection('volunteerApplications') },
+    { key: 'jobApplications', label: 'Job Applications', count: allApplications.filter(({ opportunity }) => opportunity.type === 'JOB').length, icon: Briefcase, action: () => openDashboardSection('jobApplications') },
+    { key: 'eventApprovals', label: 'Event Pending Approval', count: metrics.pendingRegistrations, icon: CheckCircle2, action: () => openDashboardSection('eventApprovals') }
+  ];
+  const managementItems = [
+    { key: 'events', label: 'Events', icon: CalendarDays },
+    { key: 'programs', label: 'Programs', icon: Library },
+    { key: 'posts', label: 'Posts', icon: MessageCircle },
+    { key: 'prayerTimes', label: 'Prayer Times', icon: ShieldCheck },
+    { key: 'jamaatTimes', label: 'Jamaat Times', icon: Navigation },
+    { key: 'team', label: 'Team', icon: UserCheck },
+    { key: 'volunteers', label: 'Volunteers', icon: HeartHandshake },
+    { key: 'jobs', label: 'Jobs', icon: Briefcase }
+  ];
+  const analyticsItems = [
+    { key: 'followers', label: 'Followers', value: metrics.followers, icon: Users },
+    { key: 'eventApprovals', label: 'Registrations', value: pendingRegistrations.length, icon: CheckCircle2 },
+    { key: 'events', label: 'Attendance', value: selectedOrgEvents.reduce((sum, event) => sum + (event.registrations || []).filter((registration) => registration.status === 'ATTENDED').length, 0), icon: BarChart3 },
+    { key: 'posts', label: 'Engagement', value: metrics.posts, icon: Bell }
   ];
   const activeDashboardFeature = hubItems.find((item) => item.key === activeSection);
   const orgPanelSections = new Set(['followers', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'jamaatTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs']);
@@ -2181,11 +2218,12 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
       <div className="content-grid masjid-dashboard-grid">
         <section className="feed-column masjid-dashboard-main">
           <section className="panel masjid-hub">
-            <div className="masjid-hub-hero" style={profileBannerStyle(selectedOrg || {})}>
+            <div className="masjid-operator-head">
               <div className="org-logo hub-logo">{selectedOrg?.imageUrl ? <img src={selectedOrg.imageUrl} alt="" /> : initials(selectedOrg?.name || user.name)}</div>
               <div>
-                <h2>Welcome back, {selectedOrg?.name || user.name}</h2>
-                <p>{selectedOrg?.address || selectedOrg?.city || 'Select a masjid to manage posts, programs, events, applications, team, and followers.'}</p>
+                <span>Assalamu Alaikum</span>
+                <h2>{selectedOrg?.name || user.name}</h2>
+                <p>{selectedOrg?.address || selectedOrg?.city || 'Select a masjid to manage daily operations.'}</p>
               </div>
             </div>
             <div className="form-grid">
@@ -2195,30 +2233,65 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
               </select>
               <input placeholder="Search posts, volunteers, jobs, imams, followers, events" value={dashboardQuery} onChange={(event) => setDashboardQuery(event.target.value)} />
             </div>
-            <div className="hub-stats">
-              <article><span>Followers</span><strong>{selectedOrg?.followerCount || metrics.followers}</strong></article>
-              <article><span>Upcoming events</span><strong>{upcomingEvents || metrics.events}</strong></article>
-              <article><span>Pending approvals</span><strong>{metrics.pendingRegistrations}</strong></article>
-              <article><span>New applications</span><strong>{selectedOrgPendingApplications || metrics.pendingApplications}</strong></article>
-              <article><span>Unread messages</span><strong>{unreadMessages}</strong></article>
+            <div className="operator-snapshot">
+              {snapshotItems.map((item) => (
+                <article key={item.label} className={item.tone === 'urgent' ? 'urgent' : ''}>
+                  <strong>{item.value}</strong>
+                  <span>{item.label}</span>
+                </article>
+              ))}
             </div>
-            <div className="hub-actions">
-              <button type="button" className="primary-button" onClick={() => openDashboardSection('posts')}><Plus size={18} />Create post</button>
-              <button type="button" className="secondary-button" onClick={() => openDashboardSection('events')}><CalendarDays size={18} />Create event</button>
-              <button type="button" className="secondary-button" onClick={() => openDashboardSection('programs')}><Library size={18} />Add program</button>
-              <button type="button" className="secondary-button" onClick={openUserView}><Home size={18} />View user page</button>
-            </div>
-            <div className="dashboard-menu-grid">
-              {hubItems.map((item) => {
+            <div className="operator-quick-actions">
+              {quickActions.map((item) => {
                 const Icon = item.icon;
-                return (
-                  <button key={item.key} type="button" className={activeSection === item.key ? 'active' : ''} onClick={item.key === 'userView' ? openUserView : () => openDashboardSection(item.key)} aria-label={item.label}>
-                    <Icon size={22} />
-                    <span>{item.label}</span>
-                  </button>
-                );
+                return <button key={item.label} type="button" className={item.primary ? 'primary-button' : 'secondary-button'} onClick={item.action}><Icon size={18} />{item.label}</button>;
               })}
             </div>
+            <section className="operator-section attention-section">
+              <div className="operator-section-title"><h3>Needs Attention</h3><span>Today</span></div>
+              <div className="attention-list">
+                {attentionItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button key={item.key} type="button" onClick={item.action}>
+                      <Icon size={19} />
+                      <span>{item.label}</span>
+                      <strong className={item.count ? 'urgent-badge' : ''}>{item.count}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+            <section className="operator-section">
+              <div className="operator-section-title"><h3>Management</h3><button type="button" onClick={openUserView}>Preview</button></div>
+              <div className="operator-management-grid">
+                {managementItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button key={item.key} type="button" onClick={() => openDashboardSection(item.key)}>
+                      <Icon size={19} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+            <section className="operator-section">
+              <div className="operator-section-title"><h3>Analytics</h3><span>Overview</span></div>
+              <div className="analytics-strip">
+                {analyticsItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button key={item.key} type="button" onClick={() => openDashboardSection(item.key)}>
+                      <Icon size={17} />
+                      <strong>{item.value}</strong>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+            <button type="button" className="operator-preview-button" onClick={openUserView}><Home size={18} />Preview User View</button>
           </section>
 
           {activeSection && activeSection !== 'userView' && (
@@ -3424,7 +3497,7 @@ export default function App() {
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} />,
     settings: <SettingsScreen user={user} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} />,
-    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} />
+    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };
 
   return (
