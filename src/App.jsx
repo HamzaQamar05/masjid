@@ -31,6 +31,7 @@ import AuthScreen from './components/AuthScreen.jsx';
 import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganizations } from './data/seedData.js';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const EVENT_AUTO_REFRESH_MS = 15000;
 const notificationTimers = new Map();
 const notifiedMessageIds = new Set();
 const seedOrganizationsWithoutPrograms = seedOrganizations.map((org) => ({ ...org, classes: [], programs: [] }));
@@ -4155,11 +4156,41 @@ export default function App() {
         loadLocationData(location);
         loadOrganizations();
         loadPosts();
+        loadEvents();
+        loadMyOrganizations();
       }
     }
     document.addEventListener('visibilitychange', refreshOnFocus);
     return () => document.removeEventListener('visibilitychange', refreshOnFocus);
   }, [location]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let inFlight = false;
+    async function refreshEventSurfaces() {
+      if (document.visibilityState !== 'visible' || inFlight) return;
+      inFlight = true;
+      try {
+        await Promise.all([
+          loadEvents(),
+          loadOrganizations(),
+          loadPosts(),
+          loadMyOrganizations(user),
+          loadProfileSocial(user.id)
+        ]);
+      } catch (error) {
+        console.error('Event auto-refresh failed', error);
+      } finally {
+        inFlight = false;
+      }
+    }
+    const interval = window.setInterval(refreshEventSurfaces, EVENT_AUTO_REFRESH_MS);
+    window.addEventListener('focus', refreshEventSurfaces);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshEventSurfaces);
+    };
+  }, [location, user?.id]);
 
   useEffect(() => {
     if (!user || !token()) return undefined;
