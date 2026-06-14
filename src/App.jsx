@@ -33,6 +33,7 @@ import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganiz
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const notificationTimers = new Map();
 const notifiedMessageIds = new Set();
+const seedOrganizationsWithoutPrograms = seedOrganizations.map((org) => ({ ...org, classes: [], programs: [] }));
 
 const coreInterestLabels = ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile'];
 const optionalInterestLabels = ['Events', 'Library', 'Volunteer', 'Jobs', 'Business'];
@@ -887,7 +888,11 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
     if (eventDate === 'month') end.setMonth(now.getMonth() + 1);
     return date >= now && date <= end;
   }
-  const programItems = masjids.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program, index) => ({
+  const programOrganizations = [
+    ...masjids,
+    ...myOrganizations.filter((org) => !masjids.some((masjid) => String(masjid.id) === String(org.id)))
+  ];
+  const programItems = programOrganizations.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program, index) => ({
     ...program,
     id: `program-${masjid.id}-${program.id || index}`,
     isProgram: true,
@@ -1377,7 +1382,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
   ];
   const latestPosts = posts.slice(0, 2);
   const upcomingEvents = events.slice(0, 2);
-  const featuredClasses = classes.slice(0, 2);
+  const featuredClasses = classes;
   const featuredVolunteer = volunteer.slice(0, 2);
   const featuredJobs = jobs.slice(0, 2);
   const featuredTeam = (organization.people || []).slice(0, 3);
@@ -3639,7 +3644,7 @@ export default function App() {
     const me = await api('/api/me');
     persistAuth(me);
     setUser(me);
-    await Promise.all([loadNetwork(), loadPosts(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids(), loadNotificationPreferences()]);
+    await Promise.all([loadNetwork(), loadOrganizations(), loadPosts(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids(), loadNotificationPreferences()]);
   }
 
   async function loadNetwork() {
@@ -3652,6 +3657,11 @@ export default function App() {
   async function loadEvents() {
     const loadedEvents = await api('/api/events').catch(() => seedEvents);
     setEvents(loadedEvents);
+  }
+
+  async function loadOrganizations() {
+    const loadedOrganizations = await api('/api/organizations').catch(() => seedOrganizationsWithoutPrograms);
+    setMasjids(loadedOrganizations);
   }
 
   async function loadPosts() {
@@ -3891,7 +3901,7 @@ export default function App() {
 
   async function updateOrganization(id, form) {
     const updated = await api(`/api/organizations/${id}`, { method: 'PUT', body: JSON.stringify(form) });
-    await Promise.all([loadMyOrganizations(), loadLocationData(location)]);
+    await Promise.all([loadMyOrganizations(), loadOrganizations(), loadLocationData(location)]);
     if (selectedOrganization?.id === id) setSelectedOrganization({ ...selectedOrganization, ...updated });
   }
 
@@ -3965,7 +3975,7 @@ export default function App() {
       const timings = prayerData.timings || {};
       setPrayerTimes(prayers.map((item) => ({ ...item, adhan: (timings[item.name] || item.adhan).slice(0, 5) })));
     } catch {
-      setMasjids(withLocalDistance(seedOrganizations, nextLocation));
+      setMasjids(withLocalDistance(seedOrganizationsWithoutPrograms, nextLocation));
       setPrayerTimes(prayers);
     }
   }
@@ -4016,7 +4026,7 @@ export default function App() {
   }
 
   async function openOrganization(id) {
-    const localOrg = masjids.find((item) => String(item.id) === String(id)) || seedOrganizations.find((item) => String(item.id) === String(id));
+    const localOrg = masjids.find((item) => String(item.id) === String(id)) || seedOrganizationsWithoutPrograms.find((item) => String(item.id) === String(id));
     const org = await api(`/api/organizations/${id}`).catch(() => localOrg);
     if (!org) return alert('This masjid profile is not available yet.');
     setSelectedOrganization(org);
@@ -4132,6 +4142,7 @@ export default function App() {
     function refreshOnFocus() {
       if (document.visibilityState === 'visible') {
         loadLocationData(location);
+        loadOrganizations();
         loadPosts();
       }
     }

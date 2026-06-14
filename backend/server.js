@@ -279,11 +279,13 @@ function publicUser(user) {
   };
 }
 
-function publicOrganization(org, viewerId) {
+function publicOrganization(org, viewerId, options = {}) {
   if (!org) return null;
   const followers = org.followers || [];
   const favorites = org.favoritedBy || [];
   const people = org.people || [];
+  const viewerCanManage = viewerId && (org.ownerId === viewerId || people.some((person) => person.userId === viewerId && canOperateOrganizationRole(person.roleLabel)));
+  const showPrograms = options.includeUnclaimedPrograms || org.claimed || org.verified || org.ownerId || viewerCanManage;
   const events = (org.events || []).map((event) => ({
     ...event,
     registrations: (event.registrations || []).map((registration) => ({
@@ -303,6 +305,8 @@ function publicOrganization(org, viewerId) {
   const viewerFollow = viewerId ? followers.find((follow) => follow.userId === viewerId) : null;
   return {
     ...safeOrg,
+    classes: showPrograms ? (safeOrg.classes || []) : [],
+    programs: showPrograms ? (safeOrg.programs || safeOrg.classes || []) : [],
     posts,
     events,
     opportunities,
@@ -492,7 +496,7 @@ async function ensureFallbackOrganizations() {
           description: masjid.description || `${masjid.name} community profile. Admins can claim and customize this page during onboarding.`,
           iqamahTimes: masjid.iqamahTimes,
           prayerNotes: masjid.prayerNotes,
-          classes: masjid.classes,
+          classes: [],
           verified: false,
           facilities: masjid.facilities || 'Prayer hall, community programs, events'
         }
@@ -514,7 +518,7 @@ async function ensureFallbackOrganizations() {
           description: !existing.description || /placeholder/i.test(existing.description) ? masjid.description : existing.description,
           iqamahTimes: existing.iqamahTimes || masjid.iqamahTimes,
           prayerNotes: existing.prayerNotes || masjid.prayerNotes,
-          classes: existing.classes || masjid.classes,
+          classes: existing.claimed ? existing.classes : [],
           facilities: existing.facilities || masjid.facilities,
           verified: Boolean(existing.verified && existing.claimed && ['MASJID', 'MSA'].includes(existingOwner?.accountType))
         }
@@ -1183,7 +1187,7 @@ app.get('/api/me/organizations', auth, async (req, res) => {
     },
     orderBy: { createdAt: 'desc' }
   });
-  res.json(organizations.map((org) => publicOrganization(org, req.user.id)));
+  res.json(organizations.map((org) => publicOrganization(org, req.user.id, { includeUnclaimedPrograms: true })));
 });
 
 app.get('/api/me/notification-masjids', auth, async (req, res) => {
@@ -1335,6 +1339,7 @@ app.put('/api/organizations/:id', auth, async (req, res) => {
     if (req.body[key] !== undefined) data[key] = key === 'facilities' && Array.isArray(req.body[key]) ? req.body[key].join(', ') : req.body[key];
   });
   if (data.classes !== undefined && !Array.isArray(data.classes)) data.classes = null;
+  if (data.classes !== undefined) data.claimed = true;
   if (data.type !== undefined) data.type = organizationType(data.type);
   if (req.body.latitude !== undefined) data.latitude = req.body.latitude === '' ? null : Number(req.body.latitude);
   if (req.body.longitude !== undefined) data.longitude = req.body.longitude === '' ? null : Number(req.body.longitude);
