@@ -2095,12 +2095,21 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [dashboardQuery, setDashboardQuery] = useState('');
   const [activeSection, setActiveSection] = useState('');
+  const [adminCategory, setAdminCategory] = useState('masjid');
+  const [adminUserQuery, setAdminUserQuery] = useState('');
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState('');
+  const [adminWarnings, setAdminWarnings] = useState([]);
   const query = dashboardQuery.trim().toLowerCase();
+  const accountQuery = adminUserQuery.trim().toLowerCase();
   const peopleSearch = peopleQuery.trim().toLowerCase();
   const teamCandidates = users
     .filter((person) => person.id !== user.id)
     .filter((person) => !peopleSearch || `${person.name} ${person.email} ${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`.toLowerCase().includes(peopleSearch))
     .slice(0, 40);
+  const platformUsers = users
+    .filter((person) => person.id !== user.id)
+    .filter((person) => !accountQuery || `${person.name} ${person.email} ${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`.toLowerCase().includes(accountQuery));
+  const selectedAdminUser = users.find((person) => person.id === selectedAdminUserId) || platformUsers[0];
   const showSection = (section) => activeSection === section
     || (activeSection === 'eventApprovals' && section === 'events')
     || (activeSection === 'jamaatTimes' && section === 'prayerTimes')
@@ -2244,6 +2253,31 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   async function updateRole(id, accountType) {
     await api(`/api/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ accountType }) });
     await Promise.all([loadNetwork(), loadMyOrganizations()]);
+  }
+  async function resetUserPassword(person) {
+    if (!person?.id) return;
+    if (!confirm(`Generate a password reset link for ${person.email}?`)) return;
+    const result = await api(`/api/users/${person.id}/password-reset`, { method: 'POST' });
+    if (result.resetLink) {
+      await navigator.clipboard?.writeText(result.resetLink).catch(() => {});
+      alert(`Password reset link generated${navigator.clipboard ? ' and copied to clipboard' : ''}:\n${result.resetLink}`);
+    } else {
+      alert(result.message || 'Password reset generated.');
+    }
+  }
+  async function warnUser(person) {
+    if (!person?.id) return;
+    const reason = prompt(`Warning reason for ${person.name}?`, 'Community guideline warning');
+    if (!reason) return;
+    const note = prompt('Optional internal note', '') || '';
+    await api(`/api/users/${person.id}/warnings`, { method: 'POST', body: JSON.stringify({ reason, note }) });
+    await Promise.all([loadNetwork(), loadWarnings(person.id)]);
+  }
+  async function loadWarnings(id = selectedAdminUser?.id) {
+    if (!id) return;
+    const warnings = await api(`/api/users/${id}/warnings`).catch(() => []);
+    setAdminWarnings(warnings);
+    setSelectedAdminUserId(id);
   }
   async function submitOrg(event) {
     event.preventDefault();
@@ -2449,6 +2483,88 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   }
   return (
     <Page>
+      {user.accountType === 'ADMIN' && (
+        <section className="panel admin-category-panel">
+          <div className="section-title">
+            <div><p className="eyebrow">Admin mode</p><h2>{adminCategory === 'platform' ? 'Platform Admin' : 'Masjid Admin'}</h2></div>
+            <span>{adminCategory === 'platform' ? `${platformUsers.length} accounts` : `${scopedOrganizations.length} masjids`}</span>
+          </div>
+          <div className="segmented-control admin-mode-switch">
+            <button type="button" className={adminCategory === 'masjid' ? 'active' : ''} onClick={() => setAdminCategory('masjid')}>Masjid Admin</button>
+            <button type="button" className={adminCategory === 'platform' ? 'active' : ''} onClick={() => setAdminCategory('platform')}>Platform Admin</button>
+          </div>
+        </section>
+      )}
+      {user.accountType === 'ADMIN' && adminCategory === 'platform' && (
+        <div className="content-grid platform-admin-grid">
+          <section className="feed-column">
+            <section className="panel platform-admin-panel">
+              <div className="section-title"><div><p className="eyebrow">Admin admin</p><h2>Account Management</h2></div><span>{platformUsers.length}</span></div>
+              <div className="filter-panel">
+                <label><Search size={15} /><input placeholder="Search accounts by name, email, role, city, skills" value={adminUserQuery} onChange={(event) => setAdminUserQuery(event.target.value)} /></label>
+              </div>
+              <div className="metric-grid compact">
+                <article className="metric-card"><span>Total accounts</span><strong>{users.length}</strong><em>All registered users</em></article>
+                <article className="metric-card"><span>Users</span><strong>{adminStats.users}</strong><em>Community accounts</em></article>
+                <article className="metric-card"><span>Masjid/MSA</span><strong>{users.filter((person) => ['MASJID', 'MSA'].includes(person.accountType)).length}</strong><em>Operator accounts</em></article>
+                <article className="metric-card"><span>Warnings</span><strong>{users.reduce((sum, person) => sum + Number(person.warningCount || 0), 0)}</strong><em>Issued records</em></article>
+              </div>
+              <div className="stack-list account-admin-list">
+                {platformUsers.map((person) => (
+                  <article className="mini-row account-admin-row" key={person.id}>
+                    <div>
+                      <strong>{person.name}</strong>
+                      <span>{person.email}</span>
+                      <TagRow tags={[person.accountType, person.city || person.location, person.warningCount ? `${person.warningCount} warnings` : 'No warnings'].filter(Boolean)} />
+                    </div>
+                    <select value={person.accountType} onChange={(event) => updateRole(person.id, event.target.value)} aria-label={`Change role for ${person.name}`}>
+                      {['USER', 'MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'BUSINESS', 'ADMIN'].map((role) => <option key={role} value={role}>{role}</option>)}
+                    </select>
+                    <div className="manager-row">
+                      <button onClick={() => openProfile(person)}>Profile</button>
+                      <button onClick={() => startMessage(person)}>Message</button>
+                      <button onClick={() => resetUserPassword(person)}>Reset password</button>
+                      <button onClick={() => warnUser(person)}>Give warning</button>
+                      <button onClick={() => loadWarnings(person.id)}>View warnings</button>
+                      <button className="secondary-button danger" onClick={() => deleteUser(person.id)}>Delete account</button>
+                    </div>
+                  </article>
+                ))}
+                {!platformUsers.length && <p className="helper-text">No accounts match that search.</p>}
+              </div>
+            </section>
+          </section>
+          <aside className="right-rail">
+            <section className="panel">
+              <div className="section-title"><h2>Selected Account</h2><span>{selectedAdminUser?.accountType || 'None'}</span></div>
+              {selectedAdminUser ? (
+                <div className="stack-list">
+                  <article className="mini-row">
+                    <strong>{selectedAdminUser.name}</strong>
+                    <span>{selectedAdminUser.email}</span>
+                    <p>{selectedAdminUser.city || selectedAdminUser.location || 'No location saved'}</p>
+                    <div className="manager-row">
+                      <button onClick={() => openProfile(selectedAdminUser)}>Open profile</button>
+                      <button onClick={() => resetUserPassword(selectedAdminUser)}>Reset password</button>
+                      <button onClick={() => warnUser(selectedAdminUser)}>Give warning</button>
+                    </div>
+                  </article>
+                  <div className="section-title compact-title"><h3>Warnings</h3><button type="button" onClick={() => loadWarnings(selectedAdminUser.id)}>Refresh</button></div>
+                  {adminWarnings.map((warning) => (
+                    <article className="mini-row" key={warning.id}>
+                      <strong>{warning.reason}</strong>
+                      <span>{new Date(warning.createdAt).toLocaleString()} by {warning.issuer?.name || 'Admin'}</span>
+                      {warning.note && <p>{warning.note}</p>}
+                    </article>
+                  ))}
+                  {!adminWarnings.length && <p className="helper-text">Select View warnings to load warning history.</p>}
+                </div>
+              ) : <p className="helper-text">Search and select an account.</p>}
+            </section>
+          </aside>
+        </div>
+      )}
+      {adminCategory !== 'platform' && (
       <div className="content-grid masjid-dashboard-grid">
         <section className="feed-column masjid-dashboard-main">
           <section className="panel masjid-hub">
@@ -3091,6 +3207,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
           )}
         </aside>
       </div>
+      )}
     </Page>
   );
 }

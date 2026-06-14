@@ -1468,6 +1468,46 @@ a {
   font-size: 17px;
 }
 
+.admin-category-panel,
+.platform-admin-panel {
+  margin-bottom: 14px;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 5px;
+}
+
+.segmented-control button {
+  min-height: 42px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.segmented-control button.active {
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.account-admin-row {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  align-items: start;
+}
+
+.account-admin-row > .manager-row {
+  grid-column: 1 / -1;
+}
+
+.account-admin-row select {
+  width: 100%;
+}
+
 .hub-actions {
   display: flex;
   gap: 8px;

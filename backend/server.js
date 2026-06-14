@@ -868,6 +868,8 @@ app.delete('/api/notifications/subscriptions', auth, async (req, res) => {
 
 app.get('/api/users', auth, async (req, res) => {
   const users = await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+  const warningCounts = req.user.accountType === 'ADMIN' ? await prisma.userWarning.groupBy({ by: ['userId'], _count: { id: true } }) : [];
+  const warningCountMap = new Map(warningCounts.map((item) => [item.userId, item._count.id]));
   const connections = await prisma.connection.findMany({
     where: { OR: [{ requesterId: req.user.id }, { receiverId: req.user.id }] }
   });
@@ -876,7 +878,7 @@ app.get('/api/users', auth, async (req, res) => {
     const otherId = connection.requesterId === req.user.id ? connection.receiverId : connection.requesterId;
     connectionMap.set(otherId, connection.status);
   });
-  res.json(users.map((user) => ({ ...publicUser(user), connectionStatus: user.id === req.user.id ? 'SELF' : connectionMap.get(user.id) || 'NONE' })));
+  res.json(users.map((user) => ({ ...publicUser(user), warningCount: warningCountMap.get(user.id) || 0, connectionStatus: user.id === req.user.id ? 'SELF' : connectionMap.get(user.id) || 'NONE' })));
 });
 
 app.get('/api/users/:id/social', auth, async (req, res) => {
@@ -928,6 +930,7 @@ app.get('/api/users/:id/social', auth, async (req, res) => {
 
 app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Admins cannot delete their own active session account' });
+  await prisma.userWarning.deleteMany({ where: { OR: [{ userId: req.params.id }, { issuerId: req.params.id }] } });
   await prisma.eventRegistration.deleteMany({ where: { userId: req.params.id } });
   await prisma.eventSubscription.deleteMany({ where: { userId: req.params.id } });
   await prisma.organizationFollow.deleteMany({ where: { userId: req.params.id } });
@@ -949,6 +952,40 @@ app.put('/api/users/:id/role', auth, requireAdmin, async (req, res) => {
   if (!allowed.includes(req.body.accountType)) return res.status(400).json({ error: 'Invalid account type' });
   const user = await prisma.user.update({ where: { id: req.params.id }, data: { accountType: req.body.accountType } });
   res.json(publicUser(user));
+});
+
+app.post('/api/users/:id/password-reset', auth, requireAdmin, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const rawToken = randomBytes(32).toString('hex');
+  const passwordResetTokenHash = await bcrypt.hash(rawToken, 10);
+  const passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  await prisma.user.update({ where: { id: user.id }, data: { passwordResetTokenHash, passwordResetExpiresAt } });
+  const resetLink = await sendPasswordResetEmail(user, rawToken);
+  res.json({ message: 'Password reset generated.', resetLink });
+});
+
+app.get('/api/users/:id/warnings', auth, requireAdmin, async (req, res) => {
+  const warnings = await prisma.userWarning.findMany({
+    where: { userId: req.params.id },
+    include: { issuer: true },
+    orderBy: { createdAt: 'desc' }
+  });
+  res.json(warnings.map((warning) => ({ ...warning, issuer: publicUser(warning.issuer) })));
+});
+
+app.post('/api/users/:id/warnings', auth, requireAdmin, async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Admins cannot warn their own account' });
+  const reason = String(req.body.reason || '').trim();
+  const note = String(req.body.note || '').trim();
+  if (!reason) return res.status(400).json({ error: 'Warning reason is required' });
+  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  const warning = await prisma.userWarning.create({
+    data: { userId: target.id, issuerId: req.user.id, reason: reason.slice(0, 160), note: note ? note.slice(0, 1000) : null },
+    include: { issuer: true }
+  });
+  res.json({ ...warning, issuer: publicUser(warning.issuer) });
 });
 
 app.post('/api/connections/:userId', auth, async (req, res) => {

@@ -61,9 +61,26 @@ model User {
   savedPosts               SavedPost[]
   eventSubscriptions       EventSubscription[]
   notificationPreference   UserNotificationPreference?
+  warningsReceived         UserWarning[]          @relation("WarningRecipient")
+  warningsIssued           UserWarning[]          @relation("WarningIssuer")
   likedPosts               PostLike[]
   postComments             PostComment[]
   pushSubscriptions        PushSubscription[]
+}
+
+model UserWarning {
+  id        String   @id @default(cuid())
+  userId    String
+  issuerId  String
+  reason    String
+  note      String?
+  createdAt DateTime @default(now())
+
+  user   User @relation("WarningRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  issuer User @relation("WarningIssuer", fields: [issuerId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([issuerId, createdAt])
 }
 
 model UserNotificationPreference {
