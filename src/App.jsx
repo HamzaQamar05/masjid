@@ -2181,6 +2181,12 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const [peopleQuery, setPeopleQuery] = useState('');
   const [editingOrgId, setEditingOrgId] = useState('');
   const [editOrgForm, setEditOrgForm] = useState({});
+  const [editingPostId, setEditingPostId] = useState('');
+  const [editPostForm, setEditPostForm] = useState({});
+  const [editingEventId, setEditingEventId] = useState('');
+  const [editEventForm, setEditEventForm] = useState({});
+  const [editingClassKey, setEditingClassKey] = useState('');
+  const [editClassForm, setEditClassForm] = useState({});
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [dashboardQuery, setDashboardQuery] = useState('');
   const [activeSection, setActiveSection] = useState('');
@@ -2263,6 +2269,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   function openDashboardSection(section) {
     setEditingOrgId('');
     setEditOrgForm({});
+    cancelContentEdits();
     setActiveSection(section);
   }
   function openAnnouncementComposer() {
@@ -2272,6 +2279,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   function closeDashboardSection() {
     setEditingOrgId('');
     setEditOrgForm({});
+    cancelContentEdits();
     setActiveSection('');
   }
   const hubItems = [
@@ -2474,6 +2482,17 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
     return local.toISOString().slice(0, 16);
   }
+  function contentEditKey(orgId, item, index) {
+    return `${orgId}:${item.id || index}`;
+  }
+  function cancelContentEdits() {
+    setEditingPostId('');
+    setEditPostForm({});
+    setEditingEventId('');
+    setEditEventForm({});
+    setEditingClassKey('');
+    setEditClassForm({});
+  }
   function eventAttendanceStats(eventItem) {
     const registrations = eventItem.registrations || [];
     const checkedIn = registrations.filter((registration) => registration.status === 'ATTENDED').length;
@@ -2490,25 +2509,41 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
       denied
     };
   }
-  async function editPost(post) {
-    const title = prompt('Post title', post.title || '');
-    if (title === null) return;
-    const content = prompt('Post content', post.content || '');
-    if (content === null) return;
-    const location = prompt('Location', post.location || '');
-    if (location === null) return;
-    await updatePost(post.id, { title, content, location });
+  function startEditPost(post) {
+    setEditingPostId(post.id);
+    setEditPostForm({
+      type: post.type || 'ANNOUNCEMENT',
+      title: post.title || '',
+      content: post.content || '',
+      imageUrl: post.imageUrl || '',
+      location: post.location || '',
+      eventTime: toDateTimeInput(post.eventTime)
+    });
   }
-  async function editEvent(eventItem) {
-    const title = prompt('Event title', eventItem.title || '');
-    if (title === null) return;
-    const startTime = prompt('Start time', toDateTimeInput(eventItem.startTime));
-    if (startTime === null) return;
-    const location = prompt('Location', eventItem.location || '');
-    if (location === null) return;
-    const capacity = prompt('Capacity', eventItem.capacity || '');
-    if (capacity === null) return;
-    await updateEvent(eventItem.id, { title, startTime, location, capacity });
+  async function submitEditPost(event, post) {
+    event.preventDefault();
+    await updatePost(post.id, editPostForm);
+    setEditingPostId('');
+    setEditPostForm({});
+  }
+  function startEditEvent(eventItem) {
+    setEditingEventId(eventItem.id);
+    setEditEventForm({
+      title: eventItem.title || '',
+      description: eventItem.description || '',
+      location: eventItem.location || '',
+      imageUrl: eventItem.imageUrl || '',
+      startTime: toDateTimeInput(eventItem.startTime),
+      endTime: toDateTimeInput(eventItem.endTime),
+      capacity: eventItem.capacity ?? '',
+      requiresApproval: Boolean(eventItem.requiresApproval)
+    });
+  }
+  async function submitEditEvent(event, eventItem) {
+    event.preventDefault();
+    await updateEvent(eventItem.id, editEventForm);
+    setEditingEventId('');
+    setEditEventForm({});
   }
   async function editOpportunity(opportunity) {
     const title = prompt('Title', opportunity.title || '');
@@ -2523,19 +2558,36 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     if (hours === null) return;
     await updateOpportunity(opportunity.id, { title, description, location, skills, hours });
   }
-  async function editClass(org, classItem, classIndex) {
-    const title = prompt('Class title', classItem.title || '');
-    if (title === null) return;
-    const teacher = prompt('Teacher or imam', classItem.teacher || '');
-    if (teacher === null) return;
-    const dayTime = prompt('Day/time', classItem.dayTime || '');
-    if (dayTime === null) return;
-    const location = prompt('Location', classItem.location || '');
-    if (location === null) return;
-    const description = prompt('Description', classItem.description || '');
-    if (description === null) return;
-    const classes = (org.classes || []).map((item, index) => (classItem.id ? item.id === classItem.id : index === classIndex) ? { ...item, title, teacher, dayTime, location, description } : item);
+  function startEditClass(org, classItem, classIndex) {
+    setEditingClassKey(contentEditKey(org.id, classItem, classIndex));
+    setEditClassForm({
+      title: classItem.title || '',
+      teacher: classItem.teacher || '',
+      dayTime: classItem.dayTime || '',
+      location: classItem.location || '',
+      imageUrl: classItem.imageUrl || '',
+      registrationLink: classItem.registrationLink || '',
+      description: classItem.description || '',
+      notes: classItem.notes || ''
+    });
+  }
+  async function submitEditClass(event, org, classItem, classIndex) {
+    event.preventDefault();
+    if (!editClassForm.title?.trim()) return alert('Class title is required.');
+    const classes = (org.classes || []).map((item, index) => (classItem.id ? item.id === classItem.id : index === classIndex) ? {
+      ...item,
+      title: editClassForm.title.trim(),
+      teacher: (editClassForm.teacher || '').trim(),
+      dayTime: (editClassForm.dayTime || '').trim(),
+      location: (editClassForm.location || '').trim(),
+      imageUrl: (editClassForm.imageUrl || '').trim(),
+      registrationLink: (editClassForm.registrationLink || '').trim(),
+      description: (editClassForm.description || '').trim(),
+      notes: (editClassForm.notes || '').trim()
+    } : item);
     await updateOrganization(org.id, { classes });
+    setEditingClassKey('');
+    setEditClassForm({});
   }
   async function deleteClass(org, classItem, classIndex) {
     if (!confirm('Delete this class or program?')) return;
@@ -3120,12 +3172,34 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                         <strong>{item.title}</strong>
                         <span>{item.teacher || 'Teacher TBD'} - {item.dayTime || 'Schedule TBD'}</span>
                         <p>{item.description || item.location || item.notes || 'No class details yet.'}</p>
-                        <TagRow tags={[item.location, item.notes, item.registrationLink && 'Registration link'].filter(Boolean)} />
-                        <div className="manager-row">
-                          <button onClick={() => editClass(org, item, index)}>Edit class</button>
-                          {item.registrationLink && <a className="secondary-button" href={item.registrationLink} target="_blank" rel="noreferrer">Open registration</a>}
-                          <button className="secondary-button danger" onClick={() => deleteClass(org, item, index)}>Delete class</button>
-                        </div>
+                        {item.imageUrl && <img className="post-image" src={item.imageUrl} alt="" />}
+                        {editingClassKey === contentEditKey(org.id, item, index) ? (
+                          <form className="profile-form manager-edit-form" onSubmit={(event) => submitEditClass(event, org, item, index)}>
+                            <div className="form-grid">
+                              <input required placeholder="Class title" value={editClassForm.title || ''} onChange={(event) => setEditClassForm({ ...editClassForm, title: event.target.value })} />
+                              <input placeholder="Teacher or imam" value={editClassForm.teacher || ''} onChange={(event) => setEditClassForm({ ...editClassForm, teacher: event.target.value })} />
+                              <input placeholder="Day/time" value={editClassForm.dayTime || ''} onChange={(event) => setEditClassForm({ ...editClassForm, dayTime: event.target.value })} />
+                              <input placeholder="Location" value={editClassForm.location || ''} onChange={(event) => setEditClassForm({ ...editClassForm, location: event.target.value })} />
+                              <input placeholder="Program image URL" value={editClassForm.imageUrl || ''} onChange={(event) => setEditClassForm({ ...editClassForm, imageUrl: event.target.value })} />
+                              <input placeholder="Registration link optional" value={editClassForm.registrationLink || ''} onChange={(event) => setEditClassForm({ ...editClassForm, registrationLink: event.target.value })} />
+                            </div>
+                            <textarea placeholder="Description" value={editClassForm.description || ''} onChange={(event) => setEditClassForm({ ...editClassForm, description: event.target.value })} />
+                            <textarea placeholder="Gender, family, or attendance notes optional" value={editClassForm.notes || ''} onChange={(event) => setEditClassForm({ ...editClassForm, notes: event.target.value })} />
+                            <div className="manager-row">
+                              <button className="primary-button">Save program</button>
+                              <button className="secondary-button" type="button" onClick={() => { setEditingClassKey(''); setEditClassForm({}); }}>Cancel</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <>
+                            <TagRow tags={[item.location, item.notes, item.registrationLink && 'Registration link'].filter(Boolean)} />
+                            <div className="manager-row">
+                              <button onClick={() => startEditClass(org, item, index)}>Edit class</button>
+                              {item.registrationLink && <a className="secondary-button" href={item.registrationLink} target="_blank" rel="noreferrer">Open registration</a>}
+                              <button className="secondary-button danger" onClick={() => deleteClass(org, item, index)}>Delete class</button>
+                            </div>
+                          </>
+                        )}
                       </article>
                     )) : <p className="helper-text">No classes or programs have been added yet.</p>}
                   </div>
@@ -3159,10 +3233,30 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                         <strong>{post.title}</strong>
                         <span>{post.type} - {new Date(post.createdAt).toLocaleString()}</span>
                         <p>{post.content}</p>
-                        <div className="manager-row">
-                          <button onClick={() => editPost(post)}>Edit post</button>
-                          <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
-                        </div>
+                        {post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}
+                        {editingPostId === post.id ? (
+                          <form className="profile-form manager-edit-form" onSubmit={(event) => submitEditPost(event, post)}>
+                            <div className="form-grid">
+                              <select value={editPostForm.type || 'ANNOUNCEMENT'} onChange={(event) => setEditPostForm({ ...editPostForm, type: event.target.value })}>
+                                {['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].map((type) => <option key={type} value={type}>{type}</option>)}
+                              </select>
+                              <input required placeholder="Post title" value={editPostForm.title || ''} onChange={(event) => setEditPostForm({ ...editPostForm, title: event.target.value })} />
+                              <input placeholder="Image URL" value={editPostForm.imageUrl || ''} onChange={(event) => setEditPostForm({ ...editPostForm, imageUrl: event.target.value })} />
+                              <input placeholder="Location" value={editPostForm.location || ''} onChange={(event) => setEditPostForm({ ...editPostForm, location: event.target.value })} />
+                              <input type="datetime-local" value={editPostForm.eventTime || ''} onChange={(event) => setEditPostForm({ ...editPostForm, eventTime: event.target.value })} />
+                            </div>
+                            <textarea required placeholder="Post content" value={editPostForm.content || ''} onChange={(event) => setEditPostForm({ ...editPostForm, content: event.target.value })} />
+                            <div className="manager-row">
+                              <button className="primary-button">Save post</button>
+                              <button className="secondary-button" type="button" onClick={() => { setEditingPostId(''); setEditPostForm({}); }}>Cancel</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="manager-row">
+                            <button onClick={() => startEditPost(post)}>Edit post</button>
+                            <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
+                          </div>
+                        )}
                       </article>
                     )) : <p className="helper-text">No posts match this dashboard filter yet.</p>}
                   </div>
@@ -3179,20 +3273,40 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                       <article className="mini-row event-registration-card" key={event.id}>
                         <strong>{event.title}</strong>
                         <span>{new Date(event.startTime).toLocaleString()}</span>
-                        <p>{event.location || 'Location TBA'}</p>
+                        <p>{event.description || event.location || 'No event details yet.'}</p>
+                        {event.imageUrl && <img className="post-image" src={event.imageUrl} alt="" />}
                         <div className="event-attendance-grid">
                           <div><strong>{stats.registered}</strong><span>Registered</span></div>
                           <div><strong>{stats.checkedIn}</strong><span>Checked In</span></div>
                           <div><strong>{stats.noShow}</strong><span>No Show</span></div>
                         </div>
-                        <div className="manager-row">
-                          <span>{stats.pending} pending, {stats.approved} approved, {stats.denied} denied</span>
-                          <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
-                          <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'ATTENDED', fromStatus: 'APPROVED' })}>Check in approved</button>
-                          <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'NO_SHOW', fromStatus: 'APPROVED' })}>No-show approved</button>
-                          <button onClick={() => editEvent(event)}>Edit event</button>
-                          <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
-                        </div>
+                        {editingEventId === event.id ? (
+                          <form className="profile-form manager-edit-form" onSubmit={(formEvent) => submitEditEvent(formEvent, event)}>
+                            <div className="form-grid">
+                              <input required placeholder="Event title" value={editEventForm.title || ''} onChange={(inputEvent) => setEditEventForm({ ...editEventForm, title: inputEvent.target.value })} />
+                              <input placeholder="Location" value={editEventForm.location || ''} onChange={(inputEvent) => setEditEventForm({ ...editEventForm, location: inputEvent.target.value })} />
+                              <input placeholder="Event image URL" value={editEventForm.imageUrl || ''} onChange={(inputEvent) => setEditEventForm({ ...editEventForm, imageUrl: inputEvent.target.value })} />
+                              <input required type="datetime-local" value={editEventForm.startTime || ''} onChange={(inputEvent) => setEditEventForm({ ...editEventForm, startTime: inputEvent.target.value })} />
+                              <input type="datetime-local" value={editEventForm.endTime || ''} onChange={(inputEvent) => setEditEventForm({ ...editEventForm, endTime: inputEvent.target.value })} />
+                              <input placeholder="Capacity" value={editEventForm.capacity || ''} onChange={(inputEvent) => setEditEventForm({ ...editEventForm, capacity: inputEvent.target.value })} />
+                              <label className="check-toggle"><input type="checkbox" checked={Boolean(editEventForm.requiresApproval)} onChange={(inputEvent) => setEditEventForm({ ...editEventForm, requiresApproval: inputEvent.target.checked })} />Requires approval</label>
+                            </div>
+                            <textarea placeholder="Description" value={editEventForm.description || ''} onChange={(inputEvent) => setEditEventForm({ ...editEventForm, description: inputEvent.target.value })} />
+                            <div className="manager-row">
+                              <button className="primary-button">Save event</button>
+                              <button className="secondary-button" type="button" onClick={() => { setEditingEventId(''); setEditEventForm({}); }}>Cancel</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="manager-row">
+                            <span>{stats.pending} pending, {stats.approved} approved, {stats.denied} denied</span>
+                            <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
+                            <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'ATTENDED', fromStatus: 'APPROVED' })}>Check in approved</button>
+                            <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'NO_SHOW', fromStatus: 'APPROVED' })}>No-show approved</button>
+                            <button onClick={() => startEditEvent(event)}>Edit event</button>
+                            <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
+                          </div>
+                        )}
                         {(event.registrations || []).map((registration) => (
                           <div className="manager-row attendee-row" key={registration.id}>
                             <span>{registration.user?.name || 'User'} - {registration.status}</span>
