@@ -2261,7 +2261,6 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const selectedAdminUser = users.find((person) => person.id === selectedAdminUserId) || platformUsers[0];
   const showSection = (section) => activeSection === section
     || (activeSection === 'eventApprovals' && section === 'events')
-    || (activeSection === 'jamaatTimes' && section === 'prayerTimes')
     || (activeSection === 'committee' && section === 'team');
   const showApplications = ['applications', 'volunteerApplications', 'jobApplications'].includes(activeSection);
   const applicationTypeFilter = activeSection === 'jobApplications' ? 'JOB' : activeSection === 'volunteerApplications' ? 'VOLUNTEER' : '';
@@ -2353,7 +2352,6 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'volunteerApplications', label: 'Volunteer Applications', count: allApplications.filter(({ opportunity }) => opportunity.type !== 'JOB').length, detail: 'Service requests', icon: Users },
     { key: 'attention', label: 'Notifications', count: pendingApplications.length + pendingRegistrations.length + unreadMessages, detail: `${unreadMessages} unread DMs`, icon: Bell },
     { key: 'prayerTimes', label: 'Prayer Times', count: 'Jamaat', detail: selectedOrg?.prayerNotes || 'Iqamah schedule', icon: ShieldCheck },
-    { key: 'jamaatTimes', label: 'Jamaat Times', count: 'Edit', detail: 'Iqamah updates', icon: Navigation },
     { key: 'applications', label: 'Application Portal', count: metrics.applications, detail: 'All applicants', icon: Building2 },
     { key: 'committee', label: 'Jamaat / Committee', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Leadership', icon: Users },
     { key: 'userView', label: 'Preview User View', count: selectedOrg ? 'Open' : 'Add profile', detail: 'Public profile', icon: Home }
@@ -2383,7 +2381,6 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'programs', label: 'Programs', icon: Library },
     { key: 'posts', label: 'Posts', icon: MessageCircle },
     { key: 'prayerTimes', label: 'Prayer Times', icon: ShieldCheck },
-    { key: 'jamaatTimes', label: 'Jamaat Times', icon: Navigation },
     { key: 'team', label: 'Team', icon: UserCheck },
     { key: 'volunteers', label: 'Volunteers', icon: HeartHandshake },
     { key: 'jobs', label: 'Jobs', icon: Briefcase }
@@ -2395,9 +2392,9 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'posts', label: 'Engagement', value: metrics.posts, icon: Bell }
   ];
   const activeDashboardFeature = hubItems.find((item) => item.key === activeSection);
-  const orgPanelSections = new Set(['followers', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'jamaatTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs']);
+  const orgPanelSections = new Set(['followers', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs']);
   const showOrgPanels = orgPanelSections.has(activeSection);
-  const showProfileTools = ['prayerTimes', 'jamaatTimes'].includes(activeSection);
+  const showProfileTools = activeSection === 'prayerTimes';
   function openUserView() {
     if (!selectedOrg?.id) return alert('Create or select a masjid profile first.');
     openOrganization(selectedOrg.id).catch(console.error);
