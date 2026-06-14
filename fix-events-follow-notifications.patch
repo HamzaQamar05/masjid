@@ -1,0 +1,217 @@
+diff --git a/backend/server.js b/backend/server.js
+index 1a16ba6..b7d4c2f 100644
+--- a/backend/server.js
++++ b/backend/server.js
+@@ -678,6 +678,18 @@ async function sendPushToUser(userId, payload) {
+   return { sent, disabled: false };
+ }
+ 
++function viewerIdFromRequest(req) {
++  const header = req.headers.authorization;
++  if (!header) return null;
++  try {
++    const rawToken = header.split(' ')[1];
++    if (!rawToken) return null;
++    return jwt.verify(rawToken, process.env.JWT_SECRET || 'dev_secret').id;
++  } catch {
++    return null;
++  }
++}
++
+ async function sendPushToOrganizationFollowers(organizationId, payload) {
+   if (!vapidPublicKey || !vapidPrivateKey) return { sent: 0, disabled: true, followers: 0 };
+   const follows = await prisma.organizationFollow.findMany({
+@@ -1509,17 +1521,47 @@ app.delete('/api/posts/:id', auth, async (req, res) => {
+ });
+ 
+ app.post('/api/organizations/:id/follow', auth, async (req, res) => {
++  const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
++  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+   const existingFollow = await prisma.organizationFollow.findUnique({ where: { organizationId_userId: { organizationId: req.params.id, userId: req.user.id } } });
+   const notifyPrayers = req.body.notifyPrayers === undefined ? Boolean(existingFollow?.notifyPrayers) : Boolean(req.body.notifyPrayers);
+   if (notifyPrayers) {
+     const activeNotificationFollows = await prisma.organizationFollow.count({ where: { userId: req.user.id, notifyPrayers: true, organizationId: { not: req.params.id } } });
+     if (activeNotificationFollows >= 2) return res.status(400).json({ error: 'You can enable prayer notifications for up to 2 masjids' });
+   }
+-  const follow = await prisma.organizationFollow.upsert({
++  await prisma.organizationFollow.upsert({
+     where: { organizationId_userId: { organizationId: req.params.id, userId: req.user.id } },
+     create: { organizationId: req.params.id, userId: req.user.id, notifyPrayers },
+     update: { notifyPrayers }
+   });
+-  res.json(follow);
++  const updatedOrganization = await prisma.organization.findUnique({
++    where: { id: req.params.id },
++    include: {
++      events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
++      posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
++      opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } },
++      followers: { include: { user: true } },
++      favoritedBy: true,
++      people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
++    }
++  });
++  res.json(publicOrganization(updatedOrganization, req.user.id));
+ });
+ 
+ app.delete('/api/organizations/:id/follow', auth, async (req, res) => {
+   await prisma.organizationFollow.deleteMany({ where: { organizationId: req.params.id, userId: req.user.id } });
+-  res.json({ message: 'Unfollowed' });
++  const updatedOrganization = await prisma.organization.findUnique({
++    where: { id: req.params.id },
++    include: {
++      events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
++      posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
++      opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } },
++      followers: { include: { user: true } },
++      favoritedBy: true,
++      people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
++    }
++  });
++  res.json(updatedOrganization ? publicOrganization(updatedOrganization, req.user.id) : { message: 'Unfollowed' });
+ });
+ 
+ app.post('/api/organizations/:id/favorite', auth, async (req, res) => {
+@@ -1655,7 +1697,21 @@ app.post('/api/events', auth, async (req, res) => {
+     }
+   });
+   await syncEventPost(event, req.user.id);
+-  res.json(event);
++  const fullEvent = await prisma.event.findUnique({
++    where: { id: event.id },
++    include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } }
++  });
++  const push = organizationId ? await sendPushToOrganizationFollowers(organizationId, {
++    title: `${fullEvent.organization?.name || 'A followed masjid'} posted an event`,
++    body: `${fullEvent.title}${fullEvent.startTime ? ` - ${new Date(fullEvent.startTime).toLocaleString()}` : ''}`,
++    url: `/events/${fullEvent.id}`,
++    type: 'EVENT',
++    organizationId,
++    eventId: fullEvent.id
++  }) : { sent: 0, followers: 0 };
++  res.json({ ...fullEvent, registrations: fullEvent.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })), push });
+ });
+ 
+ app.put('/api/events/:eventId', auth, async (req, res) => {
+@@ -1687,7 +1743,16 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
+   if (req.body.requiresApproval !== undefined) data.requiresApproval = Boolean(req.body.requiresApproval);
+   const updated = await prisma.event.update({ where: { id: event.id }, data, include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } } });
+   await updateSyncedEventPost(event, updated, updated.createdById || req.user.id);
+-  res.json({ ...updated, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) });
++  const push = updated.organizationId ? await sendPushToOrganizationFollowers(updated.organizationId, {
++    title: `${updated.organization?.name || 'A followed masjid'} updated an event`,
++    body: `${updated.title}${updated.startTime ? ` - ${new Date(updated.startTime).toLocaleString()}` : ''}`,
++    url: `/events/${updated.id}`,
++    type: 'EVENT',
++    organizationId: updated.organizationId,
++    eventId: updated.id
++  }) : { sent: 0, followers: 0 };
++  res.json({ ...updated, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })), push });
+ });
+ 
+ app.delete('/api/events/:eventId', auth, async (req, res) => {
+@@ -2030,6 +2095,7 @@ app.get('/api/location/masjids', async (req, res) => {
+   const longitude = Number(req.query.lng);
+   const radius = Math.min(Number(req.query.radius || 25000), 50000);
+   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ error: 'lat and lng query parameters are required' });
++  const viewerId = viewerIdFromRequest(req);
+ 
+   try {
+     await ensureFallbackOrganizations();
+@@ -2049,7 +2115,7 @@ app.get('/api/location/masjids', async (req, res) => {
+         orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
+       });
+-    const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, null)));
++    const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, viewerId)));
+ 
+     const query = `
+       [out:json][timeout:12];
+@@ -2105,7 +2171,7 @@ app.get('/api/location/masjids', async (req, res) => {
+           orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
+         });
+-      const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, null)));
++      const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, viewerId)));
+       const seen = new Set(sqlResults.map((item) => normalizedMasjidName(item.name)));
+       return res.json(withDistance([...sqlResults, ...fallbackMasjids.filter((item) => !seen.has(normalizedMasjidName(item.name)))], latitude, longitude));
+     } catch {
+diff --git a/src/App.jsx b/src/App.jsx
+index f784f22..994d123 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -3868,13 +3868,32 @@ export default function App() {
+     }
+   }
+ 
++  function mergeOrganizationsById(currentItems = [], incomingItems = []) {
++    const currentMap = new Map(currentItems.map((item) => [String(item.id), item]));
++    const incomingMap = new Map(incomingItems.map((item) => [String(item.id), item]));
++    const merged = incomingItems.map((item) => {
++      const current = currentMap.get(String(item.id));
++      if (!current) return item;
++      return {
++        ...current,
++        ...item,
++        isFollowing: item.isFollowing ?? current.isFollowing,
++        isFavorited: item.isFavorited ?? current.isFavorited,
++        notifyPrayers: item.notifyPrayers ?? current.notifyPrayers,
++        followerCount: item.followerCount ?? current.followerCount,
++        events: item.events?.length ? item.events : current.events,
++        posts: item.posts?.length ? item.posts : current.posts,
++        opportunities: item.opportunities?.length ? item.opportunities : current.opportunities
++      };
++    });
++    return [...merged, ...currentItems.filter((item) => !incomingMap.has(String(item.id)))];
++  }
++
+   async function loadLocationData(nextLocation) {
+     try {
+       const [masjidData, prayerData] = await Promise.all([
+         api(`/api/location/masjids?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}`),
+         api(`/api/prayer-times?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}&date=${Math.floor(Date.now() / 1000)}`)
+       ]);
+-      setMasjids(withLocalDistance(masjidData, nextLocation));
++      setMasjids((current) => mergeOrganizationsById(current, withLocalDistance(masjidData, nextLocation)));
+       const timings = prayerData.timings || {};
+       setPrayerTimes(prayers.map((item) => ({ ...item, adhan: (timings[item.name] || item.adhan).slice(0, 5) })));
+     } catch {
+@@ -3937,26 +3956,30 @@ export default function App() {
+       if (permission !== 'granted') return alert('Notifications were not enabled.');
+     }
+-    await api(`/api/organizations/${id}/follow`, { method: 'POST', body: JSON.stringify({ notifyPrayers }) });
+-    const org = await api(`/api/organizations/${id}`);
+-    setSelectedOrganization(org);
+-    if (notifyPrayers) schedulePrayerNotification(org);
+-    await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id), loadNotificationMasjids()]);
++    const org = await api(`/api/organizations/${id}/follow`, { method: 'POST', body: JSON.stringify({ notifyPrayers }) });
++    setSelectedOrganization(org);
++    setMasjids((current) => current.map((item) => String(item.id) === String(id) ? { ...item, ...org } : item));
++    if (org.notifyPrayers) schedulePrayerNotification(org);
++    await Promise.all([loadOrganizations({ preserveCurrent: true }), loadPosts(), loadEvents({ preserveCurrent: true }), loadProfileSocial(user.id), loadNotificationMasjids()]);
+   }
+ 
+   async function unfollowOrganization(id) {
+     if (!user) return alert('Log in to manage followed masjids.');
+-    await api(`/api/organizations/${id}/follow`, { method: 'DELETE' });
+-    const org = selectedOrganization?.id === id ? await api(`/api/organizations/${id}`).catch(() => null) : null;
+-    if (org) setSelectedOrganization(org);
+-    await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id), loadNotificationMasjids()]);
++    const org = await api(`/api/organizations/${id}/follow`, { method: 'DELETE' });
++    if (org?.id) {
++      setSelectedOrganization(org);
++      setMasjids((current) => current.map((item) => String(item.id) === String(id) ? { ...item, ...org } : item));
++    }
++    await Promise.all([loadOrganizations({ preserveCurrent: true }), loadPosts(), loadEvents({ preserveCurrent: true }), loadProfileSocial(user.id), loadNotificationMasjids()]);
+   }
+ 
+   async function toggleFavoriteOrganization(id, isFavorited = false) {
+     if (!user) return alert('Log in to favorite masjids.');
+     await api(`/api/organizations/${id}/favorite`, { method: isFavorited ? 'DELETE' : 'POST' });
+     const org = selectedOrganization?.id === id ? await api(`/api/organizations/${id}`).catch(() => null) : null;
+-    if (org) setSelectedOrganization(org);
+-    await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id)]);
++    if (org) {
++      setSelectedOrganization(org);
++      setMasjids((current) => current.map((item) => String(item.id) === String(id) ? { ...item, ...org } : item));
++    }
++    await Promise.all([loadOrganizations({ preserveCurrent: true }), loadPosts(), loadEvents({ preserveCurrent: true }), loadProfileSocial(user.id)]);
+   }
