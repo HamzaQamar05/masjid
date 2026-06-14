@@ -3650,6 +3650,9 @@ export default function App() {
   const [notificationState, setNotificationState] = useState({ permission: 'default', message: '' });
   const [prayerPreferences, setPrayerPreferences] = useState({ enabled: false, offsetMinutes: 0, prayers: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true } });
   const [notificationPreferences, setNotificationPreferences] = useState(defaultNotificationPreferences);
+  const eventsLoadedRef = useRef(false);
+  const organizationsLoadedRef = useRef(false);
+  const myOrganizationsLoadedRef = useRef(false);
 
   async function bootstrap() {
     if (!token()) return;
@@ -3666,14 +3669,46 @@ export default function App() {
     setConnections(loadedConnections);
   }
 
-  async function loadEvents() {
-    const loadedEvents = await api('/api/events').catch(() => seedEvents);
-    setEvents(loadedEvents);
+  async function loadEvents(options = {}) {
+    try {
+      const loadedEvents = await api('/api/events');
+      if (options.preserveCurrent && eventsLoadedRef.current && events.length && !loadedEvents.length) {
+        console.warn('Event refresh returned no events; keeping the current event list.');
+        return events;
+      }
+      eventsLoadedRef.current = true;
+      setEvents(loadedEvents);
+      return loadedEvents;
+    } catch (error) {
+      if (!eventsLoadedRef.current) {
+        eventsLoadedRef.current = true;
+        setEvents(seedEvents);
+        return seedEvents;
+      }
+      console.warn('Event refresh failed; keeping the current event list.', error);
+      return events;
+    }
   }
 
-  async function loadOrganizations() {
-    const loadedOrganizations = await api('/api/organizations').catch(() => seedOrganizationsWithoutPrograms);
-    setMasjids(loadedOrganizations);
+  async function loadOrganizations(options = {}) {
+    try {
+      const loadedOrganizations = await api('/api/organizations');
+      if (options.preserveCurrent && organizationsLoadedRef.current && masjids.length && !loadedOrganizations.length) {
+        console.warn('Organization refresh returned no masjids; keeping the current masjid list.');
+        return masjids;
+      }
+      organizationsLoadedRef.current = true;
+      setMasjids(loadedOrganizations);
+      return loadedOrganizations;
+    } catch (error) {
+      if (!organizationsLoadedRef.current) {
+        organizationsLoadedRef.current = true;
+        setMasjids(seedOrganizationsWithoutPrograms);
+        return seedOrganizationsWithoutPrograms;
+      }
+      console.warn('Organization refresh failed; keeping the current masjid list.', error);
+      return masjids;
+    }
   }
 
   async function loadPosts() {
@@ -3710,13 +3745,29 @@ export default function App() {
     setOpportunities(loaded);
   }
 
-  async function loadMyOrganizations(currentUser = user) {
+  async function loadMyOrganizations(currentUser = user, options = {}) {
     if (!canManageOrgs(currentUser)) {
       setMyOrganizations([]);
       return;
     }
-    const loaded = await api('/api/me/organizations').catch(() => []);
-    setMyOrganizations(loaded);
+    try {
+      const loaded = await api('/api/me/organizations');
+      if (options.preserveCurrent && myOrganizationsLoadedRef.current && myOrganizations.length && !loaded.length) {
+        console.warn('Dashboard organization refresh returned no masjids; keeping the current dashboard list.');
+        return myOrganizations;
+      }
+      myOrganizationsLoadedRef.current = true;
+      setMyOrganizations(loaded);
+      return loaded;
+    } catch (error) {
+      if (!myOrganizationsLoadedRef.current) {
+        myOrganizationsLoadedRef.current = true;
+        setMyOrganizations([]);
+        return [];
+      }
+      console.warn('Dashboard organization refresh failed; keeping the current dashboard list.', error);
+      return myOrganizations;
+    }
   }
 
   async function loadProfileSocial(userId) {
@@ -4154,15 +4205,15 @@ export default function App() {
     function refreshOnFocus() {
       if (document.visibilityState === 'visible') {
         loadLocationData(location);
-        loadOrganizations();
+        loadOrganizations({ preserveCurrent: true });
         loadPosts();
-        loadEvents();
-        loadMyOrganizations();
+        loadEvents({ preserveCurrent: true });
+        loadMyOrganizations(user, { preserveCurrent: true });
       }
     }
     document.addEventListener('visibilitychange', refreshOnFocus);
     return () => document.removeEventListener('visibilitychange', refreshOnFocus);
-  }, [location]);
+  }, [location, user?.id]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -4172,10 +4223,10 @@ export default function App() {
       inFlight = true;
       try {
         await Promise.all([
-          loadEvents(),
-          loadOrganizations(),
+          loadEvents({ preserveCurrent: true }),
+          loadOrganizations({ preserveCurrent: true }),
           loadPosts(),
-          loadMyOrganizations(user),
+          loadMyOrganizations(user, { preserveCurrent: true }),
           loadProfileSocial(user.id)
         ]);
       } catch (error) {
