@@ -4626,6 +4626,68 @@ a {
   font-size: 12px;
 }
 
+.inbox-preview-list {
+  display: grid;
+  gap: 7px;
+}
+
+.inbox-preview-list button {
+  min-width: 0;
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.inbox-preview-list .org-logo {
+  width: 36px;
+  height: 36px;
+  font-size: 12px;
+}
+
+.inbox-preview-list button > div:nth-child(2) {
+  min-width: 0;
+}
+
+.inbox-preview-list strong,
+.inbox-preview-list span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-preview-list strong {
+  font-size: 13px;
+}
+
+.inbox-preview-list span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.inbox-preview-list em {
+  min-width: 24px;
+  min-height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .operator-management-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4740,7 +4802,8 @@ a {
 :root[data-theme="dark"] .operator-snapshot article,
 :root[data-theme="dark"] .attention-list button,
 :root[data-theme="dark"] .analytics-strip button,
-:root[data-theme="dark"] .event-attendance-grid div {
+:root[data-theme="dark"] .event-attendance-grid div,
+:root[data-theme="dark"] .inbox-preview-list button {
   background: var(--panel-bg);
   border-color: var(--border);
 }

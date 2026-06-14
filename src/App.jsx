@@ -1994,6 +1994,9 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'jobApplications', label: 'Job Applications', count: allApplications.filter(({ opportunity }) => opportunity.type === 'JOB').length, icon: Briefcase, action: () => openDashboardSection('jobApplications') },
     { key: 'eventApprovals', label: 'Event Pending Approval', count: metrics.pendingRegistrations, icon: CheckCircle2, action: () => openDashboardSection('eventApprovals') }
   ];
+  const inboxPreviewThreads = [...(threads || [])]
+    .sort((a, b) => Number(Boolean(b.unread)) - Number(Boolean(a.unread)) || new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0))
+    .slice(0, 3);
   const managementItems = [
     { key: 'events', label: 'Events', icon: CalendarDays },
     { key: 'programs', label: 'Programs', icon: Library },
@@ -2276,6 +2279,22 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                     </button>
                   );
                 })}
+              </div>
+            </section>
+            <section className="operator-section masjid-inbox-preview">
+              <div className="operator-section-title"><h3>Inbox</h3><button type="button" onClick={() => setTab?.('messages')}>Open all</button></div>
+              <div className="inbox-preview-list">
+                {inboxPreviewThreads.map((thread) => (
+                  <button key={thread.user.id} type="button" onClick={() => startMessage(thread.user)}>
+                    <div className="org-logo">{thread.user.avatarUrl ? <img src={thread.user.avatarUrl} alt="" /> : initials(thread.user.name)}</div>
+                    <div>
+                      <strong>{thread.user.name}</strong>
+                      <span>{thread.lastMessage || 'No message preview'}</span>
+                    </div>
+                    {thread.unread > 0 && <em>{thread.unread}</em>}
+                  </button>
+                ))}
+                {!inboxPreviewThreads.length && <p className="helper-text">No recent messages yet.</p>}
               </div>
             </section>
             <section className="operator-section">
