@@ -369,8 +369,11 @@ async function showAppNotification({ title, body, tag, url }) {
 function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, onNotificationsClick, openSettings, detailMode = false, mobileTabs = mobileNavKeys }) {
   const [navOpen, setNavOpen] = useState(false);
   const [pageMotion, setPageMotion] = useState('');
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDraggingPage, setIsDraggingPage] = useState(false);
   const previousTab = useRef(tab);
   const touchStart = useRef(null);
+  const touchLatest = useRef(null);
   const touchHandled = useRef(false);
   function navigate(key) {
     setTab(key);
@@ -397,43 +400,65 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
       y: touch.clientY,
       time: Date.now()
     };
+    touchLatest.current = touchStart.current;
     touchHandled.current = false;
   }
   function onTouchMove(event) {
-    if (!touchStart.current || touchHandled.current || event.touches.length !== 1) return;
+    if (!touchStart.current || event.touches.length !== 1) return;
     const touch = event.touches[0];
     const deltaX = touch.clientX - touchStart.current.x;
     const deltaY = touch.clientY - touchStart.current.y;
+    touchLatest.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
     if (Math.abs(deltaY) > swipeVerticalTolerance && Math.abs(deltaY) > Math.abs(deltaX)) {
       touchStart.current = null;
+      touchLatest.current = null;
+      setIsDraggingPage(false);
+      setDragOffset(0);
       return;
     }
-    if (Math.abs(deltaX) < swipeDistance || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return;
-    if (!navOpen && touchStart.current.x <= swipeEdgeWidth && deltaX > 0) {
+    if (Math.abs(deltaX) < 10 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
+    if (!navOpen && touchStart.current.x <= swipeEdgeWidth && deltaX > swipeDistance) {
       setNavOpen(true);
       touchHandled.current = true;
+      setIsDraggingPage(false);
+      setDragOffset(0);
       return;
     }
-    if (navOpen && deltaX < 0) {
+    if (navOpen && deltaX < -swipeDistance) {
       setNavOpen(false);
       touchHandled.current = true;
       return;
     }
-    if (detailMode || navOpen) return;
+    if (touchHandled.current || detailMode || navOpen) return;
     const index = mobileTabs.indexOf(tab);
     if (index === -1) return;
-    if (deltaX < 0 && index < mobileTabs.length - 1) {
-      navigate(mobileTabs[index + 1]);
-      touchHandled.current = true;
-    } else if (deltaX > 0 && index > 0 && touchStart.current.x > swipeEdgeWidth) {
-      navigate(mobileTabs[index - 1]);
-      touchHandled.current = true;
-    }
+    const canMoveNext = deltaX < 0 && index < mobileTabs.length - 1;
+    const canMovePrev = deltaX > 0 && index > 0 && touchStart.current.x > swipeEdgeWidth;
+    if (!canMoveNext && !canMovePrev) return;
+    event.preventDefault();
+    setIsDraggingPage(true);
+    setDragOffset(Math.max(-96, Math.min(96, deltaX)));
   }
   function onTouchEnd() {
+    if (isDraggingPage && touchStart.current && touchLatest.current) {
+      const deltaX = touchLatest.current.x - touchStart.current.x;
+      const elapsed = Math.max(1, touchLatest.current.time - touchStart.current.time);
+      const velocity = Math.abs(deltaX) / elapsed;
+      const index = mobileTabs.indexOf(tab);
+      const shouldCommit = Math.abs(deltaX) > 72 || velocity > 0.42;
+      if (shouldCommit && deltaX < 0 && index < mobileTabs.length - 1) {
+        navigate(mobileTabs[index + 1]);
+      } else if (shouldCommit && deltaX > 0 && index > 0 && touchStart.current.x > swipeEdgeWidth) {
+        navigate(mobileTabs[index - 1]);
+      }
+    }
     touchStart.current = null;
+    touchLatest.current = null;
     touchHandled.current = false;
+    setIsDraggingPage(false);
+    setDragOffset(0);
   }
+  const dragStyle = isDraggingPage ? { '--drag-x': `${dragOffset}px`, '--drag-opacity': String(1 - Math.min(Math.abs(dragOffset) / 420, 0.22)) } : undefined;
   return (
     <div className={detailMode ? 'app detail-mode' : 'app'} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       <header className="top-nav">
@@ -482,7 +507,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         <ProfileSummary user={user} onLogout={onLogout} setTab={navigate} />
         <NavigationList tab={tab} setTab={navigate} user={user} hasDashboardAccess={hasDashboardAccess} />
       </aside>
-      <main className={pageMotion ? `main-panel page-motion ${pageMotion}` : 'main-panel'} data-swipe-surface="true">{children}</main>
+      <main className={['main-panel', pageMotion ? `page-motion ${pageMotion}` : '', isDraggingPage ? 'page-dragging' : ''].filter(Boolean).join(' ')} data-swipe-surface="true" style={dragStyle}>{children}</main>
     </div>
   );
 }
@@ -1309,6 +1334,18 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
   const profileImage = organization.imageUrl || organization.heroImageUrl || organization.cover;
   const heroImage = organization.heroImageUrl || organization.cover || organization.imageUrl;
   const followerCount = organization.followerCount ?? organization.followers ?? 0;
+  const profileStats = [
+    { label: 'Followers', value: followerCount },
+    { label: 'Events', value: events.length },
+    { label: 'Programs', value: classes.length },
+    { label: 'Team', value: organization.peopleCount || (organization.people || []).length }
+  ];
+  const latestPosts = posts.slice(0, 2);
+  const upcomingEvents = events.slice(0, 2);
+  const featuredClasses = classes.slice(0, 2);
+  const featuredVolunteer = volunteer.slice(0, 2);
+  const featuredJobs = jobs.slice(0, 2);
+  const featuredTeam = (organization.people || []).slice(0, 3);
   const tags = [
     organization.verified ? 'Verified masjid' : null,
     organization.city,
@@ -1325,12 +1362,14 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
           <div>
             <h2>{organization.name}</h2>
             <p>{organization.address || organization.city || 'Location not added yet'}</p>
-            <p>{followerCount} followers - {organization.peopleCount || 0} team members</p>
           </div>
         </div>
         <div className="masjid-profile-summary">
           <TagRow tags={tags} />
           <p>{organization.description || 'This masjid profile is ready for onboarding details, prayer preferences, events, and announcements.'}</p>
+          <div className="masjid-stat-strip">
+            {profileStats.map((item) => <div key={item.label}><strong>{item.value}</strong><span>{item.label}</span></div>)}
+          </div>
           <div className="profile-info-grid">
             <div><span>Address</span><strong>{organization.address || organization.city || 'Location not added yet'}</strong></div>
             <div><span>Website</span><strong>{organization.website ? organization.website.replace(/^https?:\/\//, '').replace(/\/$/, '') : 'Not added yet'}</strong></div>
@@ -1349,38 +1388,38 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
 
       <div className="content-grid">
         <section className="feed-column">
-          <section className="panel">
-            <div className="section-title"><h2>Posts</h2><span>{posts.length}</span></div>
+          <section className="panel masjid-profile-section">
+            <div className="section-title"><h2>Updates</h2><span>{posts.length}</span></div>
             <div className="stack-list">
-              {posts.map((post) => <article className="mini-row feed-post" key={post.id}><span>{post.type} - {new Date(post.createdAt).toLocaleString()}</span><strong>{post.title}</strong><p>{post.content}</p>{post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}</article>)}
+              {latestPosts.map((post) => <article className="mini-row feed-post compact-profile-row" key={post.id}><span>{post.type} - {new Date(post.createdAt).toLocaleDateString()}</span><strong>{post.title}</strong><p>{post.content}</p>{post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}</article>)}
               {!posts.length && <p className="helper-text">No posts yet.</p>}
             </div>
           </section>
-          <section className="panel">
+          <section className="panel masjid-profile-section">
             <div className="section-title"><h2>Events</h2><span>{events.length}</span></div>
             <div className="stack-list">
-              {events.map((event) => <article className="mini-row" key={event.id}><strong>{event.title}</strong><span>{new Date(event.startTime).toLocaleString()}</span><p>{event.description || event.location || 'No details yet.'}</p></article>)}
+              {upcomingEvents.map((event) => <article className="mini-row compact-profile-row" key={event.id}><strong>{event.title}</strong><span>{new Date(event.startTime).toLocaleString()}</span><p>{event.description || event.location || 'No details yet.'}</p></article>)}
               {!events.length && <p className="helper-text">No events yet.</p>}
             </div>
           </section>
-          <section className="panel">
+          <section className="panel masjid-profile-section">
             <div className="section-title"><h2>Classes & Programs</h2><span>{classes.length}</span></div>
             <div className="stack-list">
-              {classes.map((item) => <article className="mini-row" key={item.id || item.title}><strong>{item.title}</strong><span>{item.teacher || item.imam || item.dayTime || 'Schedule TBD'}</span><p>{item.description || item.location || item.registrationLink || 'Registration details coming soon.'}</p></article>)}
+              {featuredClasses.map((item) => <article className="mini-row compact-profile-row" key={item.id || item.title}><strong>{item.title}</strong><span>{item.teacher || item.imam || item.dayTime || 'Schedule TBD'}</span><p>{item.description || item.location || item.registrationLink || 'Registration details coming soon.'}</p></article>)}
               {!classes.length && <p className="helper-text">No classes listed yet.</p>}
             </div>
           </section>
-          <section className="panel">
+          <section className="panel masjid-profile-section">
             <div className="section-title"><h2>Opportunities</h2><span>{volunteer.length}</span></div>
             <div className="stack-list">
-              {volunteer.map((item) => <article className="mini-row" key={item.id}><strong>{item.title}</strong><span>{item.type}</span><p>{item.description || item.location || 'No details yet.'}</p></article>)}
+              {featuredVolunteer.map((item) => <article className="mini-row compact-profile-row" key={item.id}><strong>{item.title}</strong><span>{item.type}</span><p>{item.description || item.location || 'No details yet.'}</p></article>)}
               {!volunteer.length && <p className="helper-text">No opportunities yet.</p>}
             </div>
           </section>
-          <section className="panel">
+          <section className="panel masjid-profile-section">
             <div className="section-title"><h2>Jobs</h2><span>{jobs.length}</span></div>
             <div className="stack-list">
-              {jobs.map((item) => <article className="mini-row" key={item.id}><strong>{item.title}</strong><span>{item.location || 'Location TBD'}</span><p>{item.description || 'No details yet.'}</p></article>)}
+              {featuredJobs.map((item) => <article className="mini-row compact-profile-row" key={item.id}><strong>{item.title}</strong><span>{item.location || 'Location TBD'}</span><p>{item.description || 'No details yet.'}</p></article>)}
               {!jobs.length && <p className="helper-text">No jobs posted yet.</p>}
             </div>
           </section>
@@ -1389,8 +1428,8 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
           <section className="panel">
             <div className="section-title"><h2>Imams & Team</h2><span>{organization.peopleCount || 0}</span></div>
             <div className="stack-list">
-              {(organization.people || []).map((person) => (
-                <article className="mini-row" key={person.id}>
+              {featuredTeam.map((person) => (
+                <article className="mini-row compact-profile-row" key={person.id}>
                   <strong>{person.user?.name || 'Team member'}</strong>
                   <span>{person.roleLabel}</span>
                   <p>{person.user?.bio || person.user?.city || person.user?.accountType || 'Community profile'}</p>
