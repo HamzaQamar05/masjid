@@ -752,6 +752,16 @@ function organizationType(value) {
   return ['MASJID', 'MSA'].includes(String(value || '').toUpperCase()) ? String(value).toUpperCase() : 'MASJID';
 }
 
+function optionalViewerId(req) {
+  const header = req.headers.authorization;
+  if (!header) return null;
+  try {
+    return jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret').id;
+  } catch {
+    return null;
+  }
+}
+
 async function createOrUpdateOrganizationOwner({ organization, ownerEmail, ownerName }) {
   const email = String(ownerEmail || '').trim().toLowerCase();
   if (!email) throw new Error('Masjid admin login email is required');
@@ -1536,24 +1546,46 @@ app.delete('/api/posts/:id', auth, async (req, res) => {
   res.json({ message: 'Post deleted' });
 });
 
+async function hydratedOrganizationForViewer(organizationId, viewerId) {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    include: {
+      events: { include: { registrations: { include: { user: true } } }, orderBy: { startTime: 'asc' } },
+      posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
+      opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } },
+      followers: { include: { user: true } },
+      favoritedBy: true,
+      people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
+    }
+  });
+  return org ? publicOrganization(org, viewerId) : null;
+}
+
 app.post('/api/organizations/:id/follow', auth, async (req, res) => {
+  const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+
   const existingFollow = await prisma.organizationFollow.findUnique({ where: { organizationId_userId: { organizationId: req.params.id, userId: req.user.id } } });
   const notifyPrayers = req.body.notifyPrayers === undefined ? Boolean(existingFollow?.notifyPrayers) : Boolean(req.body.notifyPrayers);
   if (notifyPrayers) {
     const activeNotificationFollows = await prisma.organizationFollow.count({ where: { userId: req.user.id, notifyPrayers: true, organizationId: { not: req.params.id } } });
     if (activeNotificationFollows >= 2) return res.status(400).json({ error: 'You can enable prayer notifications for up to 2 masjids' });
   }
-  const follow = await prisma.organizationFollow.upsert({
+
+  await prisma.organizationFollow.upsert({
     where: { organizationId_userId: { organizationId: req.params.id, userId: req.user.id } },
     create: { organizationId: req.params.id, userId: req.user.id, notifyPrayers },
     update: { notifyPrayers }
   });
-  res.json(follow);
+
+  const hydrated = await hydratedOrganizationForViewer(req.params.id, req.user.id);
+  res.json({ following: true, organization: hydrated });
 });
 
 app.delete('/api/organizations/:id/follow', auth, async (req, res) => {
   await prisma.organizationFollow.deleteMany({ where: { organizationId: req.params.id, userId: req.user.id } });
-  res.json({ message: 'Unfollowed' });
+  const hydrated = await hydratedOrganizationForViewer(req.params.id, req.user.id);
+  res.json({ following: false, organization: hydrated });
 });
 
 app.post('/api/organizations/:id/favorite', auth, async (req, res) => {
@@ -1682,7 +1714,18 @@ app.post('/api/events', auth, async (req, res) => {
     }
   });
   await syncEventPost(event, req.user.id);
-  res.json(event);
+  let push = null;
+  if (organizationId) {
+    push = await sendPushToOrganizationFollowers(organizationId, {
+      title: `New event: ${event.title}`,
+      body: event.description || event.location || 'A masjid you follow posted a new event.',
+      url: `/events/${event.id}`,
+      type: 'EVENT',
+      organizationId,
+      eventId: event.id
+    });
+  }
+  res.json({ ...event, push });
 });
 
 app.put('/api/events/:eventId', auth, async (req, res) => {
@@ -1707,7 +1750,18 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
   if (req.body.requiresApproval !== undefined) data.requiresApproval = Boolean(req.body.requiresApproval);
   const updated = await prisma.event.update({ where: { id: event.id }, data, include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } } });
   await updateSyncedEventPost(event, updated, updated.createdById || req.user.id);
-  res.json({ ...updated, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) });
+  let push = null;
+  if (updated.organizationId) {
+    push = await sendPushToOrganizationFollowers(updated.organizationId, {
+      title: `Event updated: ${updated.title}`,
+      body: updated.description || updated.location || 'An event from a masjid you follow was updated.',
+      url: `/events/${updated.id}`,
+      type: 'EVENT',
+      organizationId: updated.organizationId,
+      eventId: updated.id
+    });
+  }
+  res.json({ ...updated, push, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) });
 });
 
 app.delete('/api/events/:eventId', auth, async (req, res) => {
@@ -2043,7 +2097,8 @@ app.get('/api/location/masjids', async (req, res) => {
       },
       orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
     });
-    const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, null)));
+    const viewerId = optionalViewerId(req);
+    const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, viewerId)));
 
     const query = `
       [out:json][timeout:12];
@@ -2099,7 +2154,8 @@ app.get('/api/location/masjids', async (req, res) => {
         },
         orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
       });
-      const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, null)));
+      const viewerId = optionalViewerId(req);
+      const sqlResults = sqlMasjids.map((org) => enrichMasjid(publicOrganization(org, viewerId)));
       const seen = new Set(sqlResults.map((item) => normalizedMasjidName(item.name)));
       return res.json(withDistance([...sqlResults, ...fallbackMasjids.filter((item) => !seen.has(normalizedMasjidName(item.name)))], latitude, longitude));
     } catch {

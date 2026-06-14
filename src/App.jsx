@@ -4034,7 +4034,18 @@ export default function App() {
         api(`/api/location/masjids?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}`),
         api(`/api/prayer-times?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}&date=${Math.floor(Date.now() / 1000)}`)
       ]);
-      setMasjids(withLocalDistance(masjidData, nextLocation));
+      setMasjids((current) => {
+        const stateById = new Map(current.map((item) => [String(item.id), {
+          isFollowing: item.isFollowing,
+          isFavorited: item.isFavorited,
+          notifyPrayers: item.notifyPrayers,
+          followerCount: item.followerCount
+        }]));
+        return withLocalDistance(masjidData, nextLocation).map((item) => {
+          const previous = stateById.get(String(item.id));
+          return previous ? { ...item, ...Object.fromEntries(Object.entries(previous).filter(([, value]) => value !== undefined)) } : item;
+        });
+      });
       const timings = prayerData.timings || {};
       setPrayerTimes(prayers.map((item) => ({ ...item, adhan: (timings[item.name] || item.adhan).slice(0, 5) })));
     } catch {
@@ -4102,19 +4113,23 @@ export default function App() {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return alert('Notifications were not enabled.');
     }
-    await api(`/api/organizations/${id}/follow`, { method: 'POST', body: JSON.stringify({ notifyPrayers }) });
-    const org = await api(`/api/organizations/${id}`);
+    const result = await api(`/api/organizations/${id}/follow`, { method: 'POST', body: JSON.stringify({ notifyPrayers }) });
+    const org = result.organization || await api(`/api/organizations/${id}`);
     setSelectedOrganization(org);
+    setMasjids((current) => current.map((item) => String(item.id) === String(id) ? { ...item, ...org } : item));
     if (notifyPrayers) schedulePrayerNotification(org);
-    await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id), loadNotificationMasjids()]);
+    await Promise.all([loadOrganizations({ preserveCurrent: true }), loadPosts(), loadEvents({ preserveCurrent: true }), loadProfileSocial(user.id), loadNotificationMasjids()]);
   }
 
   async function unfollowOrganization(id) {
     if (!user) return alert('Log in to manage followed masjids.');
-    await api(`/api/organizations/${id}/follow`, { method: 'DELETE' });
-    const org = selectedOrganization?.id === id ? await api(`/api/organizations/${id}`).catch(() => null) : null;
-    if (org) setSelectedOrganization(org);
-    await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id), loadNotificationMasjids()]);
+    const result = await api(`/api/organizations/${id}/follow`, { method: 'DELETE' });
+    const org = result.organization || (selectedOrganization?.id === id ? await api(`/api/organizations/${id}`).catch(() => null) : null);
+    if (org) {
+      setSelectedOrganization(org);
+      setMasjids((current) => current.map((item) => String(item.id) === String(id) ? { ...item, ...org } : item));
+    }
+    await Promise.all([loadOrganizations({ preserveCurrent: true }), loadPosts(), loadEvents({ preserveCurrent: true }), loadProfileSocial(user.id), loadNotificationMasjids()]);
   }
 
   async function toggleFavoriteOrganization(id, isFavorited = false) {
