@@ -5167,3 +5167,172 @@ button.mini-org-avatar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+@media (max-width: 880px) {
+  html,
+  body,
+  #root,
+  .app,
+  .main-panel,
+  .page,
+  .content-grid,
+  .feed-column,
+  .feed-post,
+  .panel {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  .top-nav {
+    grid-template-columns: 40px minmax(34px, 1fr) auto;
+    gap: 6px;
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+    overflow: hidden;
+  }
+
+  .brand {
+    justify-self: center;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .brand span {
+    width: clamp(32px, 9.4vw, 38px);
+    height: clamp(32px, 9.4vw, 38px);
+    font-size: clamp(13px, 3.6vw, 16px);
+  }
+
+  .top-actions {
+    min-width: 0;
+    max-width: 100%;
+    justify-content: flex-end;
+    gap: clamp(3px, 1.4vw, 6px);
+    overflow: hidden;
+  }
+
+  .top-actions .profile-chip {
+    display: none;
+  }
+
+  .top-actions .icon-button,
+  .dm-top-button {
+    width: clamp(33px, 9.4vw, 38px);
+    min-width: clamp(33px, 9.4vw, 38px);
+    height: clamp(33px, 9.4vw, 38px);
+    min-height: clamp(33px, 9.4vw, 38px);
+  }
+
+  .composer-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .composer-actions button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+    justify-content: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hub-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .hub-actions > * {
+    min-width: 0;
+    width: 100%;
+    justify-content: center;
+    padding-inline: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .feed-post {
+    padding-inline: 12px;
+  }
+
+  .feed-post header,
+  .feed-post header > div,
+  .feed-post p,
+  .feed-post h2 {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .post-image {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 52dvh;
+    object-fit: cover;
+  }
+
+  .mobile-bottom-nav {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 370px) {
+  .top-nav {
+    grid-template-columns: 36px minmax(30px, 1fr) auto;
+    gap: 4px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(6px, env(safe-area-inset-right));
+  }
+
+  .mobile-menu,
+  .top-actions .icon-button,
+  .dm-top-button {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+  }
+
+  .top-actions {
+    gap: 3px;
+  }
+
+  .brand span {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    font-size: 13px;
+  }
+
+  .composer {
+    padding-inline: 10px;
+  }
+
+  .composer-actions,
+  .hub-actions {
+    gap: 6px;
+  }
+
+  .composer-actions button,
+  .hub-actions > * {
+    min-height: 38px;
+    padding-inline: 6px;
+    font-size: 12px;
+  }
+
+  .mobile-bottom-nav {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
