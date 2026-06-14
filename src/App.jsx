@@ -859,7 +859,7 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
   const [eventDate, setEventDate] = useState('all');
   const [eventLocation, setEventLocation] = useState('all');
   const [eventHost, setEventHost] = useState('all');
-  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [detailItem, setDetailItem] = useState(null);
   async function deleteEvent(id) {
     if (!confirm('Delete this event?')) return;
     await api(`/api/events/${id}`, { method: 'DELETE' });
@@ -874,8 +874,7 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
     return event?.imageUrl || event?.bannerUrl || event?.organization?.heroImageUrl || 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=1200&q=80';
   }
   function openItem(item) {
-    if (item.isProgram) setSelectedEvent(item);
-    else openEvent(item.id);
+    setDetailItem(item);
   }
   function matchesDate(event) {
     if (eventDate === 'all') return true;
@@ -926,8 +925,32 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
     return matchesDate(event);
   });
   const routeEvent = detailEventId ? events.find((event) => String(event.id) === String(detailEventId)) : null;
-  const featuredEvent = routeEvent || selectedEvent || visibleEvents[0] || discoveryItems[0];
+  const featuredEvent = routeEvent || detailItem;
   const detailMode = Boolean(detailEventId);
+  function DetailContent({ item }) {
+    if (!item) return null;
+    return (
+      <article className="event-detail-panel panel">
+        <div className="event-detail-image" style={{ backgroundImage: `url(${eventImage(item)})` }} />
+        <div>
+          <p className="eyebrow">{item.organization?.name || item.createdBy?.name || 'Community host'}</p>
+          <h2>{item.title}</h2>
+          <p>{item.description || 'Event details will appear here once the host adds them.'}</p>
+          <div className="meta-line"><CalendarDays size={16} />{item.isProgram ? item.dayTime || 'Schedule TBA' : eventTiming(item)?.toLocaleString() || item.time || 'Time TBA'}</div>
+          <div className="meta-line"><MapPin size={16} />{item.location || item.place || 'Location TBA'}</div>
+          <TagRow tags={[(item.category || item.type || 'Community'), item.teacher && `Teacher: ${item.teacher}`, item.requiresApproval && 'Approval required', item.capacity && `${item.capacity} capacity`].filter(Boolean)} />
+          <div className="hub-actions">
+            {item.isProgram && item.registrationLink && <a className="primary-button" href={item.registrationLink} target="_blank" rel="noreferrer">Register</a>}
+            {item.isProgram && openOrganization && <button className="secondary-button" onClick={() => openOrganization(item.organizationId)}>Open masjid</button>}
+            {!item.isProgram && (isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : (item.registrations || []).find((registration) => registration.userId === user.id) ? <button className="secondary-button" onClick={() => unregisterEvent(item.id)}>Cancel registration</button> : <button className="primary-button" onClick={() => registerEvent(item.id)}>{item.requiresApproval ? 'Request entry' : 'Register'}</button>)}
+            {!item.isProgram && !isOrganizationAccount(user) && <button className="secondary-button" onClick={() => toggleEventSubscription(item, { saved: !item.isSaved, notify: item.notifyMe })}>{item.isSaved ? 'Saved' : 'Save event'}</button>}
+            {!item.isProgram && !isOrganizationAccount(user) && <button className={item.notifyMe ? 'primary-button' : 'secondary-button'} onClick={() => toggleEventSubscription(item, { saved: true, notify: !item.notifyMe })}>{item.notifyMe ? 'Reminders on' : 'Notify me'}</button>}
+            {(item.location || item.place) && <a className="secondary-button" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location || item.place)}`} target="_blank" rel="noreferrer">Map</a>}
+          </div>
+        </div>
+      </article>
+    );
+  }
   function EventCard({ event }) {
     const canDelete = !event.isProgram && (user.accountType === 'ADMIN' || event.createdById === user.id || event.createdBy?.id === user.id || myOrganizations.some((org) => org.id === event.organizationId));
     const registration = (event.registrations || []).find((item) => item.userId === user.id);
@@ -967,27 +990,7 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
       )}
       {detailMode && <BackHeader title="Event" subtitle={featuredEvent?.organization?.name || featuredEvent?.createdBy?.name || 'Community'} onBack={onBack} />}
       <section className={detailMode ? 'event-discovery detail-route' : 'event-discovery'}>
-        {featuredEvent && (
-          <article className="event-detail-panel panel">
-            <div className="event-detail-image" style={{ backgroundImage: `url(${eventImage(featuredEvent)})` }} />
-            <div>
-              <p className="eyebrow">{featuredEvent.organization?.name || featuredEvent.createdBy?.name || 'Community host'}</p>
-              <h2>{featuredEvent.title}</h2>
-              <p>{featuredEvent.description || 'Event details will appear here once the host adds them.'}</p>
-              <div className="meta-line"><CalendarDays size={16} />{featuredEvent.isProgram ? featuredEvent.dayTime || 'Schedule TBA' : eventTiming(featuredEvent)?.toLocaleString() || featuredEvent.time || 'Time TBA'}</div>
-              <div className="meta-line"><MapPin size={16} />{featuredEvent.location || featuredEvent.place || 'Location TBA'}</div>
-              <TagRow tags={[(featuredEvent.category || featuredEvent.type || 'Community'), featuredEvent.teacher && `Teacher: ${featuredEvent.teacher}`, featuredEvent.requiresApproval && 'Approval required', featuredEvent.capacity && `${featuredEvent.capacity} capacity`].filter(Boolean)} />
-              <div className="hub-actions">
-                {featuredEvent.isProgram && featuredEvent.registrationLink && <a className="primary-button" href={featuredEvent.registrationLink} target="_blank" rel="noreferrer">Register</a>}
-                {featuredEvent.isProgram && openOrganization && <button className="secondary-button" onClick={() => openOrganization(featuredEvent.organizationId)}>Open masjid</button>}
-                {!featuredEvent.isProgram && (isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : (featuredEvent.registrations || []).find((item) => item.userId === user.id) ? <button className="secondary-button" onClick={() => unregisterEvent(featuredEvent.id)}>Cancel registration</button> : <button className="primary-button" onClick={() => registerEvent(featuredEvent.id)}>{featuredEvent.requiresApproval ? 'Request entry' : 'Register'}</button>)}
-                {!featuredEvent.isProgram && !isOrganizationAccount(user) && <button className="secondary-button" onClick={() => toggleEventSubscription(featuredEvent, { saved: !featuredEvent.isSaved, notify: featuredEvent.notifyMe })}>{featuredEvent.isSaved ? 'Saved' : 'Save event'}</button>}
-                {!featuredEvent.isProgram && !isOrganizationAccount(user) && <button className={featuredEvent.notifyMe ? 'primary-button' : 'secondary-button'} onClick={() => toggleEventSubscription(featuredEvent, { saved: true, notify: !featuredEvent.notifyMe })}>{featuredEvent.notifyMe ? 'Reminders on' : 'Notify me'}</button>}
-                {(featuredEvent.location || featuredEvent.place) && <a className="secondary-button" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(featuredEvent.location || featuredEvent.place)}`} target="_blank" rel="noreferrer">Map</a>}
-              </div>
-            </div>
-          </article>
-        )}
+        {detailMode && featuredEvent && <DetailContent item={featuredEvent} />}
         {!detailMode && <section className="filter-panel event-filters">
           <label><Search size={15} /><input placeholder="Search events and programs" value={eventQuery} onChange={(event) => setEventQuery(event.target.value)} /></label>
           <select value={eventKind} onChange={(event) => setEventKind(event.target.value)}>
@@ -1011,6 +1014,14 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
           {!visibleEvents.length && <section className="panel"><p className="helper-text">No events match those filters yet.</p></section>}
         </div>}
       </section>
+      {!detailMode && detailItem && (
+        <div className="modal-backdrop event-detail-modal-backdrop" role="dialog" aria-modal="true" aria-label={`${detailItem.title} details`} onClick={() => setDetailItem(null)}>
+          <div className="event-detail-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="icon-button modal-close-button" onClick={() => setDetailItem(null)} aria-label="Close details"><X size={18} /></button>
+            <DetailContent item={detailItem} />
+          </div>
+        </div>
+      )}
     </Page>
   );
 }

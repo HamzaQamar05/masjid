@@ -700,8 +700,10 @@ a {
 
 .post-image {
   width: 100%;
-  max-height: 320px;
-  object-fit: cover;
+  max-height: min(760px, 76dvh);
+  min-height: 360px;
+  object-fit: contain;
+  background: #f4f7f6;
   border-radius: 8px;
   border: 1px solid #dce6e3;
 }
@@ -1754,9 +1756,9 @@ a {
 
 .event-detail-image,
 .event-banner {
-  min-height: 220px;
+  min-height: 460px;
   border-radius: 8px;
-  background: #d8e2df center / cover;
+  background: #f4f7f6 center / contain no-repeat;
 }
 
 .event-detail-panel h2 {
@@ -1788,9 +1790,31 @@ a {
 .event-banner {
   position: relative;
   width: 100%;
+  aspect-ratio: 4 / 5;
+  min-height: 420px;
   border: 0;
   display: block;
   cursor: pointer;
+}
+
+.event-detail-modal {
+  position: relative;
+  width: min(980px, 100%);
+  max-height: min(900px, 92dvh);
+  overflow: auto;
+}
+
+.event-detail-modal .event-detail-panel {
+  margin: 0;
+}
+
+.modal-close-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 30px rgba(20, 36, 31, 0.18);
 }
 
 .event-date-badge {
@@ -4473,6 +4497,19 @@ button.mini-org-avatar {
     border-radius: 0;
     border-left: 0;
     border-right: 0;
+  }
+
+  .event-banner,
+  .event-detail-image {
+    min-height: 380px;
+  }
+
+  .event-detail-modal-backdrop {
+    padding: 10px;
+  }
+
+  .event-detail-modal .event-detail-panel {
+    grid-template-columns: 1fr;
   }
 
   .post-social-row {
