@@ -2402,12 +2402,85 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     await createOpportunity(organizationId, oppForm);
     setOppForm({ organizationId, type: 'VOLUNTEER', title: '', description: '', requirements: '', location: '', skills: '', hours: '', workType: 'volunteer', deadline: '', applicationQuestions: '' });
   }
+  function resetPostComposer(organizationId, type = postForm.type) {
+    setPostForm({ organizationId, type, title: '', content: '', imageUrl: '', location: '', eventTime: '' });
+  }
+  function postDestination(type = postForm.type) {
+    const upperType = String(type || '').toUpperCase();
+    if (upperType === 'EVENT') return 'Events';
+    if (upperType === 'CLASS') return 'Programs';
+    if (upperType === 'VOLUNTEER') return 'Volunteers';
+    if (upperType === 'JOB') return 'Jobs';
+    return 'Home feed';
+  }
+  function postSubmitLabel(type = postForm.type) {
+    const upperType = String(type || '').toUpperCase();
+    if (upperType === 'EVENT') return 'Post event';
+    if (upperType === 'CLASS') return 'Publish program';
+    if (upperType === 'VOLUNTEER') return 'Post volunteer role';
+    if (upperType === 'JOB') return 'Post job';
+    if (upperType === 'ANNOUNCEMENT') return 'Send announcement';
+    return 'Publish to home';
+  }
   async function submitPost(event) {
     event.preventDefault();
     const organizationId = postForm.organizationId || myOrganizations[0]?.id;
     if (!organizationId) return alert('Create or select a masjid first.');
-    await createPost(organizationId, postForm);
-    setPostForm({ organizationId, type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
+    const type = String(postForm.type || 'ANNOUNCEMENT').toUpperCase();
+    if (type === 'EVENT') {
+      if (!postForm.eventTime) return alert('Event date and time are required.');
+      await createEvent({
+        organizationId,
+        title: postForm.title,
+        description: postForm.content,
+        location: postForm.location,
+        imageUrl: postForm.imageUrl,
+        startTime: postForm.eventTime,
+        capacity: '',
+        requiresApproval: false
+      });
+      resetPostComposer(organizationId, 'EVENT');
+      openDashboardSection('events');
+      return;
+    }
+    if (type === 'CLASS') {
+      if (!postForm.title.trim()) return alert('Program title is required.');
+      const org = myOrganizations.find((item) => item.id === organizationId);
+      const nextClass = {
+        id: `class-${Date.now()}`,
+        title: postForm.title.trim(),
+        teacher: '',
+        description: postForm.content.trim(),
+        dayTime: postForm.eventTime ? new Date(postForm.eventTime).toLocaleString() : '',
+        location: postForm.location.trim(),
+        imageUrl: postForm.imageUrl.trim(),
+        notes: '',
+        registrationLink: ''
+      };
+      await updateOrganization(organizationId, { classes: [...(org?.classes || []), nextClass] });
+      resetPostComposer(organizationId, 'CLASS');
+      openDashboardSection('programs');
+      return;
+    }
+    if (['VOLUNTEER', 'JOB'].includes(type)) {
+      await createOpportunity(organizationId, {
+        type,
+        title: postForm.title,
+        description: postForm.content,
+        requirements: '',
+        location: postForm.location,
+        skills: '',
+        hours: '',
+        workType: type === 'JOB' ? 'part-time' : 'volunteer',
+        deadline: '',
+        applicationQuestions: ''
+      });
+      resetPostComposer(organizationId, type);
+      openDashboardSection(type === 'JOB' ? 'jobs' : 'volunteers');
+      return;
+    }
+    await createPost(organizationId, { ...postForm, type });
+    resetPostComposer(organizationId, type);
   }
   async function submitEvent(event) {
     event.preventDefault();
@@ -2963,8 +3036,8 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
           )}
 
           {activeSection === 'posts' && <section className="panel">
-            <div className="section-title"><h2>{postForm.type === 'ANNOUNCEMENT' ? 'Send Announcement' : 'Create Feed Post'}</h2><span>{postForm.type === 'ANNOUNCEMENT' ? 'Push to followers' : 'Community post'}</span></div>
-            {postForm.type === 'ANNOUNCEMENT' && <p className="helper-text">Use this for Eid updates, parking notices, cancellations, guest speakers, and urgent masjid reminders. Followers with notifications enabled receive a push alert.</p>}
+            <div className="section-title"><h2>Create From Dashboard</h2><span>{postDestination(postForm.type)}</span></div>
+            <p className="helper-text">Choose a category and it will publish to the right place: Events, Programs, Volunteers, Jobs, or the Home feed.</p>
             <form className="profile-form" onSubmit={submitPost}>
               <div className="form-grid">
                 <select value={postForm.organizationId} onChange={(event) => setPostForm({ ...postForm, organizationId: event.target.value })}>
@@ -2972,15 +3045,21 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                   {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
                 </select>
                 <select value={postForm.type} onChange={(event) => setPostForm({ ...postForm, type: event.target.value })}>
-                  {['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].map((type) => <option key={type} value={type}>{type}</option>)}
+                  <option value="ANNOUNCEMENT">Announcement - Home feed</option>
+                  <option value="REMINDER">Reminder - Home feed</option>
+                  <option value="FUNDRAISER">Fundraiser - Home feed</option>
+                  <option value="EVENT">Event - Events</option>
+                  <option value="CLASS">Program/Class - Programs</option>
+                  <option value="VOLUNTEER">Volunteer - Volunteers</option>
+                  <option value="JOB">Job - Jobs</option>
                 </select>
-                <input required placeholder={postForm.type === 'ANNOUNCEMENT' ? 'Announcement title' : 'Post title'} value={postForm.title} onChange={(event) => setPostForm({ ...postForm, title: event.target.value })} />
+                <input required placeholder={`${postDestination(postForm.type)} title`} value={postForm.title} onChange={(event) => setPostForm({ ...postForm, title: event.target.value })} />
                 <input placeholder="Image URL" value={postForm.imageUrl} onChange={(event) => setPostForm({ ...postForm, imageUrl: event.target.value })} />
                 <input placeholder="Location" value={postForm.location} onChange={(event) => setPostForm({ ...postForm, location: event.target.value })} />
-                <input type="datetime-local" value={postForm.eventTime} onChange={(event) => setPostForm({ ...postForm, eventTime: event.target.value })} />
+                <input required={postForm.type === 'EVENT'} type="datetime-local" value={postForm.eventTime} onChange={(event) => setPostForm({ ...postForm, eventTime: event.target.value })} />
               </div>
-              <textarea required placeholder={postForm.type === 'ANNOUNCEMENT' ? 'What should followers know?' : 'Post content'} value={postForm.content} onChange={(event) => setPostForm({ ...postForm, content: event.target.value })} />
-              <button className="primary-button">{postForm.type === 'ANNOUNCEMENT' ? 'Send announcement' : 'Publish post'}</button>
+              <textarea required placeholder={postForm.type === 'CLASS' ? 'Program description' : postForm.type === 'JOB' ? 'Job description' : postForm.type === 'VOLUNTEER' ? 'Volunteer role description' : postForm.type === 'EVENT' ? 'Event description' : 'What should followers know?'} value={postForm.content} onChange={(event) => setPostForm({ ...postForm, content: event.target.value })} />
+              <button className="primary-button">{postSubmitLabel(postForm.type)}</button>
             </form>
           </section>}
 
