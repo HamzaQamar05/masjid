@@ -595,6 +595,7 @@ a {
 
 .mobile-menu,
 .mobile-drawer,
+.drawer-scrim,
 .mobile-bottom-nav {
   display: none;
 }
@@ -2986,6 +2987,7 @@ button.mini-org-avatar {
   .app {
     display: block;
     padding: 82px 14px 88px;
+    touch-action: pan-y;
   }
 
   .brand strong {
@@ -3004,10 +3006,23 @@ button.mini-org-avatar {
     transform: translateX(-105%);
     transition: transform 180ms ease;
     box-shadow: 18px 0 60px rgba(20, 36, 31, 0.22);
+    touch-action: pan-y;
+    will-change: transform;
   }
 
   .mobile-drawer.open {
     transform: translateX(0);
+  }
+
+  .drawer-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    display: block;
+    border: 0;
+    background: rgba(5, 18, 16, 0.28);
+    padding: 0;
+    backdrop-filter: blur(2px);
   }
 
   .drawer-head {
@@ -3078,6 +3093,8 @@ button.mini-org-avatar {
     padding: 6px;
     box-shadow: 0 14px 40px rgba(20, 36, 31, 0.16);
     backdrop-filter: blur(14px);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
 
   .mobile-bottom-nav button {
@@ -3091,6 +3108,7 @@ button.mini-org-avatar {
     gap: 2px;
     font-size: 10px;
     font-weight: 800;
+    touch-action: manipulation;
   }
 
   .mobile-bottom-nav button span {
@@ -4256,12 +4274,15 @@ button.mini-org-avatar {
     background: color-mix(in srgb, var(--panel-bg) 96%, transparent);
     border-color: color-mix(in srgb, var(--border) 86%, transparent);
     box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.2);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
 
   .mobile-bottom-nav button {
     min-height: 44px;
     border-radius: 16px;
     gap: 1px;
+    touch-action: manipulation;
   }
 
   .mobile-bottom-nav button.active {
@@ -4277,6 +4298,8 @@ button.mini-org-avatar {
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    will-change: transform;
   }
 
   .mobile-drawer .drawer-head {

@@ -124,6 +124,9 @@ const navItems = [
 
 const leftNavKeys = ['organizations', 'events', 'library', 'volunteers', 'jobs', 'businesses', 'dashboard'];
 const mobileNavKeys = ['home', 'prayer', 'messages', 'network', 'profile'];
+const swipeDistance = 64;
+const swipeEdgeWidth = 34;
+const swipeVerticalTolerance = 44;
 
 function pathForTab(key, id) {
   const paths = {
@@ -363,14 +366,61 @@ async function showAppNotification({ title, body, tag, url }) {
   };
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, onNotificationsClick, openSettings, detailMode = false }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, onNotificationsClick, openSettings, detailMode = false, mobileTabs = mobileNavKeys }) {
   const [navOpen, setNavOpen] = useState(false);
+  const touchStart = useRef(null);
+  const touchHandled = useRef(false);
   function navigate(key) {
     setTab(key);
     setNavOpen(false);
   }
+  function onTouchStart(event) {
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    touchStart.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now()
+    };
+    touchHandled.current = false;
+  }
+  function onTouchMove(event) {
+    if (!touchStart.current || touchHandled.current || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - touchStart.current.x;
+    const deltaY = touch.clientY - touchStart.current.y;
+    if (Math.abs(deltaY) > swipeVerticalTolerance && Math.abs(deltaY) > Math.abs(deltaX)) {
+      touchStart.current = null;
+      return;
+    }
+    if (Math.abs(deltaX) < swipeDistance || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return;
+    if (!navOpen && touchStart.current.x <= swipeEdgeWidth && deltaX > 0) {
+      setNavOpen(true);
+      touchHandled.current = true;
+      return;
+    }
+    if (navOpen && deltaX < 0) {
+      setNavOpen(false);
+      touchHandled.current = true;
+      return;
+    }
+    if (detailMode || navOpen) return;
+    const index = mobileTabs.indexOf(tab);
+    if (index === -1) return;
+    if (deltaX < 0 && index < mobileTabs.length - 1) {
+      navigate(mobileTabs[index + 1]);
+      touchHandled.current = true;
+    } else if (deltaX > 0 && index > 0 && touchStart.current.x > swipeEdgeWidth) {
+      navigate(mobileTabs[index - 1]);
+      touchHandled.current = true;
+    }
+  }
+  function onTouchEnd() {
+    touchStart.current = null;
+    touchHandled.current = false;
+  }
   return (
-    <div className={detailMode ? 'app detail-mode' : 'app'}>
+    <div className={detailMode ? 'app detail-mode' : 'app'} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       <header className="top-nav">
         <button className="icon-button mobile-menu" onClick={() => setNavOpen(true)} aria-label="Open menu"><Menu size={22} /></button>
         <button className="brand" onClick={() => navigate('home')} aria-label="Ummah Connect home"><span>UC</span><strong>Ummah Connect</strong></button>
@@ -403,6 +453,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         </div>
         
       </header>
+      {navOpen && <button className="drawer-scrim" aria-label="Close menu" onClick={() => setNavOpen(false)} />}
       <div className={navOpen ? 'mobile-drawer open' : 'mobile-drawer'}>
         <div className="drawer-head"><strong>Menu</strong><button className="icon-button" onClick={() => setNavOpen(false)}><X size={20} /></button></div>
         <div className="drawer-profile">
@@ -416,7 +467,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         <ProfileSummary user={user} onLogout={onLogout} setTab={navigate} />
         <NavigationList tab={tab} setTab={navigate} user={user} hasDashboardAccess={hasDashboardAccess} />
       </aside>
-      <main className="main-panel">{children}</main>
+      <main className="main-panel" data-swipe-surface="true">{children}</main>
     </div>
   );
 }
@@ -3706,6 +3757,7 @@ export default function App() {
   const prioritizedPosts = [...posts].sort((a, b) => Number(b.isFromFavoriteMasjid || favoriteMasjidIds.has(b.organization?.id)) - Number(a.isFromFavoriteMasjid || favoriteMasjidIds.has(a.organization?.id)) || Number(b.isFromFollowedMasjid || followedMasjidIds.has(b.organization?.id)) - Number(a.isFromFollowedMasjid || followedMasjidIds.has(a.organization?.id)) || new Date(b.createdAt) - new Date(a.createdAt));
   const prioritizedEvents = [...events].sort((a, b) => favoriteRank(b.organizationId || b.organization?.id) - favoriteRank(a.organizationId || a.organization?.id) || new Date(a.startTime || 0) - new Date(b.startTime || 0));
   const prioritizedOpportunities = [...opportunities].sort((a, b) => favoriteRank(b.organizationId || b.organization?.id) - favoriteRank(a.organizationId || a.organization?.id) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const visibleMobileTabs = mobileNavKeys.filter((key) => hasPreference(user, key));
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
@@ -3756,14 +3808,16 @@ export default function App() {
         onNotificationsClick={() => setShowNotifications(true)}
         openSettings={() => setTab('settings')}
         detailMode={isDetailRoute}
+        mobileTabs={visibleMobileTabs}
       >
         {screens[tab] || screens.home}
       </Shell>
      
       <section className={isDetailRoute ? 'mobile-bottom-nav detail-hidden' : 'mobile-bottom-nav'}>
-        {navItems.filter((item) => mobileNavKeys.includes(item.key)).map((item) => {
+        {visibleMobileTabs.map((key) => navItems.find((item) => item.key === key)).filter(Boolean).map((item) => {
           const Icon = item.icon;
-          return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{item.label}</span>{item.key === 'messages' && unreadTotal > 0 && <em>{unreadTotal > 9 ? '9+' : unreadTotal}</em>}</button>;
+          const label = item.key === 'profile' ? 'People' : item.label;
+          return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{label}</span>{item.key === 'messages' && unreadTotal > 0 && <em>{unreadTotal > 9 ? '9+' : unreadTotal}</em>}</button>;
         })}
       </section>
         {showNotifications && (
