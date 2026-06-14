@@ -1572,7 +1572,7 @@ app.get('/api/events', async (req, res) => {
 });
 
 app.post('/api/events', auth, async (req, res) => {
-  const { title, description, location, startTime, endTime, organizationId, capacity, requiresApproval } = req.body;
+  const { title, description, location, imageUrl, startTime, endTime, organizationId, capacity, requiresApproval } = req.body;
   if (!title || !startTime) return res.status(400).json({ error: 'Title and start time are required' });
   if (!organizationId && !['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Only masjid, MSA, or admin accounts can post standalone events' });
   if (organizationId && !(await canManageOrganization(req.user, organizationId))) return res.status(403).json({ error: 'You can only post under an organization you manage' });
@@ -1581,6 +1581,7 @@ app.post('/api/events', auth, async (req, res) => {
       title,
       description,
       location,
+      imageUrl: imageUrl || null,
       startTime: new Date(startTime),
       endTime: endTime ? new Date(endTime) : null,
       capacity: capacity ? Number(capacity) : null,
@@ -1604,6 +1605,7 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
   }
   if (req.body.description !== undefined) data.description = req.body.description || null;
   if (req.body.location !== undefined) data.location = req.body.location || null;
+  if (req.body.imageUrl !== undefined) data.imageUrl = req.body.imageUrl || null;
   if (req.body.startTime !== undefined) {
     if (!req.body.startTime) return res.status(400).json({ error: 'Start time is required' });
     data.startTime = new Date(req.body.startTime);

@@ -226,6 +226,7 @@ model Event {
   title            String
   description      String?
   location         String?
+  imageUrl         String?
   startTime        DateTime
   endTime          DateTime?
   capacity         Int?
