@@ -284,7 +284,6 @@ function publicOrganization(org, viewerId) {
   const followers = org.followers || [];
   const favorites = org.favoritedBy || [];
   const people = org.people || [];
-  const posts = (org.posts || []).map(publicPost);
   const events = (org.events || []).map((event) => ({
     ...event,
     registrations: (event.registrations || []).map((registration) => ({
@@ -292,6 +291,7 @@ function publicOrganization(org, viewerId) {
       user: publicUser(registration.user)
     }))
   }));
+  const posts = (org.posts || []).filter((post) => hasMatchingEvent(post, events)).map(publicPost);
   const opportunities = (org.opportunities || []).map((opportunity) => ({
     ...opportunity,
     applications: (opportunity.applications || []).map((application) => ({
@@ -372,6 +372,88 @@ function publicPost(post) {
     })),
     commentCount: _count?.comments ?? comments.length
   };
+}
+
+function sameDateTime(left, right) {
+  if (!left || !right) return false;
+  const leftTime = new Date(left).getTime();
+  const rightTime = new Date(right).getTime();
+  return Number.isFinite(leftTime) && leftTime === rightTime;
+}
+
+function hasMatchingEvent(post, events = []) {
+  if (String(post.type || '').toUpperCase() !== 'EVENT') return true;
+  return events.some((event) => {
+    if (event.organizationId !== post.organizationId || event.title !== post.title) return false;
+    return post.eventTime ? sameDateTime(event.startTime, post.eventTime) : true;
+  });
+}
+
+function eventPostContent(event) {
+  return String(event.description || event.location || 'Event details coming soon.').trim();
+}
+
+async function syncEventPost(event, authorId) {
+  if (!event.organizationId) return null;
+  const where = {
+    organizationId: event.organizationId,
+    type: 'EVENT',
+    title: event.title,
+    eventTime: event.startTime
+  };
+  const existing = await prisma.post.findFirst({ where });
+  const data = {
+    organizationId: event.organizationId,
+    authorId,
+    title: event.title,
+    content: eventPostContent(event),
+    type: 'EVENT',
+    imageUrl: event.imageUrl || null,
+    location: event.location || null,
+    eventTime: event.startTime
+  };
+  if (existing) return prisma.post.update({ where: { id: existing.id }, data });
+  return prisma.post.create({ data });
+}
+
+async function updateSyncedEventPost(previousEvent, updatedEvent, authorId) {
+  if (!updatedEvent.organizationId) return null;
+  const existing = await prisma.post.findFirst({
+    where: {
+      organizationId: updatedEvent.organizationId,
+      type: 'EVENT',
+      OR: [
+        { title: previousEvent.title, eventTime: previousEvent.startTime },
+        { title: updatedEvent.title, eventTime: updatedEvent.startTime }
+      ]
+    }
+  });
+  const data = {
+    organizationId: updatedEvent.organizationId,
+    authorId,
+    title: updatedEvent.title,
+    content: eventPostContent(updatedEvent),
+    type: 'EVENT',
+    imageUrl: updatedEvent.imageUrl || null,
+    location: updatedEvent.location || null,
+    eventTime: updatedEvent.startTime
+  };
+  if (existing) return prisma.post.update({ where: { id: existing.id }, data });
+  return prisma.post.create({ data });
+}
+
+async function deleteSyncedEventPosts(event) {
+  if (!event.organizationId) return { count: 0 };
+  return prisma.post.deleteMany({
+    where: {
+      organizationId: event.organizationId,
+      type: 'EVENT',
+      OR: [
+        { title: event.title, eventTime: event.startTime },
+        { title: event.title, eventTime: null }
+      ]
+    }
+  });
 }
 
 function canOperateOrganizationRole(roleLabel = '') {
@@ -1311,7 +1393,12 @@ app.get('/api/posts', auth, async (req, res) => {
     orderBy: { createdAt: 'desc' },
     take: 100
   });
-  res.json(posts.map((post) => {
+  const eventPosts = posts.filter((post) => String(post.type || '').toUpperCase() === 'EVENT');
+  const matchingEvents = eventPosts.length ? await prisma.event.findMany({
+    where: { organizationId: { in: [...new Set(eventPosts.map((post) => post.organizationId))] } },
+    select: { organizationId: true, title: true, startTime: true }
+  }) : [];
+  res.json(posts.filter((post) => hasMatchingEvent(post, matchingEvents)).map((post) => {
     const { likedBy, ...postRecord } = post;
     return {
       ...publicPost(postRecord),
@@ -1590,6 +1677,7 @@ app.post('/api/events', auth, async (req, res) => {
       createdById: req.user.id
     }
   });
+  await syncEventPost(event, req.user.id);
   res.json(event);
 });
 
@@ -1614,6 +1702,7 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
   if (req.body.capacity !== undefined) data.capacity = req.body.capacity == null || req.body.capacity === '' ? null : Number(req.body.capacity);
   if (req.body.requiresApproval !== undefined) data.requiresApproval = Boolean(req.body.requiresApproval);
   const updated = await prisma.event.update({ where: { id: event.id }, data, include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } } });
+  await updateSyncedEventPost(event, updated, updated.createdById || req.user.id);
   res.json({ ...updated, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) });
 });
 
@@ -1624,6 +1713,7 @@ app.delete('/api/events/:eventId', auth, async (req, res) => {
   if (!canManage) return res.status(403).json({ error: 'Only event managers can delete this event' });
   await prisma.eventRegistration.deleteMany({ where: { eventId: event.id } });
   await prisma.eventSubscription.deleteMany({ where: { eventId: event.id } });
+  await deleteSyncedEventPosts(event);
   await prisma.event.delete({ where: { id: event.id } });
   res.json({ message: 'Event deleted' });
 });

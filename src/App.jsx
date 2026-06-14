@@ -851,7 +851,7 @@ function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = []
   );
 }
 
-function EventsScreen({ user, events, masjids = [], loadEvents, myOrganizations, registerEvent, unregisterEvent, toggleEventSubscription, detailEventId, openEvent, openOrganization, onBack }) {
+function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrganizations, registerEvent, unregisterEvent, toggleEventSubscription, detailEventId, openEvent, openOrganization, onBack }) {
   const [eventQuery, setEventQuery] = useState('');
   const [eventKind, setEventKind] = useState('all');
   const [eventCategory, setEventCategory] = useState('all');
@@ -862,7 +862,7 @@ function EventsScreen({ user, events, masjids = [], loadEvents, myOrganizations,
   async function deleteEvent(id) {
     if (!confirm('Delete this event?')) return;
     await api(`/api/events/${id}`, { method: 'DELETE' });
-    await loadEvents();
+    await Promise.all([loadEvents(), loadPosts?.()]);
   }
   function eventTiming(event) {
     if (event.isProgram) return null;
@@ -3850,12 +3850,12 @@ export default function App() {
 
   async function createEvent(form) {
     await api('/api/events', { method: 'POST', body: JSON.stringify(form) });
-    await Promise.all([loadEvents(), loadMyOrganizations(), loadLocationData(location)]);
+    await Promise.all([loadEvents(), loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
   async function updateEvent(id, form) {
     await api(`/api/events/${id}`, { method: 'PUT', body: JSON.stringify(form) });
-    await Promise.all([loadEvents(), loadMyOrganizations(), loadLocationData(location)]);
+    await Promise.all([loadEvents(), loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
   async function deletePost(id) {
@@ -3867,7 +3867,7 @@ export default function App() {
   async function deleteEvent(id) {
     if (!confirm('Delete this event?')) return;
     await api(`/api/events/${id}`, { method: 'DELETE' });
-    await Promise.all([loadEvents(), loadMyOrganizations(), loadLocationData(location)]);
+    await Promise.all([loadEvents(), loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
   async function deleteOpportunity(id) {
@@ -4263,7 +4263,7 @@ export default function App() {
   const screens = {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />,
     prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} />,
-    events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => navigate(-1)} />,
+    events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} loadPosts={loadPosts} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => navigate(-1)} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
     masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onUnfollow={unfollowOrganization} onFavorite={toggleFavoriteOrganization} onBack={() => navigate(-1)} />,
