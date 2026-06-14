@@ -1879,30 +1879,18 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const [editOrgForm, setEditOrgForm] = useState({});
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [dashboardQuery, setDashboardQuery] = useState('');
-  const [activeSection, setActiveSection] = useState('all');
+  const [activeSection, setActiveSection] = useState('');
   const query = dashboardQuery.trim().toLowerCase();
   const peopleSearch = peopleQuery.trim().toLowerCase();
   const teamCandidates = users
     .filter((person) => person.id !== user.id)
     .filter((person) => !peopleSearch || `${person.name} ${person.email} ${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`.toLowerCase().includes(peopleSearch))
     .slice(0, 40);
-  const dashboardSections = [
-    ['all', 'All'],
-    ['posts', 'Posts'],
-    ['events', 'Events'],
-    ['programs', 'Programs'],
-    ['volunteers', 'Volunteers'],
-    ['jobs', 'Jobs'],
-    ['applications', 'Applications'],
-    ['volunteerApplications', 'Volunteer Applications'],
-    ['jobApplications', 'Job Applications'],
-    ['team', 'Team'],
-    ['followers', 'Followers'],
-    ['prayerTimes', 'Prayer Times'],
-    ['attention', 'Notifications']
-  ];
-  const showSection = (section) => activeSection === 'all' || activeSection === section;
-  const showApplications = activeSection === 'all' || ['applications', 'volunteerApplications', 'jobApplications'].includes(activeSection);
+  const showSection = (section) => activeSection === section
+    || (activeSection === 'eventApprovals' && section === 'events')
+    || (activeSection === 'jamaatTimes' && section === 'prayerTimes')
+    || (activeSection === 'committee' && section === 'team');
+  const showApplications = ['applications', 'volunteerApplications', 'jobApplications'].includes(activeSection);
   const applicationTypeFilter = activeSection === 'jobApplications' ? 'JOB' : activeSection === 'volunteerApplications' ? 'VOLUNTEER' : '';
   const scopedOrganizations = myOrganizations
     .filter((org) => !selectedOrgId || org.id === selectedOrgId)
@@ -1958,16 +1946,24 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const unreadMessages = (threads || []).reduce((sum, thread) => sum + (thread.unread || 0), 0);
   const hubItems = [
     { key: 'followers', label: 'Followers', count: metrics.followers, detail: 'Community reach', icon: Users },
+    { key: 'following', label: 'Following', count: 'Soon', detail: 'Not connected', icon: UserCheck },
     { key: 'team', label: 'Team', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Imams and staff', icon: UserCheck },
     { key: 'posts', label: 'Posts', count: metrics.posts, detail: 'Announcements', icon: MessageCircle },
-    { key: 'jobApplications', label: 'Job Applications', count: allApplications.filter(({ opportunity }) => opportunity.type === 'JOB').length, detail: 'Hiring pipeline', icon: Briefcase },
-    { key: 'volunteerApplications', label: 'Volunteer Applications', count: allApplications.filter(({ opportunity }) => opportunity.type !== 'JOB').length, detail: 'Service requests', icon: HeartHandshake },
-    { key: 'events', label: 'Event Approvals', count: metrics.pendingRegistrations, detail: `${metrics.events} events`, icon: CalendarDays },
-    { key: 'programs', label: 'Programs', count: metrics.programs, detail: 'Classes and halaqas', icon: Library },
+    { key: 'events', label: 'Events', count: metrics.events, detail: `${upcomingEvents} upcoming`, icon: CalendarDays },
+    { key: 'eventApprovals', label: 'Event Approvals', count: metrics.pendingRegistrations, detail: 'Pending entries', icon: CheckCircle2 },
+    { key: 'programs', label: 'Programs / Classes', count: metrics.programs, detail: 'Classes and halaqas', icon: Library },
+    { key: 'jobs', label: 'Jobs', count: metrics.jobs, detail: 'Opportunities', icon: Briefcase },
+    { key: 'jobApplications', label: 'Job Applications', count: allApplications.filter(({ opportunity }) => opportunity.type === 'JOB').length, detail: 'Hiring pipeline', icon: Mail },
+    { key: 'volunteers', label: 'Volunteers', count: metrics.volunteers, detail: 'Service posts', icon: HeartHandshake },
+    { key: 'volunteerApplications', label: 'Volunteer Applications', count: allApplications.filter(({ opportunity }) => opportunity.type !== 'JOB').length, detail: 'Service requests', icon: Users },
     { key: 'attention', label: 'Notifications', count: pendingApplications.length + pendingRegistrations.length + unreadMessages, detail: `${unreadMessages} unread DMs`, icon: Bell },
     { key: 'prayerTimes', label: 'Prayer Times', count: 'Jamaat', detail: selectedOrg?.prayerNotes || 'Iqamah schedule', icon: ShieldCheck },
-    { key: 'userView', label: 'User View', count: selectedOrg ? 'Preview' : 'Add profile', detail: 'Public profile', icon: Home }
+    { key: 'jamaatTimes', label: 'Jamaat Times', count: 'Edit', detail: 'Iqamah updates', icon: Navigation },
+    { key: 'applications', label: 'Application Portal', count: metrics.applications, detail: 'All applicants', icon: Building2 },
+    { key: 'committee', label: 'Jamaat / Committee', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Leadership', icon: Users },
+    { key: 'userView', label: 'Preview User View', count: selectedOrg ? 'Open' : 'Add profile', detail: 'Public profile', icon: Home }
   ];
+  const activeDashboardFeature = hubItems.find((item) => item.key === activeSection);
   function openUserView() {
     if (!selectedOrg?.id) return alert('Create or select a masjid profile first.');
     openOrganization(selectedOrg.id).catch(console.error);
@@ -2168,14 +2164,13 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     setEditOrgForm({});
   }
   return (
-    <Page title={user.accountType === 'ADMIN' ? 'Admin Dashboard' : 'Masjid Dashboard'} subtitle="Run daily masjid operations: posts, volunteers, jobs, event attendees, imams, followers, and profile settings.">
-      <div className="content-grid">
-        <section className="feed-column">
+    <Page>
+      <div className="content-grid masjid-dashboard-grid">
+        <section className="feed-column masjid-dashboard-main">
           <section className="panel masjid-hub">
             <div className="masjid-hub-hero" style={profileBannerStyle(selectedOrg || {})}>
               <div className="org-logo hub-logo">{selectedOrg?.imageUrl ? <img src={selectedOrg.imageUrl} alt="" /> : initials(selectedOrg?.name || user.name)}</div>
               <div>
-                <p className="eyebrow">Operations Hub</p>
                 <h2>Welcome back, {selectedOrg?.name || user.name}</h2>
                 <p>{selectedOrg?.address || selectedOrg?.city || 'Select a masjid to manage posts, programs, events, applications, team, and followers.'}</p>
               </div>
@@ -2204,23 +2199,33 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
               {hubItems.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <button key={item.key} type="button" className={activeSection === item.key ? 'active' : ''} onClick={item.key === 'userView' ? openUserView : () => setActiveSection(item.key)}>
+                  <button key={item.key} type="button" className={activeSection === item.key ? 'active' : ''} onClick={item.key === 'userView' ? openUserView : () => setActiveSection(item.key)} aria-label={item.label}>
                     <Icon size={22} />
                     <span>{item.label}</span>
-                    <strong>{item.count}</strong>
-                    <small>{item.detail}</small>
                   </button>
                 );
               })}
             </div>
-            <div className="filter-bar dashboard-filter">
-              {dashboardSections.map(([key, label]) => (
-                <button key={key} className={activeSection === key ? 'active' : ''} type="button" onClick={() => setActiveSection(key)}>{label}</button>
-              ))}
-            </div>
           </section>
 
-          {(activeSection === 'attention' || activeSection === 'all' || pendingApplications.length > 0 || pendingRegistrations.length > 0) && (
+          {activeSection && activeSection !== 'userView' && (
+            <div className="masjid-feature-screen" role="dialog" aria-modal="true" aria-label={activeDashboardFeature?.label || 'Dashboard feature'}>
+              <div className="feature-screen-topbar">
+                <button type="button" className="icon-button" onClick={() => setActiveSection('')} aria-label="Back to dashboard"><ChevronLeft size={22} /></button>
+                <div>
+                  <strong>{activeDashboardFeature?.label || 'Dashboard'}</strong>
+                  <span>{activeDashboardFeature?.detail || 'Manage this masjid feature'}</span>
+                </div>
+              </div>
+              <div className="feature-screen-content">
+          {activeSection === 'following' && (
+            <section className="panel">
+              <div className="section-title"><h2>Following</h2><span>Not connected</span></div>
+              <p className="helper-text">This masjid account does not have backend-connected following management yet. The button is ready for onboarding and can be connected when organization-to-organization follows are added.</p>
+            </section>
+          )}
+
+          {activeSection === 'attention' && (
             <section className="panel">
               <div className="section-title"><h2>Needs attention</h2><span>{pendingApplications.length + pendingRegistrations.length}</span></div>
               <div className="stack-list">
@@ -2259,7 +2264,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
             </section>
           )}
 
-          {user.accountType === 'ADMIN' && (
+          {user.accountType === 'ADMIN' && activeSection === 'applications' && (
             <section className="panel">
             <div className="section-title"><h2>Create Masjid Profile</h2></div>
             <form className="profile-form" onSubmit={submitOrg}>
@@ -2287,7 +2292,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
           </section>
           )}
 
-          <section className="panel">
+          {activeSection === 'posts' && <section className="panel">
             <div className="section-title"><h2>Create Feed Post</h2></div>
             <form className="profile-form" onSubmit={submitPost}>
               <div className="form-grid">
@@ -2306,9 +2311,9 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
               <textarea required placeholder="Post content" value={postForm.content} onChange={(event) => setPostForm({ ...postForm, content: event.target.value })} />
               <button className="primary-button">Publish post</button>
             </form>
-          </section>
+          </section>}
 
-          <section className="panel">
+          {(activeSection === 'events' || activeSection === 'eventApprovals') && <section className="panel">
             <div className="section-title"><h2>Create Event</h2></div>
             <form className="profile-form" onSubmit={submitEvent}>
               <div className="form-grid">
@@ -2325,9 +2330,9 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
               <textarea placeholder="Description" value={eventForm.description} onChange={(event) => setEventForm({ ...eventForm, description: event.target.value })} />
               <button className="primary-button">Post event</button>
             </form>
-          </section>
+          </section>}
 
-          <section className="panel">
+          {activeSection === 'programs' && <section className="panel">
             <div className="section-title"><h2>Create Class or Program</h2></div>
             <form className="profile-form" onSubmit={submitClass}>
               <div className="form-grid">
@@ -2345,10 +2350,10 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
               <textarea placeholder="Gender, family, or attendance notes optional" value={classForm.notes} onChange={(event) => setClassForm({ ...classForm, notes: event.target.value })} />
               <button className="primary-button">Publish class</button>
             </form>
-          </section>
+          </section>}
 
-          <section className="panel">
-            <div className="section-title"><h2>Post Job or Opportunity</h2></div>
+          {(activeSection === 'jobs' || activeSection === 'volunteers') && <section className="panel">
+            <div className="section-title"><h2>{activeSection === 'jobs' ? 'Post Job' : 'Post Volunteer Opportunity'}</h2></div>
             <form className="profile-form" onSubmit={submitOpp}>
               <div className="form-grid">
                 <select value={oppForm.organizationId} onChange={(event) => setOppForm({ ...oppForm, organizationId: event.target.value })}>
@@ -2374,10 +2379,10 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
               <p className="helper-text">Custom questions are stored with the listing and shown in the application modal.</p>
               <button className="primary-button">Post</button>
             </form>
-          </section>
+          </section>}
 
-          <section className="panel">
-            <div className="section-title"><h2>Masjid Team</h2></div>
+          {(activeSection === 'team' || activeSection === 'committee') && <section className="panel">
+            <div className="section-title"><h2>{activeSection === 'committee' ? 'Jamaat / Committee' : 'Masjid Team'}</h2></div>
             <form className="profile-form" onSubmit={submitInvite}>
               <div className="form-grid">
                 <select value={inviteForm.organizationId} onChange={(event) => setInviteForm({ ...inviteForm, organizationId: event.target.value })}>
@@ -2414,7 +2419,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
               <p className="helper-text">Showing {teamCandidates.length} matching people. Search first if the network is large.</p>
               <button className="primary-button">Add to masjid profile</button>
             </form>
-          </section>
+          </section>}
 
           {scopedOrganizations.map((org) => (
             <section className="panel" key={org.id}>
@@ -2665,6 +2670,9 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
             </section>
           ))}
           {!scopedOrganizations.length && <section className="panel"><p className="helper-text">No managed masjids match this search.</p></section>}
+              </div>
+            </div>
+          )}
         </section>
 
         <aside className="right-rail">
@@ -2741,7 +2749,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
 }
 
 function Page({ title, subtitle, action, children }) {
-  return <section className="page"><div className="page-header"><div><p className="eyebrow">Ummah Connect</p><h1>{title}</h1><p>{subtitle}</p></div>{action && <button className="primary-button" onClick={action.onClick}><Plus size={18} />{action.label}</button>}</div>{children}</section>;
+  return <section className="page">{title && <div className="page-header"><div><p className="eyebrow">Ummah Connect</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>{action && <button className="primary-button" onClick={action.onClick}><Plus size={18} />{action.label}</button>}</div>}{children}</section>;
 }
 
 function BackHeader({ title, subtitle, onBack }) {

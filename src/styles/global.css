@@ -1373,22 +1373,41 @@ a {
   margin-top: 12px;
 }
 
+.masjid-dashboard-grid {
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
+}
+
+.masjid-dashboard-grid > .right-rail {
+  display: none;
+}
+
+.masjid-dashboard-main {
+  max-width: 760px;
+  width: 100%;
+}
+
 .masjid-hub {
   display: grid;
-  gap: 14px;
+  gap: 12px;
+  padding: 14px;
 }
 
 .masjid-hub-hero {
-  min-height: 190px;
+  min-height: 92px;
   display: flex;
-  align-items: flex-end;
-  gap: 14px;
-  padding: 18px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
   border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(16, 35, 30, 0.88), rgba(15, 118, 110, 0.72)),
+    linear-gradient(135deg, rgba(16, 35, 30, 0.9), rgba(15, 118, 110, 0.76)),
     url("https://images.unsplash.com/photo-1519817650390-64a93db51149?auto=format&fit=crop&w=1200&q=80") center / cover;
   color: #fff;
+}
+
+.masjid-hub-hero > div:last-child {
+  min-width: 0;
 }
 
 .masjid-hub-hero h2,
@@ -1396,15 +1415,27 @@ a {
   margin: 0;
 }
 
+.masjid-hub-hero h2 {
+  font-size: clamp(18px, 3.8vw, 24px);
+  line-height: 1.12;
+}
+
 .masjid-hub-hero .eyebrow,
 .masjid-hub-hero p {
   color: #dcebe7;
 }
 
+.masjid-hub-hero p {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .hub-logo {
-  width: 72px;
-  height: 72px;
-  font-size: 22px;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  font-size: 17px;
   border: 3px solid rgba(255, 255, 255, 0.82);
 }
 
@@ -1444,35 +1475,40 @@ a {
 .dashboard-menu-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .dashboard-menu-grid button {
   min-width: 0;
-  min-height: 118px;
+  aspect-ratio: 1 / 0.92;
+  min-height: 90px;
   border: 1px solid #dce6e3;
   border-radius: 8px;
-  background: #f8fbfa;
+  background:
+    linear-gradient(180deg, #ffffff, #f7fbfa);
   color: #17221d;
   display: grid;
-  align-content: start;
-  justify-items: start;
-  gap: 5px;
-  padding: 13px;
-  text-align: left;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 10px 7px;
+  text-align: center;
+  box-shadow: 0 8px 18px rgba(20, 36, 31, 0.06);
 }
 
 .dashboard-menu-grid button svg {
   color: #0f766e;
+  width: 23px;
+  height: 23px;
 }
 
 .dashboard-menu-grid button span {
   color: #17221d;
   font-weight: 900;
-}
-
-.dashboard-menu-grid button strong {
-  font-size: 18px;
+  font-size: 12px;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .dashboard-menu-grid button.active,
@@ -1480,6 +1516,60 @@ a {
   border-color: #0f766e;
   background: #edf7f4;
   box-shadow: 0 12px 28px rgba(15, 118, 110, 0.12);
+}
+
+.masjid-feature-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--page-bg);
+}
+
+.feature-screen-topbar {
+  min-height: calc(64px + env(safe-area-inset-top));
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+}
+
+.feature-screen-topbar strong,
+.feature-screen-topbar span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feature-screen-topbar strong {
+  color: var(--text);
+  font-size: 17px;
+}
+
+.feature-screen-topbar span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.feature-screen-content {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  overflow: auto;
+  padding: 12px 12px calc(22px + env(safe-area-inset-bottom));
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.feature-screen-content > .panel {
+  margin: 0;
 }
 
 .card-grid,
@@ -3255,15 +3345,16 @@ a {
   }
 
   .masjid-hub-hero {
-    min-height: 170px;
-    align-items: flex-end;
-    padding: 14px;
+    min-height: 84px;
+    align-items: center;
+    padding: 10px;
   }
 
   .hub-logo {
-    width: 58px;
-    height: 58px;
-    font-size: 18px;
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
+    font-size: 16px;
   }
 
   .dashboard-menu-grid {
@@ -3272,13 +3363,12 @@ a {
   }
 
   .dashboard-menu-grid button {
-    min-height: 104px;
-    padding: 10px;
+    min-height: 82px;
+    padding: 9px 6px;
   }
 
-  .dashboard-menu-grid button span,
-  .dashboard-menu-grid button strong {
-    font-size: 13px;
+  .dashboard-menu-grid button span {
+    font-size: 11px;
   }
 
   .dashboard-menu-grid small {
