@@ -272,6 +272,7 @@ function publicUser(user) {
 function publicOrganization(org, viewerId) {
   if (!org) return null;
   const followers = org.followers || [];
+  const favorites = org.favoritedBy || [];
   const people = org.people || [];
   const posts = (org.posts || []).map(publicPost);
   const events = (org.events || []).map((event) => ({
@@ -288,7 +289,8 @@ function publicOrganization(org, viewerId) {
       applicant: publicUser(application.applicant)
     }))
   }));
-  const { followers: _followers, people: _people, posts: _posts, events: _events, opportunities: _opportunities, ...safeOrg } = org;
+  const { followers: _followers, favoritedBy: _favoritedBy, people: _people, posts: _posts, events: _events, opportunities: _opportunities, ...safeOrg } = org;
+  const viewerFollow = viewerId ? followers.find((follow) => follow.userId === viewerId) : null;
   return {
     ...safeOrg,
     posts,
@@ -297,10 +299,45 @@ function publicOrganization(org, viewerId) {
     followers: followers.map((follow) => ({ ...follow, user: publicUser(follow.user) })),
     people: people.map((person) => ({ ...person, user: publicUser(person.user) })),
     followerCount: followers.length,
+    favoriteCount: favorites.length,
     peopleCount: people.length,
-    isFollowing: viewerId ? followers.some((follow) => follow.userId === viewerId) : false,
-    notifyPrayers: viewerId ? Boolean(followers.find((follow) => follow.userId === viewerId)?.notifyPrayers) : false
+    isFollowing: Boolean(viewerFollow),
+    isFavorited: viewerId ? favorites.some((favorite) => favorite.userId === viewerId) : false,
+    notifyPrayers: Boolean(viewerFollow?.notifyPrayers)
   };
+}
+
+const defaultUserNotificationPreferences = {
+  masjidAnnouncements: true,
+  eventsFromFollowedMasjids: true,
+  programsFromFollowedMasjids: true,
+  jobOpportunities: true,
+  volunteerOpportunities: true,
+  prayerTimeReminders: false,
+  jamaatTimeUpdates: true,
+  eventReminders: true,
+  applicationStatusUpdates: true,
+  messages: true,
+  nearbyMasjids: false,
+  nearbyEvents: false,
+  nearbyVolunteerOpportunities: false,
+  jobOpportunitySource: 'followed',
+  volunteerOpportunitySource: 'followed'
+};
+
+function publicNotificationPreferences(preferences) {
+  if (!preferences) return { ...defaultUserNotificationPreferences };
+  return Object.fromEntries(Object.keys(defaultUserNotificationPreferences).map((key) => [key, preferences[key] ?? defaultUserNotificationPreferences[key]]));
+}
+
+function normalizeNotificationPreferences(input = {}) {
+  const data = {};
+  Object.entries(defaultUserNotificationPreferences).forEach(([key, defaultValue]) => {
+    if (input[key] === undefined) return;
+    if (typeof defaultValue === 'boolean') data[key] = Boolean(input[key]);
+    if (typeof defaultValue === 'string') data[key] = ['followed', 'favorited', 'nearby'].includes(String(input[key])) ? String(input[key]) : defaultValue;
+  });
+  return data;
 }
 
 function publicPost(post) {
@@ -564,11 +601,24 @@ async function sendPushToOrganizationFollowers(organizationId, payload) {
     select: { userId: true }
   });
   const uniqueUserIds = [...new Set(follows.map((follow) => follow.userId))];
-  const results = await Promise.all(uniqueUserIds.map((userId) => sendPushToUser(userId, payload)));
+  const preferences = await prisma.userNotificationPreference.findMany({ where: { userId: { in: uniqueUserIds } } });
+  const preferenceMap = new Map(preferences.map((preference) => [preference.userId, publicNotificationPreferences(preference)]));
+  const type = String(payload?.type || '').toUpperCase();
+  const allowedUserIds = uniqueUserIds.filter((userId) => {
+    const preference = preferenceMap.get(userId) || publicNotificationPreferences(null);
+    if (type === 'ANNOUNCEMENT' && !preference.masjidAnnouncements) return false;
+    if (type === 'EVENT' && !preference.eventsFromFollowedMasjids) return false;
+    if (type === 'CLASS' && !preference.programsFromFollowedMasjids) return false;
+    if (type === 'JOB' && !preference.jobOpportunities) return false;
+    if (['VOLUNTEER', 'OPPORTUNITY'].includes(type) && !preference.volunteerOpportunities) return false;
+    return true;
+  });
+  const results = await Promise.all(allowedUserIds.map((userId) => sendPushToUser(userId, payload)));
   return {
     sent: results.reduce((sum, result) => sum + (result.sent || 0), 0),
     disabled: results.some((result) => result.disabled),
-    followers: uniqueUserIds.length
+    followers: uniqueUserIds.length,
+    eligibleFollowers: allowedUserIds.length
   };
 }
 
@@ -742,7 +792,14 @@ app.get('/api/notifications/vapid-public-key', auth, (_, res) => {
 });
 
 app.get('/api/notifications/preferences', auth, async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  const [user, notificationPreferences] = await Promise.all([
+    prisma.user.findUnique({ where: { id: req.user.id } }),
+    prisma.userNotificationPreference.upsert({
+      where: { userId: req.user.id },
+      create: { userId: req.user.id },
+      update: {}
+    })
+  ]);
   const subscriptions = await prisma.pushSubscription.count({ where: { userId: req.user.id } });
   res.json({
     pushConfigured: Boolean(vapidPublicKey && vapidPrivateKey),
@@ -755,12 +812,14 @@ app.get('/api/notifications/preferences', auth, async (req, res) => {
       timezone: user.timezone,
       prayerMethod: user.prayerMethod
     },
-    prayerNotificationPreferences: normalizePrayerPreferences(user.prayerNotificationPreferences || { enabled: false })
+    prayerNotificationPreferences: normalizePrayerPreferences(user.prayerNotificationPreferences || { enabled: false }),
+    notificationPreferences: publicNotificationPreferences(notificationPreferences)
   });
 });
 
 app.put('/api/notifications/preferences', auth, async (req, res) => {
   const data = {};
+  let notificationPreferences = null;
   if (req.body.location) {
     const { city, location, latitude, longitude, timezone, prayerMethod } = req.body.location;
     data.city = city;
@@ -773,8 +832,18 @@ app.put('/api/notifications/preferences', auth, async (req, res) => {
   if (req.body.prayerNotificationPreferences) {
     data.prayerNotificationPreferences = normalizePrayerPreferences(req.body.prayerNotificationPreferences);
   }
-  const user = await prisma.user.update({ where: { id: req.user.id }, data });
-  res.json(publicUser(user));
+  if (req.body.notificationPreferences) {
+    notificationPreferences = await prisma.userNotificationPreference.upsert({
+      where: { userId: req.user.id },
+      create: { userId: req.user.id, ...normalizeNotificationPreferences(req.body.notificationPreferences) },
+      update: normalizeNotificationPreferences(req.body.notificationPreferences)
+    });
+  }
+  const user = Object.keys(data).length ? await prisma.user.update({ where: { id: req.user.id }, data }) : await prisma.user.findUnique({ where: { id: req.user.id } });
+  res.json({
+    ...publicUser(user),
+    notificationPreferences: publicNotificationPreferences(notificationPreferences)
+  });
 });
 
 app.post('/api/notifications/subscriptions', auth, async (req, res) => {
@@ -813,7 +882,7 @@ app.get('/api/users', auth, async (req, res) => {
 app.get('/api/users/:id/social', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const [connections, follows, affiliations] = await Promise.all([
+  const [connections, follows, favorites, eventSubscriptions, affiliations] = await Promise.all([
     prisma.connection.findMany({
       where: { status: 'ACCEPTED', OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] },
       include: { requester: true, receiver: true },
@@ -821,12 +890,22 @@ app.get('/api/users/:id/social', auth, async (req, res) => {
     }),
     prisma.organizationFollow.findMany({
       where: { userId: req.params.id },
-      include: { organization: { include: { followers: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
+      include: { organization: { include: { followers: true, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
+      orderBy: { createdAt: 'desc' }
+    }),
+    prisma.favoriteMasjid.findMany({
+      where: { userId: req.params.id },
+      include: { organization: { include: { followers: true, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
+      orderBy: { createdAt: 'desc' }
+    }),
+    prisma.eventSubscription.findMany({
+      where: { userId: req.params.id, saved: true },
+      include: { event: { include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } } } } },
       orderBy: { createdAt: 'desc' }
     }),
     prisma.organizationPerson.findMany({
       where: { userId: req.params.id },
-      include: { organization: { include: { followers: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
+      include: { organization: { include: { followers: true, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
       orderBy: { createdAt: 'desc' }
     })
   ]);
@@ -834,6 +913,12 @@ app.get('/api/users/:id/social', auth, async (req, res) => {
     user: publicUser(user),
     connections: connections.map((connection) => publicUser(connection.requesterId === req.params.id ? connection.receiver : connection.requester)),
     followingMasjids: follows.map((follow) => publicOrganization(follow.organization, req.user.id)),
+    favoriteMasjids: favorites.map((favorite) => publicOrganization(favorite.organization, req.user.id)),
+    savedEvents: eventSubscriptions.map((subscription) => ({
+      ...subscription.event,
+      isSaved: subscription.saved,
+      notifyMe: subscription.notify
+    })),
     affiliatedMasjids: affiliations.map((affiliation) => ({
       ...affiliation,
       organization: publicOrganization(affiliation.organization, req.user.id)
@@ -844,7 +929,10 @@ app.get('/api/users/:id/social', auth, async (req, res) => {
 app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Admins cannot delete their own active session account' });
   await prisma.eventRegistration.deleteMany({ where: { userId: req.params.id } });
+  await prisma.eventSubscription.deleteMany({ where: { userId: req.params.id } });
   await prisma.organizationFollow.deleteMany({ where: { userId: req.params.id } });
+  await prisma.favoriteMasjid.deleteMany({ where: { userId: req.params.id } });
+  await prisma.userNotificationPreference.deleteMany({ where: { userId: req.params.id } });
   await prisma.organizationPerson.deleteMany({ where: { userId: req.params.id } });
   await prisma.volunteerApplication.deleteMany({ where: { applicantId: req.params.id } });
   await prisma.message.deleteMany({ where: { OR: [{ senderId: req.params.id }, { receiverId: req.params.id }] } });
@@ -923,9 +1011,27 @@ app.get('/api/me/organizations', auth, async (req, res) => {
 app.get('/api/me/notification-masjids', auth, async (req, res) => {
   const follows = await prisma.organizationFollow.findMany({
     where: { userId: req.user.id, notifyPrayers: true },
-    include: { organization: { include: { followers: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } }
+    include: { organization: { include: { followers: true, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } }
   });
   res.json(follows.map((follow) => publicOrganization(follow.organization, req.user.id)));
+});
+
+app.get('/api/me/favorite-masjids', auth, async (req, res) => {
+  const favorites = await prisma.favoriteMasjid.findMany({
+    where: { userId: req.user.id },
+    include: { organization: { include: { followers: true, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
+    orderBy: { createdAt: 'desc' }
+  });
+  res.json(favorites.map((favorite) => publicOrganization(favorite.organization, req.user.id)));
+});
+
+app.get('/api/me/saved-events', auth, async (req, res) => {
+  const subscriptions = await prisma.eventSubscription.findMany({
+    where: { userId: req.user.id, saved: true },
+    include: { event: { include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } } } } },
+    orderBy: { createdAt: 'desc' }
+  });
+  res.json(subscriptions.map((subscription) => ({ ...subscription.event, isSaved: subscription.saved, notifyMe: subscription.notify })));
 });
 
 app.get('/api/organizations', async (req, res) => {
@@ -945,6 +1051,7 @@ app.get('/api/organizations', async (req, res) => {
       posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
       opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' } },
       followers: true,
+      favoritedBy: true,
       people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
     },
     orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
@@ -1027,6 +1134,7 @@ app.get('/api/organizations/:id', async (req, res) => {
       posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
       opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } },
       followers: { include: { user: true } },
+      favoritedBy: true,
       people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
     }
   });
@@ -1052,7 +1160,8 @@ app.put('/api/organizations/:id', auth, async (req, res) => {
 app.get('/api/posts', auth, async (req, res) => {
   const follows = await prisma.organizationFollow.findMany({ where: { userId: req.user.id }, select: { organizationId: true, notifyPrayers: true } });
   const followedIds = new Set(follows.map((follow) => follow.organizationId));
-  const favoriteIds = new Set(follows.filter((follow) => follow.notifyPrayers).map((follow) => follow.organizationId));
+  const favorites = await prisma.favoriteMasjid.findMany({ where: { userId: req.user.id }, select: { organizationId: true } });
+  const favoriteIds = new Set(favorites.map((favorite) => favorite.organizationId));
   const saved = await prisma.savedPost.findMany({ where: { userId: req.user.id }, select: { postId: true } });
   const savedIds = new Set(saved.map((item) => item.postId));
   const liked = await prisma.postLike.findMany({ where: { userId: req.user.id }, select: { postId: true } });
@@ -1060,7 +1169,7 @@ app.get('/api/posts', auth, async (req, res) => {
   const posts = await prisma.post.findMany({
     include: {
       author: true,
-      organization: { include: { followers: true } },
+      organization: { include: { followers: true, favoritedBy: true } },
       likedBy: true,
       comments: { include: { author: true }, orderBy: { createdAt: 'desc' }, take: 3 },
       _count: { select: { comments: true } }
@@ -1203,7 +1312,8 @@ app.delete('/api/posts/:id', auth, async (req, res) => {
 });
 
 app.post('/api/organizations/:id/follow', auth, async (req, res) => {
-  const notifyPrayers = Boolean(req.body.notifyPrayers);
+  const existingFollow = await prisma.organizationFollow.findUnique({ where: { organizationId_userId: { organizationId: req.params.id, userId: req.user.id } } });
+  const notifyPrayers = req.body.notifyPrayers === undefined ? Boolean(existingFollow?.notifyPrayers) : Boolean(req.body.notifyPrayers);
   if (notifyPrayers) {
     const activeNotificationFollows = await prisma.organizationFollow.count({ where: { userId: req.user.id, notifyPrayers: true, organizationId: { not: req.params.id } } });
     if (activeNotificationFollows >= 2) return res.status(400).json({ error: 'You can enable prayer notifications for up to 2 masjids' });
@@ -1219,6 +1329,20 @@ app.post('/api/organizations/:id/follow', auth, async (req, res) => {
 app.delete('/api/organizations/:id/follow', auth, async (req, res) => {
   await prisma.organizationFollow.deleteMany({ where: { organizationId: req.params.id, userId: req.user.id } });
   res.json({ message: 'Unfollowed' });
+});
+
+app.post('/api/organizations/:id/favorite', auth, async (req, res) => {
+  const favorite = await prisma.favoriteMasjid.upsert({
+    where: { organizationId_userId: { organizationId: req.params.id, userId: req.user.id } },
+    create: { organizationId: req.params.id, userId: req.user.id },
+    update: {}
+  });
+  res.json({ favorited: true, id: favorite.id });
+});
+
+app.delete('/api/organizations/:id/favorite', auth, async (req, res) => {
+  await prisma.favoriteMasjid.deleteMany({ where: { organizationId: req.params.id, userId: req.user.id } });
+  res.json({ favorited: false });
 });
 
 app.delete('/api/organizations/:id/followers/:userId', auth, async (req, res) => {
@@ -1292,17 +1416,22 @@ app.get('/api/events', async (req, res) => {
     }
   }
   const events = await prisma.event.findMany({
-    include: { organization: { include: { followers: true } }, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } },
+    include: { organization: { include: { followers: true, favoritedBy: true } }, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } }, subscriptions: viewerId ? { where: { userId: viewerId } } : false },
     orderBy: { startTime: 'asc' }
   });
   res.json(events.map((event) => {
     const viewerFollow = viewerId ? event.organization?.followers?.find((follow) => follow.userId === viewerId) : null;
-    const { followers: _followers, ...organization } = event.organization || {};
+    const viewerFavorite = viewerId ? event.organization?.favoritedBy?.some((favorite) => favorite.userId === viewerId) : false;
+    const subscription = event.subscriptions?.[0];
+    const { followers: _followers, favoritedBy: _favoritedBy, ...organization } = event.organization || {};
+    const { subscriptions: _subscriptions, ...safeEvent } = event;
     return {
-      ...event,
+      ...safeEvent,
       organization: event.organization ? organization : null,
       isFromFollowedMasjid: Boolean(viewerFollow),
-      isFromFavoriteMasjid: Boolean(viewerFollow?.notifyPrayers),
+      isFromFavoriteMasjid: Boolean(viewerFavorite),
+      isSaved: Boolean(subscription?.saved),
+      notifyMe: Boolean(subscription?.notify),
       registrations: event.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) }))
     };
   }).sort((a, b) => Number(b.isFromFavoriteMasjid) - Number(a.isFromFavoriteMasjid) || Number(b.isFromFollowedMasjid) - Number(a.isFromFollowedMasjid) || new Date(a.startTime) - new Date(b.startTime)));
@@ -1358,8 +1487,28 @@ app.delete('/api/events/:eventId', auth, async (req, res) => {
   const canManage = event.createdById === req.user.id || req.user.accountType === 'ADMIN' || (event.organizationId && await canManageOrganization(req.user, event.organizationId));
   if (!canManage) return res.status(403).json({ error: 'Only event managers can delete this event' });
   await prisma.eventRegistration.deleteMany({ where: { eventId: event.id } });
+  await prisma.eventSubscription.deleteMany({ where: { eventId: event.id } });
   await prisma.event.delete({ where: { id: event.id } });
   res.json({ message: 'Event deleted' });
+});
+
+app.post('/api/events/:eventId/subscribe', auth, async (req, res) => {
+  if (['MASJID', 'MSA'].includes(req.user.accountType)) return res.status(403).json({ error: 'Masjid and MSA accounts manage events from the dashboard' });
+  const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const notify = req.body.notify === undefined ? true : Boolean(req.body.notify);
+  const saved = req.body.saved === undefined ? true : Boolean(req.body.saved);
+  const subscription = await prisma.eventSubscription.upsert({
+    where: { userId_eventId: { userId: req.user.id, eventId: event.id } },
+    create: { userId: req.user.id, eventId: event.id, notify, saved },
+    update: { notify, saved }
+  });
+  res.json({ saved: subscription.saved, notifyMe: subscription.notify, id: subscription.id });
+});
+
+app.delete('/api/events/:eventId/subscribe', auth, async (req, res) => {
+  await prisma.eventSubscription.deleteMany({ where: { userId: req.user.id, eventId: req.params.eventId } });
+  res.json({ saved: false, notifyMe: false });
 });
 
 app.post('/api/events/:eventId/register', auth, async (req, res) => {
@@ -1656,6 +1805,7 @@ app.get('/api/location/masjids', async (req, res) => {
       where: { type: { in: ['MASJID', 'MSA'] } },
       include: {
         followers: true,
+        favoritedBy: true,
         people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
         posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
         events: { orderBy: { startTime: 'asc' } },
@@ -1711,6 +1861,7 @@ app.get('/api/location/masjids', async (req, res) => {
         where: { type: { in: ['MASJID', 'MSA'] } },
         include: {
           followers: true,
+          favoritedBy: true,
           people: { include: { user: true }, orderBy: { createdAt: 'desc' } },
           posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
           events: { orderBy: { startTime: 'asc' } },

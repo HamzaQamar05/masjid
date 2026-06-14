@@ -2407,6 +2407,11 @@ a {
   flex: 1;
 }
 
+button.mini-org-avatar {
+  border: 0;
+  cursor: pointer;
+}
+
 .masjid-hero .org-logo {
   width: 76px;
   height: 76px;
@@ -3823,6 +3828,86 @@ a {
   gap: 14px;
 }
 
+.mobile-settings {
+  gap: 12px;
+}
+
+.settings-group {
+  display: grid;
+  gap: 8px;
+}
+
+.toggle-list {
+  display: grid;
+  gap: 8px;
+}
+
+.switch-row {
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  font-weight: 850;
+}
+
+.switch-row input {
+  appearance: none;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #cbd8d4;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.switch-row input::after {
+  content: "";
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  box-shadow: 0 2px 6px rgba(15, 35, 30, 0.18);
+  transition: transform 0.18s ease;
+}
+
+.switch-row input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch-row input:checked::after {
+  transform: translateX(20px);
+}
+
+.settings-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.action-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.action-row span {
+  grid-column: 1;
+}
+
+.action-row button {
+  grid-column: 2;
+}
+
 .interest-picker {
   padding: 14px;
   border: 1px solid var(--border);
@@ -3853,7 +3938,8 @@ a {
   gap: 8px;
 }
 
-.field-label input {
+.field-label input,
+.field-label select {
   width: min(360px, 100%);
 }
 

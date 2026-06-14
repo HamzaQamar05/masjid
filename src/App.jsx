@@ -36,6 +36,63 @@ const notifiedMessageIds = new Set();
 
 const coreInterestLabels = ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile'];
 const optionalInterestLabels = ['Events', 'Library', 'Volunteer', 'Jobs', 'Business'];
+const defaultNotificationPreferences = {
+  masjidAnnouncements: true,
+  eventsFromFollowedMasjids: true,
+  programsFromFollowedMasjids: true,
+  jobOpportunities: true,
+  volunteerOpportunities: true,
+  prayerTimeReminders: false,
+  jamaatTimeUpdates: true,
+  eventReminders: true,
+  applicationStatusUpdates: true,
+  messages: true,
+  nearbyMasjids: false,
+  nearbyEvents: false,
+  nearbyVolunteerOpportunities: false,
+  jobOpportunitySource: 'followed',
+  volunteerOpportunitySource: 'followed'
+};
+const notificationToggleGroups = [
+  {
+    title: 'Notifications',
+    items: [
+      ['masjidAnnouncements', 'Masjid announcements'],
+      ['eventsFromFollowedMasjids', 'Events from followed masjids'],
+      ['programsFromFollowedMasjids', 'Programs/classes from followed masjids'],
+      ['messages', 'Messages']
+    ]
+  },
+  {
+    title: 'Events',
+    items: [
+      ['eventReminders', 'Event reminders'],
+      ['applicationStatusUpdates', 'Application status updates']
+    ]
+  },
+  {
+    title: 'Opportunities',
+    items: [
+      ['jobOpportunities', 'Job opportunities'],
+      ['volunteerOpportunities', 'Volunteer opportunities']
+    ]
+  },
+  {
+    title: 'Prayer Times',
+    items: [
+      ['prayerTimeReminders', 'Prayer time reminders'],
+      ['jamaatTimeUpdates', 'Jamaat time updates']
+    ]
+  },
+  {
+    title: 'Nearby',
+    items: [
+      ['nearbyMasjids', 'Nearby masjids'],
+      ['nearbyEvents', 'Nearby events'],
+      ['nearbyVolunteerOpportunities', 'Nearby volunteer opportunities']
+    ]
+  }
+];
 const interestByNavKey = {
   home: 'Home',
   prayer: 'Prayer',
@@ -703,7 +760,7 @@ function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = []
   );
 }
 
-function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent, unregisterEvent, detailEventId, openEvent, onBack }) {
+function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent, unregisterEvent, toggleEventSubscription, detailEventId, openEvent, onBack }) {
   const [eventQuery, setEventQuery] = useState('');
   const [eventCategory, setEventCategory] = useState('all');
   const [eventDate, setEventDate] = useState('all');
@@ -771,6 +828,8 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
         <div className="card-footer">
           <button className="secondary-button" onClick={() => openEvent(event.id)}>Details</button>
           {isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>}
+          {!isOrganizationAccount(user) && <button className="secondary-button" onClick={() => toggleEventSubscription(event, { saved: !event.isSaved, notify: event.notifyMe })}>{event.isSaved ? 'Saved' : 'Save'}</button>}
+          {!isOrganizationAccount(user) && <button className={event.notifyMe ? 'primary-button' : 'secondary-button'} onClick={() => toggleEventSubscription(event, { saved: true, notify: !event.notifyMe })}>{event.notifyMe ? 'Reminders on' : 'Notify me'}</button>}
         </div>
       </article>
     );
@@ -797,6 +856,8 @@ function EventsScreen({ user, events, loadEvents, myOrganizations, registerEvent
               <TagRow tags={[(featuredEvent.category || featuredEvent.type || 'Community'), featuredEvent.requiresApproval && 'Approval required', featuredEvent.capacity && `${featuredEvent.capacity} capacity`].filter(Boolean)} />
               <div className="hub-actions">
                 {isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : (featuredEvent.registrations || []).find((item) => item.userId === user.id) ? <button className="secondary-button" onClick={() => unregisterEvent(featuredEvent.id)}>Cancel registration</button> : <button className="primary-button" onClick={() => registerEvent(featuredEvent.id)}>{featuredEvent.requiresApproval ? 'Request entry' : 'Register'}</button>}
+                {!isOrganizationAccount(user) && <button className="secondary-button" onClick={() => toggleEventSubscription(featuredEvent, { saved: !featuredEvent.isSaved, notify: featuredEvent.notifyMe })}>{featuredEvent.isSaved ? 'Saved' : 'Save event'}</button>}
+                {!isOrganizationAccount(user) && <button className={featuredEvent.notifyMe ? 'primary-button' : 'secondary-button'} onClick={() => toggleEventSubscription(featuredEvent, { saved: true, notify: !featuredEvent.notifyMe })}>{featuredEvent.notifyMe ? 'Reminders on' : 'Notify me'}</button>}
                 {(featuredEvent.location || featuredEvent.place) && <a className="secondary-button" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(featuredEvent.location || featuredEvent.place)}`} target="_blank" rel="noreferrer">Map</a>}
               </div>
             </div>
@@ -1169,7 +1230,7 @@ function BusinessDirectoryScreen() {
   );
 }
 
-function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
+function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavorite, onBack }) {
   if (!organization) return <Page title="Masjid Profile" subtitle="Choose a masjid to view its profile."><button className="secondary-button" onClick={onBack}>Back to masjids</button></Page>;
   const posts = organization.posts || [];
   const events = organization.events || [];
@@ -1210,8 +1271,9 @@ function MasjidProfileScreen({ organization, user, onFollow, onBack }) {
           </div>
         </div>
         <div className="profile-actions">
-          {canFollowMasjid && <button className="primary-button" onClick={() => onFollow(organization.id, false)}>{organization.isFollowing ? 'Following' : 'Follow masjid'}</button>}
-          {canFollowMasjid && <button className="secondary-button" onClick={() => onFollow(organization.id, true)}>{organization.notifyPrayers ? 'Prayer notifications on' : 'Enable prayer notifications'}</button>}
+          {canFollowMasjid && <button className={organization.isFollowing ? 'secondary-button' : 'primary-button'} onClick={() => organization.isFollowing ? onUnfollow(organization.id) : onFollow(organization.id, organization.notifyPrayers)}>{organization.isFollowing ? 'Following' : 'Follow'}</button>}
+          {canFollowMasjid && <button className={organization.isFavorited ? 'primary-button' : 'secondary-button'} onClick={() => onFavorite(organization.id, organization.isFavorited)}>{organization.isFavorited ? 'Favorited' : 'Favorite'}</button>}
+          {canFollowMasjid && <button className={organization.notifyPrayers ? 'primary-button' : 'secondary-button'} onClick={() => onFollow(organization.id, true)}>{organization.notifyPrayers ? 'Notifications on' : 'Notify Me'}</button>}
           {!canFollowMasjid && <span className="status-pill">Organization profile</span>}
           <a className="secondary-button" href={directionsUrl(organization)} target="_blank" rel="noreferrer">Directions</a>
           {organization.website && <a className="secondary-button" href={organization.website} target="_blank" rel="noreferrer">Website</a>}
@@ -1330,7 +1392,7 @@ function printableHoursReport(user, visible) {
   report.print();
 }
 
-function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToOpportunity, title, subtitle }) {
+function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToOpportunity, updateNotificationPreferences, notificationPreferences, title, subtitle }) {
   const [opportunityQuery, setOpportunityQuery] = useState('');
   const [workTypeFilter, setWorkTypeFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
@@ -1356,6 +1418,9 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
   const ageAllowed = type !== 'JOB' || canUseJobs(user);
   const userCanApply = isUserAccount(user) && ageAllowed;
   const activeQuestions = activeOpportunity ? normalizeList(activeOpportunity.applicationQuestions || activeOpportunity.questions) : [];
+  const preferenceKey = type === 'JOB' ? 'jobOpportunities' : 'volunteerOpportunities';
+  const sourceKey = type === 'JOB' ? 'jobOpportunitySource' : 'volunteerOpportunitySource';
+  const preferences = { ...defaultNotificationPreferences, ...notificationPreferences };
   function updateApplicationForm(id, field, value) {
     setApplicationForms((current) => ({ ...current, [id]: { ...(current[id] || {}), [field]: value } }));
   }
@@ -1425,6 +1490,7 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
             {application?.note && <div className="check-row"><span>Your note</span><strong>{application.note}</strong></div>}
             <div className="card-footer">
               {application ? <span className="status-pill">{application.status}</span> : userCanApply ? <button className="primary-button" onClick={() => setActiveOpportunity(item)}>Apply</button> : <span className="status-pill">Manage in dashboard</span>}
+              {isUserAccount(user) && <button className={preferences[preferenceKey] ? 'primary-button' : 'secondary-button'} onClick={() => updateNotificationPreferences?.({ ...preferences, [preferenceKey]: true, [sourceKey]: item.isFromFavoriteMasjid ? 'favorited' : item.isFromFollowedMasjid ? 'followed' : preferences[sourceKey] })}>Notify me about similar</button>}
             </div>
           </article>
         );})}
@@ -1462,7 +1528,7 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
   );
 }
 
-function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
+function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavorite, openOrganization, openEvent }) {
   const editingSelf = !viewedUser || viewedUser.id === user.id;
   const profile = viewedUser || user;
   const [editMode, setEditMode] = useState(false);
@@ -1470,11 +1536,9 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social }) {
 
   const followers = social.followers || social.connections || [];
   const following = social.following || social.connections || [];
-  const favoriteMasjids = (social.followingMasjids || []).slice(0, 2);
-async function unfavoriteMasjid(orgId) {
-  await api(`/api/organizations/${orgId}/follow`, { method: 'DELETE' });
-  window.location.reload();
-}
+  const favoriteMasjids = social.favoriteMasjids || [];
+  const followedMasjids = social.followingMasjids || [];
+  const savedEvents = social.savedEvents || [];
   const [form, setForm] = useState(() => ({
     name: profile.name || '',
     dateOfBirth: toDateInput(profile.dateOfBirth),
@@ -1606,34 +1670,55 @@ async function unfavoriteMasjid(orgId) {
       <section className="panel profile-social">
         <div className="section-title">
           <h2>Favorite Masjids</h2>
-          <span>Max 2</span>
+          <span>{favoriteMasjids.length}</span>
         </div>
 
         <div className="favorite-masjid-grid">
           {favoriteMasjids.map((org) => (
-  <article className="favorite-masjid-card" key={org.id}>
-    <div className="mini-org-avatar">
-      {org.logoUrl ? <img src={org.logoUrl} alt="" /> : initials(org.name)}
-    </div>
-
-    <div>
-      <strong>{org.name}</strong>
-      <span>{org.city || org.location || 'Location open'}</span>
-    </div>
-
-    {editingSelf && (
-      <button
-        className="secondary-button compact-button"
-        onClick={() => unfavoriteMasjid(org.id)}
-      >
-        Unfavorite
-      </button>
-    )}
-  </article>
-))}
+            <article className="favorite-masjid-card" key={org.id}>
+              <button className="mini-org-avatar" onClick={() => openOrganization?.(org.id)}>
+                {org.logoUrl || org.imageUrl ? <img src={org.logoUrl || org.imageUrl} alt="" /> : initials(org.name)}
+              </button>
+              <div>
+                <strong>{org.name}</strong>
+                <span>{org.city || org.location || 'Location open'}</span>
+              </div>
+              {editingSelf && <button className="secondary-button compact-button" onClick={() => onFavorite?.(org.id, true)}>Unfavorite</button>}
+            </article>
+          ))}
         </div>
 
-        {!favoriteMasjids.length && <p className="helper-text">No favorite masjids yet.</p>}
+        {!favoriteMasjids.length && <p className="helper-text">You haven't favorited any masjids yet.</p>}
+
+        <div className="section-title">
+          <h2>Followed Masjids</h2>
+          <span>{followedMasjids.length}</span>
+        </div>
+        <div className="stack-list">
+          {followedMasjids.slice(0, 4).map((org) => (
+            <article className="mini-row action-row" key={org.id}>
+              <strong>{org.name}</strong>
+              <span>{org.city || org.address || 'Location open'}</span>
+              <button className="secondary-button compact-button" onClick={() => openOrganization?.(org.id)}>Open</button>
+            </article>
+          ))}
+        </div>
+        {!followedMasjids.length && <p className="helper-text">Follow masjids to receive announcements and event updates.</p>}
+
+        <div className="section-title">
+          <h2>Saved Events</h2>
+          <span>{savedEvents.length}</span>
+        </div>
+        <div className="stack-list">
+          {savedEvents.slice(0, 4).map((event) => (
+            <article className="mini-row action-row" key={event.id}>
+              <strong>{event.title}</strong>
+              <span>{event.startTime ? new Date(event.startTime).toLocaleString() : event.location || 'Time TBA'}</span>
+              <button className="secondary-button compact-button" onClick={() => openEvent?.(event.id)}>Open</button>
+            </article>
+          ))}
+        </div>
+        {!savedEvents.length && <p className="helper-text">No saved events yet.</p>}
 
         <div className="section-title">
           <h2>Masjid Roles</h2>
@@ -1736,12 +1821,16 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function SettingsScreen({ user, onSave }) {
+function SettingsScreen({ user, social = {}, notificationPreferences, updateNotificationPreferences, onSave, onFavorite, onUnfollow, openOrganization, openEvent, logout }) {
   const selected = userPreferenceLabels(user);
   const [form, setForm] = useState(() => ({
     dateOfBirth: toDateInput(user.dateOfBirth),
     interests: optionalInterestLabels.filter((label) => selected.has(label))
   }));
+  const preferences = { ...defaultNotificationPreferences, ...notificationPreferences };
+  const favoriteMasjids = social.favoriteMasjids || [];
+  const followedMasjids = social.followingMasjids || [];
+  const savedEvents = social.savedEvents || [];
 
   useEffect(() => {
     const nextSelected = userPreferenceLabels(user);
@@ -1769,10 +1858,18 @@ function SettingsScreen({ user, onSave }) {
     onSave(updated);
   }
 
+  function togglePreference(key) {
+    updateNotificationPreferences({ ...preferences, [key]: !preferences[key] });
+  }
+
+  function updateSource(key, value) {
+    updateNotificationPreferences({ ...preferences, [key]: value });
+  }
+
   return (
-    <Page title="Settings" subtitle="Update account preferences and category visibility.">
-      <form className="panel settings-panel" onSubmit={submit}>
-        <div className="section-title"><div><p className="eyebrow">Account</p><h2>Preferences</h2></div><Settings size={20} /></div>
+    <Page title="Settings" subtitle="Profile, masjids, notifications, events, opportunities, and prayer preferences.">
+      <form className="panel settings-panel mobile-settings" onSubmit={submit}>
+        <div className="section-title"><div><p className="eyebrow">Account</p><h2>Profile settings</h2></div><Settings size={20} /></div>
         <label className="field-label">
           <span>Date of birth</span>
           <input type="date" value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} />
@@ -1793,6 +1890,73 @@ function SettingsScreen({ user, onSave }) {
         </section>
         <button className="primary-button">Save preferences</button>
       </form>
+
+      <section className="panel settings-panel mobile-settings">
+        <div className="section-title"><div><p className="eyebrow">Masjids</p><h2>Favorites</h2></div><span>{favoriteMasjids.length}</span></div>
+        <div className="stack-list">
+          {favoriteMasjids.map((org) => (
+            <article className="mini-row action-row" key={org.id}>
+              <strong>{org.name}</strong>
+              <span>{org.city || org.address || 'Location open'}</span>
+              <button className="secondary-button compact-button" onClick={() => openOrganization?.(org.id)}>Open</button>
+              <button className="secondary-button compact-button" onClick={() => onFavorite?.(org.id, true)}>Unfavorite</button>
+            </article>
+          ))}
+        </div>
+        {!favoriteMasjids.length && <p className="helper-text">You haven't favorited any masjids yet.</p>}
+
+        <div className="section-title"><div><p className="eyebrow">Masjids</p><h2>Following</h2></div><span>{followedMasjids.length}</span></div>
+        <div className="stack-list">
+          {followedMasjids.map((org) => (
+            <article className="mini-row action-row" key={org.id}>
+              <strong>{org.name}</strong>
+              <span>{org.notifyPrayers ? 'Prayer notifications on' : 'Updates enabled'}</span>
+              <button className="secondary-button compact-button" onClick={() => openOrganization?.(org.id)}>Open</button>
+              <button className="secondary-button compact-button" onClick={() => onUnfollow?.(org.id)}>Unfollow</button>
+            </article>
+          ))}
+        </div>
+        {!followedMasjids.length && <p className="helper-text">Follow masjids to receive announcements and event updates.</p>}
+      </section>
+
+      <section className="panel settings-panel mobile-settings">
+        {notificationToggleGroups.map((group) => (
+          <div className="settings-group" key={group.title}>
+            <div className="section-title compact-title"><h3>{group.title}</h3></div>
+            <div className="toggle-list">
+              {group.items.map(([key, label]) => (
+                <label className="switch-row" key={key}>
+                  <span>{label}</span>
+                  <input type="checkbox" checked={Boolean(preferences[key])} onChange={() => togglePreference(key)} />
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="settings-source-grid">
+          <label className="field-label"><span>Job alerts from</span><select value={preferences.jobOpportunitySource} onChange={(event) => updateSource('jobOpportunitySource', event.target.value)}><option value="followed">Followed masjids only</option><option value="favorited">Favorited masjids only</option><option value="nearby">All nearby masjids</option></select></label>
+          <label className="field-label"><span>Volunteer alerts from</span><select value={preferences.volunteerOpportunitySource} onChange={(event) => updateSource('volunteerOpportunitySource', event.target.value)}><option value="followed">Followed masjids only</option><option value="favorited">Favorited masjids only</option><option value="nearby">All nearby masjids</option></select></label>
+        </div>
+      </section>
+
+      <section className="panel settings-panel mobile-settings">
+        <div className="section-title"><div><p className="eyebrow">Events</p><h2>Saved events</h2></div><span>{savedEvents.length}</span></div>
+        <div className="stack-list">
+          {savedEvents.map((event) => (
+            <article className="mini-row action-row" key={event.id}>
+              <strong>{event.title}</strong>
+              <span>{event.startTime ? new Date(event.startTime).toLocaleString() : event.location || 'Time TBA'}</span>
+              <button className="secondary-button compact-button" onClick={() => openEvent?.(event.id)}>Open</button>
+            </article>
+          ))}
+        </div>
+        {!savedEvents.length && <p className="helper-text">No saved events yet.</p>}
+      </section>
+
+      <section className="panel settings-panel mobile-settings">
+        <div className="section-title"><div><p className="eyebrow">Account</p><h2>Session</h2></div><LogOut size={20} /></div>
+        <button className="secondary-button danger" onClick={logout}>Logout</button>
+      </section>
     </Page>
   );
 }
@@ -2929,7 +3093,7 @@ export default function App() {
   const selectedUserIdRef = useRef(null);
   const [viewedUser, setViewedUser] = useState(null);
   const [selectedOrganization, setSelectedOrganization] = useState(null);
-  const [profileSocial, setProfileSocial] = useState({ connections: [], followingMasjids: [], affiliatedMasjids: [] });
+  const [profileSocial, setProfileSocial] = useState({ connections: [], followingMasjids: [], favoriteMasjids: [], savedEvents: [], affiliatedMasjids: [] });
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState(defaultLocation);
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
@@ -2939,6 +3103,7 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationState, setNotificationState] = useState({ permission: 'default', message: '' });
   const [prayerPreferences, setPrayerPreferences] = useState({ enabled: false, offsetMinutes: 0, prayers: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true } });
+  const [notificationPreferences, setNotificationPreferences] = useState(defaultNotificationPreferences);
 
   async function bootstrap() {
     if (!token()) return;
@@ -3004,8 +3169,8 @@ export default function App() {
   }
 
   async function loadProfileSocial(userId) {
-    const loaded = await api(`/api/users/${userId}/social`).catch(() => ({ connections: [], followingMasjids: [], affiliatedMasjids: [] }));
-    setProfileSocial({ connections: loaded.connections || [], followingMasjids: loaded.followingMasjids || [], affiliatedMasjids: loaded.affiliatedMasjids || [] });
+    const loaded = await api(`/api/users/${userId}/social`).catch(() => ({ connections: [], followingMasjids: [], favoriteMasjids: [], savedEvents: [], affiliatedMasjids: [] }));
+    setProfileSocial({ connections: loaded.connections || [], followingMasjids: loaded.followingMasjids || [], favoriteMasjids: loaded.favoriteMasjids || [], savedEvents: loaded.savedEvents || [], affiliatedMasjids: loaded.affiliatedMasjids || [] });
   }
 
   async function loadNotificationMasjids() {
@@ -3017,6 +3182,7 @@ export default function App() {
     const loaded = await api('/api/notifications/preferences').catch(() => null);
     if (!loaded) return;
     if (loaded.prayerNotificationPreferences) setPrayerPreferences(loaded.prayerNotificationPreferences);
+    if (loaded.notificationPreferences) setNotificationPreferences({ ...defaultNotificationPreferences, ...loaded.notificationPreferences });
     setNotificationState({
       permission: 'Notification' in window ? Notification.permission : 'unsupported',
       message: loaded.pushConfigured ? `${loaded.subscriptionCount || 0} device subscription${loaded.subscriptionCount === 1 ? '' : 's'} saved.` : 'Push delivery needs VAPID keys on the backend.'
@@ -3060,6 +3226,12 @@ export default function App() {
     const updated = await api('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ prayerNotificationPreferences: nextPreferences }) });
     setUser(updated);
     persistAuth(updated);
+  }
+
+  async function updateNotificationPreferences(nextPreferences) {
+    setNotificationPreferences(nextPreferences);
+    const updated = await api('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ notificationPreferences: nextPreferences }) });
+    if (updated.notificationPreferences) setNotificationPreferences({ ...defaultNotificationPreferences, ...updated.notificationPreferences });
   }
 
   async function saveManualLocation(nextLocation) {
@@ -3119,6 +3291,12 @@ export default function App() {
   async function unregisterEvent(id) {
     await api(`/api/events/${id}/register`, { method: 'DELETE' });
     await Promise.all([loadEvents(), loadMyOrganizations()]);
+  }
+
+  async function toggleEventSubscription(event, next = {}) {
+    if (!user) return alert('Log in to save events and enable reminders.');
+    await api(`/api/events/${event.id}/subscribe`, { method: 'POST', body: JSON.stringify({ saved: next.saved ?? !event.isSaved, notify: next.notify ?? !event.notifyMe }) });
+    await Promise.all([loadEvents(), loadProfileSocial(user.id)]);
   }
 
   async function createOpportunity(organizationId, form) {
@@ -3310,6 +3488,7 @@ export default function App() {
   }
 
   async function followOrganization(id, notifyPrayers = false) {
+    if (!user) return alert('Log in to follow masjids and manage notifications.');
     if (notifyPrayers && 'Notification' in window && Notification.permission !== 'granted') {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return alert('Notifications were not enabled.');
@@ -3319,6 +3498,22 @@ export default function App() {
     setSelectedOrganization(org);
     if (notifyPrayers) schedulePrayerNotification(org);
     await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id), loadNotificationMasjids()]);
+  }
+
+  async function unfollowOrganization(id) {
+    if (!user) return alert('Log in to manage followed masjids.');
+    await api(`/api/organizations/${id}/follow`, { method: 'DELETE' });
+    const org = selectedOrganization?.id === id ? await api(`/api/organizations/${id}`).catch(() => null) : null;
+    if (org) setSelectedOrganization(org);
+    await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id), loadNotificationMasjids()]);
+  }
+
+  async function toggleFavoriteOrganization(id, isFavorited = false) {
+    if (!user) return alert('Log in to favorite masjids.');
+    await api(`/api/organizations/${id}/favorite`, { method: isFavorited ? 'DELETE' : 'POST' });
+    const org = selectedOrganization?.id === id ? await api(`/api/organizations/${id}`).catch(() => null) : null;
+    if (org) setSelectedOrganization(org);
+    await Promise.all([loadLocationData(location), loadPosts(), loadEvents(), loadProfileSocial(user.id)]);
   }
 
   function requestLocation() {
@@ -3503,7 +3698,7 @@ export default function App() {
   const routeEventId = tab === 'events' ? routeId(locationRoute.pathname, '/events/') : '';
   const routeMessageUserId = tab === 'messages' ? routeId(locationRoute.pathname, '/messages/') : '';
   const isDetailRoute = tab === 'masjidProfile' || Boolean(routeEventId) || Boolean(routeMessageUserId) || (tab === 'profile' && routeId(locationRoute.pathname, '/profile/') && !['me', 'edit'].includes(routeId(locationRoute.pathname, '/profile/')));
-  const favoriteMasjids = profileSocial.followingMasjids.filter((org) => org.notifyPrayers);
+  const favoriteMasjids = profileSocial.favoriteMasjids || [];
   const favoriteMasjidIds = new Set(favoriteMasjids.map((org) => org.id));
   const followedMasjidIds = new Set(profileSocial.followingMasjids.map((org) => org.id));
   const favoriteRank = (organizationId) => favoriteMasjidIds.has(organizationId) ? 2 : followedMasjidIds.has(organizationId) ? 1 : 0;
@@ -3531,18 +3726,18 @@ export default function App() {
   const screens = {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />,
     prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} />,
-    events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} onBack={() => navigate(-1)} />,
+    events: <EventsScreen user={user} events={prioritizedEvents} loadEvents={loadEvents} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} onBack={() => navigate(-1)} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
-    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onBack={() => navigate(-1)} />,
+    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onUnfollow={unfollowOrganization} onFavorite={toggleFavoriteOrganization} onBack={() => navigate(-1)} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
-    volunteers: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
-    jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
+    volunteers: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
+    jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
-    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} />,
-    settings: <SettingsScreen user={user} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} />,
+    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} />,
+    settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };
 
