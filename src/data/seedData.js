@@ -53,7 +53,6 @@ export const seedOrganizations = [
     prayerNotes: 'Prayer timings shown from Ahle Hadith Society of Canada Toronto page for Sunday, Jun 14, 2026. Jumuah is listed at 2:00 PM.',
     classes: [
       { id: 'ibc-ittiba', title: 'Ittiba and rejection of Taqlid', teacher: 'Ahle-Hadith Society of Canada', dayTime: 'Current program', description: 'Series of virtual lectures in English on foundations and distinctive features of the methodology.', registrationLink: 'https://ahlehadithcanada.org/toronto/' },
-      { id: 'ibc-ahadith-worship', title: 'Ahadith of Worship', teacher: 'Faculty of Hadith of Toronto', dayTime: 'Current program', description: 'Arabic lecture series with simultaneous translation.', registrationLink: 'https://ahlehadithcanada.org/toronto/' },
       { id: 'ibc-friday-halaqa', title: 'Friday Halaqa Series', teacher: 'Imam Bukhari Centre', dayTime: 'Fridays', description: 'Ongoing Friday halaqa programming listed by the centre.', registrationLink: 'https://ahlehadithcanada.org/toronto/' }
     ],
     campaign: { name: "Support the Da'wah", goal: 190000, raised: 125000 },
