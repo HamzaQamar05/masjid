@@ -1950,7 +1950,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     setActiveSection(section);
   }
   function openAnnouncementComposer() {
-    setPostForm((current) => ({ ...current, type: 'ANNOUNCEMENT' }));
+    setPostForm((current) => ({ ...current, type: 'ANNOUNCEMENT', title: current.title || '', content: current.content || '' }));
     openDashboardSection('posts');
   }
   function closeDashboardSection() {
@@ -2379,7 +2379,8 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
           )}
 
           {activeSection === 'posts' && <section className="panel">
-            <div className="section-title"><h2>Create Feed Post</h2></div>
+            <div className="section-title"><h2>{postForm.type === 'ANNOUNCEMENT' ? 'Send Announcement' : 'Create Feed Post'}</h2><span>{postForm.type === 'ANNOUNCEMENT' ? 'Push to followers' : 'Community post'}</span></div>
+            {postForm.type === 'ANNOUNCEMENT' && <p className="helper-text">Use this for Eid updates, parking notices, cancellations, guest speakers, and urgent masjid reminders. Followers with notifications enabled receive a push alert.</p>}
             <form className="profile-form" onSubmit={submitPost}>
               <div className="form-grid">
                 <select value={postForm.organizationId} onChange={(event) => setPostForm({ ...postForm, organizationId: event.target.value })}>
@@ -2389,13 +2390,13 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                 <select value={postForm.type} onChange={(event) => setPostForm({ ...postForm, type: event.target.value })}>
                   {['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].map((type) => <option key={type} value={type}>{type}</option>)}
                 </select>
-                <input required placeholder="Post title" value={postForm.title} onChange={(event) => setPostForm({ ...postForm, title: event.target.value })} />
+                <input required placeholder={postForm.type === 'ANNOUNCEMENT' ? 'Announcement title' : 'Post title'} value={postForm.title} onChange={(event) => setPostForm({ ...postForm, title: event.target.value })} />
                 <input placeholder="Image URL" value={postForm.imageUrl} onChange={(event) => setPostForm({ ...postForm, imageUrl: event.target.value })} />
                 <input placeholder="Location" value={postForm.location} onChange={(event) => setPostForm({ ...postForm, location: event.target.value })} />
                 <input type="datetime-local" value={postForm.eventTime} onChange={(event) => setPostForm({ ...postForm, eventTime: event.target.value })} />
               </div>
-              <textarea required placeholder="Post content" value={postForm.content} onChange={(event) => setPostForm({ ...postForm, content: event.target.value })} />
-              <button className="primary-button">Publish post</button>
+              <textarea required placeholder={postForm.type === 'ANNOUNCEMENT' ? 'What should followers know?' : 'Post content'} value={postForm.content} onChange={(event) => setPostForm({ ...postForm, content: event.target.value })} />
+              <button className="primary-button">{postForm.type === 'ANNOUNCEMENT' ? 'Send announcement' : 'Publish post'}</button>
             </form>
           </section>}
 

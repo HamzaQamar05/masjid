@@ -557,6 +557,21 @@ async function sendPushToUser(userId, payload) {
   return { sent, disabled: false };
 }
 
+async function sendPushToOrganizationFollowers(organizationId, payload) {
+  if (!vapidPublicKey || !vapidPrivateKey) return { sent: 0, disabled: true, followers: 0 };
+  const follows = await prisma.organizationFollow.findMany({
+    where: { organizationId },
+    select: { userId: true }
+  });
+  const uniqueUserIds = [...new Set(follows.map((follow) => follow.userId))];
+  const results = await Promise.all(uniqueUserIds.map((userId) => sendPushToUser(userId, payload)));
+  return {
+    sent: results.reduce((sum, result) => sum + (result.sent || 0), 0),
+    disabled: results.some((result) => result.disabled),
+    followers: uniqueUserIds.length
+  };
+}
+
 async function auth(req, res, next) {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ error: 'No token provided' });
@@ -1141,7 +1156,19 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
     },
     include: { author: true, organization: true }
   });
-  res.json(publicPost(post));
+  let push = null;
+  if (type === 'ANNOUNCEMENT') {
+    push = await sendPushToOrganizationFollowers(req.params.id, {
+      title: post.title,
+      body: post.content,
+      url: `/masjids/${req.params.id}`,
+      tag: `announcement-${post.id}`,
+      type: 'ANNOUNCEMENT',
+      organizationId: req.params.id,
+      postId: post.id
+    });
+  }
+  res.json({ ...publicPost(post), push });
 });
 
 app.put('/api/posts/:id', auth, async (req, res) => {
