@@ -43,6 +43,7 @@ model User {
   timezone     String?
   prayerMethod String?
   prayerNotificationPreferences Json?
+  whatsappPhone String?
   createdAt    DateTime    @default(now())
 
   eventsCreated            Event[]                @relation("EventCreator")
@@ -96,6 +97,7 @@ model UserNotificationPreference {
   eventReminders                  Boolean  @default(true)
   applicationStatusUpdates        Boolean  @default(true)
   messages                        Boolean  @default(true)
+  whatsappNotifications           Boolean  @default(false)
   nearbyMasjids                   Boolean  @default(false)
   nearbyEvents                    Boolean  @default(false)
   nearbyVolunteerOpportunities    Boolean  @default(false)

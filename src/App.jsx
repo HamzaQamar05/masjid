@@ -49,6 +49,7 @@ const defaultNotificationPreferences = {
   eventReminders: true,
   applicationStatusUpdates: true,
   messages: true,
+  whatsappNotifications: false,
   nearbyMasjids: false,
   nearbyEvents: false,
   nearbyVolunteerOpportunities: false,
@@ -2031,11 +2032,15 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function SettingsScreen({ user, social = {}, notificationPreferences, updateNotificationPreferences, onSave, onFavorite, onUnfollow, openOrganization, openEvent, logout }) {
+function SettingsScreen({ user, social = {}, notificationPreferences, updateNotificationPreferences, whatsappSettings, updateWhatsAppSettings, onSave, onFavorite, onUnfollow, openOrganization, openEvent, logout }) {
   const selected = userPreferenceLabels(user);
   const [form, setForm] = useState(() => ({
     dateOfBirth: toDateInput(user.dateOfBirth),
     interests: optionalInterestLabels.filter((label) => selected.has(label))
+  }));
+  const [whatsappForm, setWhatsappForm] = useState(() => ({
+    phone: whatsappSettings.phone || '',
+    enabled: Boolean(whatsappSettings.enabled)
   }));
   const preferences = { ...defaultNotificationPreferences, ...notificationPreferences };
   const favoriteMasjids = social.favoriteMasjids || [];
@@ -2049,6 +2054,13 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
       interests: optionalInterestLabels.filter((label) => nextSelected.has(label))
     });
   }, [user.id, user.dateOfBirth, (user.interests || []).join('|')]);
+
+  useEffect(() => {
+    setWhatsappForm({
+      phone: whatsappSettings.phone || '',
+      enabled: Boolean(whatsappSettings.enabled)
+    });
+  }, [whatsappSettings.phone, whatsappSettings.enabled]);
 
   function toggleOptional(label) {
     setForm((current) => ({
@@ -2074,6 +2086,11 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
 
   function updateSource(key, value) {
     updateNotificationPreferences({ ...preferences, [key]: value });
+  }
+
+  async function saveWhatsAppSettings(event) {
+    event.preventDefault();
+    await updateWhatsAppSettings(whatsappForm);
   }
 
   return (
@@ -2148,6 +2165,24 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
           <label className="field-label"><span>Volunteer alerts from</span><select value={preferences.volunteerOpportunitySource} onChange={(event) => updateSource('volunteerOpportunitySource', event.target.value)}><option value="followed">Followed masjids only</option><option value="favorited">Favorited masjids only</option><option value="nearby">All nearby masjids</option></select></label>
         </div>
       </section>
+
+      <form className="panel settings-panel mobile-settings" onSubmit={saveWhatsAppSettings}>
+        <div className="section-title"><div><p className="eyebrow">WhatsApp</p><h2>Optional message channel</h2></div><MessageCircle size={20} /></div>
+        <p className="helper-text">WhatsApp delivery is feature-flagged and isolated from core push notifications. Keep this off unless the backend WhatsApp service is configured.</p>
+        <label className="field-label">
+          <span>Phone number</span>
+          <input value={whatsappForm.phone} onChange={(event) => setWhatsappForm({ ...whatsappForm, phone: event.target.value })} placeholder="+15551234567" />
+        </label>
+        <label className="switch-row">
+          <span>Receive WhatsApp notifications</span>
+          <input type="checkbox" checked={whatsappForm.enabled} onChange={(event) => setWhatsappForm({ ...whatsappForm, enabled: event.target.checked })} />
+        </label>
+        <div className="tag-row">
+          <span>{whatsappSettings.integrationEnabled ? 'Integration enabled' : 'Integration disabled'}</span>
+          <span>{whatsappSettings.serviceConfigured ? 'Service configured' : 'Service not configured'}</span>
+        </div>
+        <button className="primary-button">Save WhatsApp settings</button>
+      </form>
 
       <section className="panel settings-panel mobile-settings">
         <div className="section-title"><div><p className="eyebrow">Events</p><h2>Saved events</h2></div><span>{savedEvents.length}</span></div>
@@ -3875,6 +3910,7 @@ export default function App() {
   const [notificationState, setNotificationState] = useState({ permission: 'default', message: '' });
   const [prayerPreferences, setPrayerPreferences] = useState({ enabled: false, offsetMinutes: 0, prayers: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true } });
   const [notificationPreferences, setNotificationPreferences] = useState(defaultNotificationPreferences);
+  const [whatsappSettings, setWhatsappSettings] = useState({ phone: '', enabled: false, integrationEnabled: false, serviceConfigured: false });
   const eventsLoadedRef = useRef(false);
   const organizationsLoadedRef = useRef(false);
   const myOrganizationsLoadedRef = useRef(false);
@@ -4010,6 +4046,7 @@ export default function App() {
     if (!loaded) return;
     if (loaded.prayerNotificationPreferences) setPrayerPreferences(loaded.prayerNotificationPreferences);
     if (loaded.notificationPreferences) setNotificationPreferences({ ...defaultNotificationPreferences, ...loaded.notificationPreferences });
+    if (loaded.whatsapp) setWhatsappSettings(loaded.whatsapp);
     setNotificationState({
       permission: 'Notification' in window ? Notification.permission : 'unsupported',
       message: loaded.pushConfigured ? `${loaded.subscriptionCount || 0} device subscription${loaded.subscriptionCount === 1 ? '' : 's'} saved.` : 'Push delivery needs VAPID keys on the backend.'
@@ -4060,6 +4097,12 @@ export default function App() {
   async function updateNotificationPreferences(nextPreferences) {
     setNotificationPreferences(nextPreferences);
     const updated = await api('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ notificationPreferences: nextPreferences }) });
+    if (updated.notificationPreferences) setNotificationPreferences({ ...defaultNotificationPreferences, ...updated.notificationPreferences });
+  }
+
+  async function updateWhatsAppSettings(nextSettings) {
+    const updated = await api('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ whatsapp: nextSettings }) });
+    if (updated.whatsapp) setWhatsappSettings(updated.whatsapp);
     if (updated.notificationPreferences) setNotificationPreferences({ ...defaultNotificationPreferences, ...updated.notificationPreferences });
   }
 
@@ -4620,7 +4663,7 @@ export default function App() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} />,
-    settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} />,
+    settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} whatsappSettings={whatsappSettings} updateWhatsAppSettings={updateWhatsAppSettings} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };
 
