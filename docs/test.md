@@ -10,6 +10,7 @@ Notification launch checklist
    - PRAYER_NOTIFICATION_JOB_ENABLED=true unless another scheduler owns prayer reminders.
    - WHATSAPP_ENABLED=false for launch unless a separate WhatsApp sender service is deployed.
    - If WhatsApp is enabled, WHATSAPP_SERVICE_URL points to the isolated sender service and WHATSAPP_SERVICE_TOKEN is set.
+   - Production startup must use `prisma migrate deploy`; do not run `prisma db push` against production data.
 
 2. Register or log in as a community user.
    - Confirm login persists after refreshing and closing/reopening the app.
