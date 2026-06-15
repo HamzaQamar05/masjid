@@ -14,6 +14,8 @@ Notification launch checklist
 
 2. Register or log in as a community user.
    - Confirm login persists after refreshing and closing/reopening the app.
+   - Confirm Home shows the first-run setup checklist and uses fallback masjid/prayer data before GPS is enabled.
+   - Click the setup checklist location action and confirm the browser location prompt only appears after this in-app action.
    - Open Home or Prayer and verify the in-app notification card appears before the browser permission prompt.
 
 3. Enable notifications.
