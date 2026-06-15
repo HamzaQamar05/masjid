@@ -6637,3 +6637,293 @@ select:focus {
     font-size: 10px;
   }
 }
+
+/* Dark social product pass: closer to LinkedIn/Instagram depth while preserving every screen and control. */
+:root[data-theme="dark"] {
+  --page-bg: #08090d;
+  --panel-bg: #11141a;
+  --panel-soft: #181c24;
+  --text: #f7f8fb;
+  --muted: #a2acba;
+  --border: #262d39;
+  --brand: #2d8cff;
+  --brand-strong: #76b8ff;
+  --surface: #11141a;
+  --surface-raised: rgba(17, 20, 26, 0.92);
+  --surface-muted: #181c24;
+  --ink: #f7f8fb;
+  --ink-soft: #a2acba;
+  --line: #262d39;
+  --accent: #f43f5e;
+  --gold: #f5c15c;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  --shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.035), 0 14px 32px rgba(0, 0, 0, 0.22);
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 18% -10%, rgba(45, 140, 255, 0.16), transparent 32rem),
+    radial-gradient(circle at 88% 2%, rgba(244, 63, 94, 0.10), transparent 30rem),
+    linear-gradient(180deg, #0c0f15 0, #08090d 38rem);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .top-nav,
+:root[data-theme="dark"] .mobile-bottom-nav,
+:root[data-theme="dark"] .mobile-drawer {
+  background: rgba(13, 16, 22, 0.88);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="dark"] .profile-card,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .composer,
+:root[data-theme="dark"] .feed-post,
+:root[data-theme="dark"] .event-card,
+:root[data-theme="dark"] .organization-card,
+:root[data-theme="dark"] .person-card,
+:root[data-theme="dark"] .role-card,
+:root[data-theme="dark"] .library-card,
+:root[data-theme="dark"] .business-card,
+:root[data-theme="dark"] .metric-card,
+:root[data-theme="dark"] .nearby-card,
+:root[data-theme="dark"] .compact-card,
+:root[data-theme="dark"] .mini-row,
+:root[data-theme="dark"] .application-card,
+:root[data-theme="dark"] .message-thread,
+:root[data-theme="dark"] .auth-screen,
+:root[data-theme="dark"] .filter-panel,
+:root[data-theme="dark"] .event-filters,
+:root[data-theme="dark"] .opportunity-filters,
+:root[data-theme="dark"] .masjid-hub,
+:root[data-theme="dark"] .profile-detail,
+:root[data-theme="dark"] .profile-social {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 120px), var(--surface);
+  border-color: rgba(255, 255, 255, 0.085);
+  box-shadow: var(--shadow-soft);
+}
+
+:root[data-theme="dark"] .feed-post,
+:root[data-theme="dark"] .message-thread,
+:root[data-theme="dark"] .masjid-profile {
+  background: #10131a;
+}
+
+:root[data-theme="dark"] .right-rail .panel,
+:root[data-theme="dark"] .profile-card,
+:root[data-theme="dark"] .metric-card {
+  background: #10131a;
+}
+
+:root[data-theme="dark"] .brand span,
+:root[data-theme="dark"] .brand-mark,
+:root[data-theme="dark"] .profile-avatar,
+:root[data-theme="dark"] .org-logo,
+:root[data-theme="dark"] .tiny-avatar,
+:root[data-theme="dark"] .role-icon {
+  background:
+    linear-gradient(135deg, #2d8cff 0%, #7c3aed 52%, #f43f5e 100%);
+  color: #fff;
+}
+
+:root[data-theme="dark"] .primary-button,
+:root[data-theme="dark"] .post-button,
+:root[data-theme="dark"] .comment-form button,
+:root[data-theme="dark"] .mobile-bottom-nav button.active {
+  background: #2d8cff;
+  border-color: #2d8cff;
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(45, 140, 255, 0.24);
+}
+
+:root[data-theme="dark"] .primary-button:hover,
+:root[data-theme="dark"] .post-button:hover,
+:root[data-theme="dark"] .comment-form button:hover {
+  background: #1478e8;
+  border-color: #1478e8;
+}
+
+:root[data-theme="dark"] .secondary-button,
+:root[data-theme="dark"] .icon-button,
+:root[data-theme="dark"] .dm-top-button,
+:root[data-theme="dark"] .composer-actions button,
+:root[data-theme="dark"] .post-actions button,
+:root[data-theme="dark"] .post-social-row button,
+:root[data-theme="dark"] .manager-row button,
+:root[data-theme="dark"] .compact-card button,
+:root[data-theme="dark"] .mobile-logout,
+:root[data-theme="dark"] .load-more {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.09);
+  color: #dce7f5;
+}
+
+:root[data-theme="dark"] .secondary-button:hover,
+:root[data-theme="dark"] .icon-button:hover,
+:root[data-theme="dark"] .dm-top-button:hover,
+:root[data-theme="dark"] .composer-actions button:hover,
+:root[data-theme="dark"] .post-actions button:hover,
+:root[data-theme="dark"] .post-social-row button:hover,
+:root[data-theme="dark"] .manager-row button:hover,
+:root[data-theme="dark"] .compact-card button:hover {
+  background: rgba(45, 140, 255, 0.14);
+  border-color: rgba(45, 140, 255, 0.42);
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .global-search,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] .dm-search,
+:root[data-theme="dark"] .comment-form input,
+:root[data-theme="dark"] .composer-main button,
+:root[data-theme="dark"] .message-composer textarea {
+  background: #0b0d12;
+  border-color: rgba(255, 255, 255, 0.09);
+  color: #f7f8fb;
+}
+
+:root[data-theme="dark"] .global-search:focus-within,
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] textarea:focus,
+:root[data-theme="dark"] select:focus {
+  border-color: rgba(45, 140, 255, 0.72);
+  box-shadow: 0 0 0 3px rgba(45, 140, 255, 0.18);
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #748194;
+}
+
+:root[data-theme="dark"] .side-nav button {
+  color: #9ca7b7;
+}
+
+:root[data-theme="dark"] .side-nav button.active,
+:root[data-theme="dark"] .side-nav button:hover {
+  background: rgba(45, 140, 255, 0.13);
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .tag-row span,
+:root[data-theme="dark"] .status-pill,
+:root[data-theme="dark"] .profile-meta span,
+:root[data-theme="dark"] .role-meta span,
+:root[data-theme="dark"] .org-detail-row span,
+:root[data-theme="dark"] .check-row span,
+:root[data-theme="dark"] .check-row strong {
+  background: rgba(45, 140, 255, 0.105);
+  border-color: rgba(45, 140, 255, 0.26);
+  color: #b9dcff;
+}
+
+:root[data-theme="dark"] .eyebrow,
+:root[data-theme="dark"] a,
+:root[data-theme="dark"] .text-action,
+:root[data-theme="dark"] .section-title button,
+:root[data-theme="dark"] .nearby-distance {
+  color: #76b8ff;
+}
+
+:root[data-theme="dark"] .notification-button em,
+:root[data-theme="dark"] .dm-top-button span,
+:root[data-theme="dark"] .urgent-badge,
+:root[data-theme="dark"] .inbox-preview-list em {
+  background: #f43f5e;
+  color: #fff;
+}
+
+:root[data-theme="dark"] .post-image,
+:root[data-theme="dark"] .nearby-image,
+:root[data-theme="dark"] .profile-cover,
+:root[data-theme="dark"] .person-banner,
+:root[data-theme="dark"] .profile-banner,
+:root[data-theme="dark"] .masjid-hero {
+  background-color: #090b10;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .message-list {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(45, 140, 255, 0.14), transparent 260px),
+    radial-gradient(circle at 94% 8%, rgba(244, 63, 94, 0.08), transparent 240px),
+    #0b0d12;
+}
+
+:root[data-theme="dark"] .chat-bubble.sent {
+  background: #2d8cff;
+  color: #fff;
+}
+
+:root[data-theme="dark"] .chat-bubble.received,
+:root[data-theme="dark"] .comment-bubble,
+:root[data-theme="dark"] .dm-inbox-summary,
+:root[data-theme="dark"] .masjid-stat-strip div,
+:root[data-theme="dark"] .profile-info-grid div,
+:root[data-theme="dark"] .operator-snapshot article,
+:root[data-theme="dark"] .analytics-strip button,
+:root[data-theme="dark"] .event-attendance-grid div,
+:root[data-theme="dark"] .attention-list button,
+:root[data-theme="dark"] .inbox-preview-list button,
+:root[data-theme="dark"] .dashboard-menu-grid button,
+:root[data-theme="dark"] .operator-management-grid button {
+  background: #171b23;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .nearby-card:hover,
+:root[data-theme="dark"] .organization-card:hover,
+:root[data-theme="dark"] .person-card:hover,
+:root[data-theme="dark"] .role-card:hover,
+:root[data-theme="dark"] .event-card:hover,
+:root[data-theme="dark"] .business-card:hover,
+:root[data-theme="dark"] .library-card:hover,
+:root[data-theme="dark"] .dashboard-menu-grid button:hover,
+:root[data-theme="dark"] .dashboard-menu-grid button.active,
+:root[data-theme="dark"] .operator-management-grid button:hover {
+  border-color: rgba(45, 140, 255, 0.38);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(45, 140, 255, 0.08);
+}
+
+:root[data-theme="dark"] .prayer-panel {
+  background:
+    linear-gradient(135deg, rgba(45, 140, 255, 0.20), rgba(124, 58, 237, 0.14)),
+    #10131a;
+  border-color: rgba(45, 140, 255, 0.22);
+}
+
+:root[data-theme="dark"] .prayer-grid div {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.075);
+}
+
+:root[data-theme="dark"] .auth-screen {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 42%),
+    #11141a;
+}
+
+@media (max-width: 880px) {
+  :root[data-theme="dark"] .page-header,
+  :root[data-theme="dark"] .top-nav,
+  :root[data-theme="dark"] .mobile-bottom-nav {
+    background: rgba(12, 15, 21, 0.94);
+  }
+
+  :root[data-theme="dark"] .feed-post,
+  :root[data-theme="dark"] .panel,
+  :root[data-theme="dark"] .composer,
+  :root[data-theme="dark"] .event-card,
+  :root[data-theme="dark"] .organization-card,
+  :root[data-theme="dark"] .person-card,
+  :root[data-theme="dark"] .role-card,
+  :root[data-theme="dark"] .library-card,
+  :root[data-theme="dark"] .business-card,
+  :root[data-theme="dark"] .metric-card,
+  :root[data-theme="dark"] .nearby-card {
+    border-color: rgba(255, 255, 255, 0.075);
+  }
+}
