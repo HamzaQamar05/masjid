@@ -226,6 +226,22 @@ function normalizeDate(value) {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
+function normalizeRequiredDate(value) {
+  const date = normalizeDate(value);
+  return date && Number.isFinite(date.getTime()) ? date : null;
+}
+
+function normalizeLimit(value, fallback = 25, max = 50) {
+  const limit = Number(value);
+  return Number.isFinite(limit) ? Math.min(max, Math.max(1, Math.floor(limit))) : fallback;
+}
+
+function normalizeOptionalNumber(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
 function normalizeBirthDate(value) {
   const date = normalizeDate(value);
   if (!date || date > new Date()) return null;
@@ -365,6 +381,53 @@ function normalizeWhatsappPhone(value) {
   if (!phone) return null;
   if (!/^\+?[1-9]\d{7,14}$/.test(phone)) return null;
   return phone.startsWith('+') ? phone : `+${phone}`;
+}
+
+function publicNotification(notification) {
+  if (!notification) return null;
+  return {
+    id: notification.id,
+    type: notification.type,
+    title: notification.title,
+    body: notification.body,
+    url: notification.url,
+    organizationId: notification.organizationId,
+    postId: notification.postId,
+    eventId: notification.eventId,
+    messageId: notification.messageId,
+    metadata: notification.metadata || {},
+    readAt: notification.readAt,
+    createdAt: notification.createdAt
+  };
+}
+
+function notificationDataForUser(userId, payload = {}) {
+  return {
+    userId,
+    type: String(payload.type || 'GENERAL').toUpperCase(),
+    title: String(payload.title || 'Ummah Connect').slice(0, 180),
+    body: payload.body ? String(payload.body).slice(0, 500) : null,
+    url: payload.url || null,
+    organizationId: payload.organizationId || null,
+    postId: payload.postId || null,
+    eventId: payload.eventId || null,
+    messageId: payload.messageId || null,
+    metadata: {
+      tag: payload.tag || null,
+      prayer: payload.prayer || null,
+      scheduledAt: payload.scheduledAt || null,
+      senderId: payload.senderId || null
+    }
+  };
+}
+
+async function createNotificationHistory(userId, payload) {
+  try {
+    return await prisma.notification.create({ data: notificationDataForUser(userId, payload) });
+  } catch (error) {
+    console.error('Notification history write failed', { userId, type: payload?.type, message: error.message });
+    return null;
+  }
 }
 
 function publicPost(post) {
@@ -694,6 +757,7 @@ function normalizePrayerPreferences(value = {}) {
 }
 
 async function sendPushToUser(userId, payload) {
+  await createNotificationHistory(userId, payload);
   if (!vapidPublicKey || !vapidPrivateKey) {
     console.warn('Push skipped: VAPID keys are not configured', { userId, type: payload?.type });
     return { sent: 0, failed: 0, stale: 0, disabled: true };
@@ -730,10 +794,6 @@ async function sendPushToUser(userId, payload) {
 }
 
 async function sendPushToOrganizationFollowers(organizationId, payload, options = {}) {
-  if (!vapidPublicKey || !vapidPrivateKey) {
-    console.warn('Organization push skipped: VAPID keys are not configured', { organizationId, type: payload?.type });
-    return { sent: 0, failed: 0, stale: 0, disabled: true, followers: 0, favorites: 0, eligibleRecipients: 0 };
-  }
   const [follows, favorites] = await Promise.all([
     prisma.organizationFollow.findMany({ where: { organizationId }, select: { userId: true } }),
     prisma.favoriteMasjid.findMany({ where: { organizationId }, select: { userId: true } })
@@ -1282,6 +1342,27 @@ app.delete('/api/notifications/subscriptions', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/notifications/history', auth, async (req, res) => {
+  const limit = normalizeLimit(req.query.limit, 25, 50);
+  const [notifications, unread] = await Promise.all([
+    prisma.notification.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: limit
+    }),
+    prisma.notification.count({ where: { userId: req.user.id, readAt: null } })
+  ]);
+  res.json({ notifications: notifications.map(publicNotification), unread });
+});
+
+app.put('/api/notifications/history/read', auth, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).filter(Boolean) : [];
+  const where = ids.length ? { userId: req.user.id, id: { in: ids } } : { userId: req.user.id, readAt: null };
+  const result = await prisma.notification.updateMany({ where, data: { readAt: new Date() } });
+  const unread = await prisma.notification.count({ where: { userId: req.user.id, readAt: null } });
+  res.json({ ok: true, updated: result.count, unread });
+});
+
 app.get('/api/users', auth, async (req, res) => {
   const users = await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
   const warningCounts = req.user.accountType === 'ADMIN' ? await prisma.userWarning.groupBy({ by: ['userId'], _count: { id: true } }) : [];
@@ -1749,6 +1830,8 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
   if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this masjid or admin can create posts' });
   if (!req.body.title?.trim() || !req.body.content?.trim()) return res.status(400).json({ error: 'Title and content are required' });
   const type = ['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].includes(String(req.body.type || '').toUpperCase()) ? String(req.body.type).toUpperCase() : 'ANNOUNCEMENT';
+  const eventTime = req.body.eventTime ? normalizeRequiredDate(req.body.eventTime) : null;
+  if (req.body.eventTime && !eventTime) return res.status(400).json({ error: 'Event time must be a valid date' });
   const post = await prisma.post.create({
     data: {
       organizationId: req.params.id,
@@ -1758,7 +1841,7 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
       type,
       imageUrl: req.body.imageUrl || null,
       location: req.body.location || null,
-      eventTime: req.body.eventTime ? new Date(req.body.eventTime) : null
+      eventTime
     },
     include: { author: true, organization: true }
   });
@@ -1801,7 +1884,10 @@ app.put('/api/posts/:id', auth, async (req, res) => {
   if (req.body.type !== undefined) data.type = ['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].includes(String(req.body.type).toUpperCase()) ? String(req.body.type).toUpperCase() : post.type;
   if (req.body.imageUrl !== undefined) data.imageUrl = req.body.imageUrl || null;
   if (req.body.location !== undefined) data.location = req.body.location || null;
-  if (req.body.eventTime !== undefined) data.eventTime = req.body.eventTime ? new Date(req.body.eventTime) : null;
+  if (req.body.eventTime !== undefined) {
+    data.eventTime = req.body.eventTime ? normalizeRequiredDate(req.body.eventTime) : null;
+    if (req.body.eventTime && !data.eventTime) return res.status(400).json({ error: 'Event time must be a valid date' });
+  }
   const updated = await prisma.post.update({ where: { id: post.id }, data, include: { author: true, organization: true } });
   res.json(publicPost(updated));
 });
@@ -1858,6 +1944,8 @@ app.delete('/api/organizations/:id/follow', auth, async (req, res) => {
 });
 
 app.post('/api/organizations/:id/favorite', auth, async (req, res) => {
+  const organization = await prisma.organization.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
   const favorite = await prisma.favoriteMasjid.upsert({
     where: { organizationId_userId: { organizationId: req.params.id, userId: req.user.id } },
     create: { organizationId: req.params.id, userId: req.user.id },
@@ -1968,15 +2056,21 @@ app.post('/api/events', auth, async (req, res) => {
   if (!title || !startTime) return res.status(400).json({ error: 'Title and start time are required' });
   if (!organizationId && !['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Only masjid, MSA, or admin accounts can post standalone events' });
   if (organizationId && !(await canManageOrganization(req.user, organizationId))) return res.status(403).json({ error: 'You can only post under an organization you manage' });
+  const normalizedStartTime = normalizeRequiredDate(startTime);
+  if (!normalizedStartTime) return res.status(400).json({ error: 'Start time must be a valid date' });
+  const normalizedEndTime = endTime ? normalizeRequiredDate(endTime) : null;
+  if (endTime && !normalizedEndTime) return res.status(400).json({ error: 'End time must be a valid date' });
+  const normalizedCapacity = normalizeOptionalNumber(capacity);
+  if (normalizedCapacity === undefined) return res.status(400).json({ error: 'Capacity must be a valid number' });
   const event = await prisma.event.create({
     data: {
       title,
       description,
       location,
       imageUrl: imageUrl || null,
-      startTime: new Date(startTime),
-      endTime: endTime ? new Date(endTime) : null,
-      capacity: capacity ? Number(capacity) : null,
+      startTime: normalizedStartTime,
+      endTime: normalizedEndTime,
+      capacity: normalizedCapacity,
       requiresApproval: Boolean(requiresApproval),
       organizationId,
       createdById: req.user.id
@@ -2021,10 +2115,17 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
   if (req.body.imageUrl !== undefined) data.imageUrl = req.body.imageUrl || null;
   if (req.body.startTime !== undefined) {
     if (!req.body.startTime) return res.status(400).json({ error: 'Start time is required' });
-    data.startTime = new Date(req.body.startTime);
+    data.startTime = normalizeRequiredDate(req.body.startTime);
+    if (!data.startTime) return res.status(400).json({ error: 'Start time must be a valid date' });
   }
-  if (req.body.endTime !== undefined) data.endTime = req.body.endTime ? new Date(req.body.endTime) : null;
-  if (req.body.capacity !== undefined) data.capacity = req.body.capacity == null || req.body.capacity === '' ? null : Number(req.body.capacity);
+  if (req.body.endTime !== undefined) {
+    data.endTime = req.body.endTime ? normalizeRequiredDate(req.body.endTime) : null;
+    if (req.body.endTime && !data.endTime) return res.status(400).json({ error: 'End time must be a valid date' });
+  }
+  if (req.body.capacity !== undefined) {
+    data.capacity = normalizeOptionalNumber(req.body.capacity);
+    if (data.capacity === undefined) return res.status(400).json({ error: 'Capacity must be a valid number' });
+  }
   if (req.body.requiresApproval !== undefined) data.requiresApproval = Boolean(req.body.requiresApproval);
   const updated = await prisma.event.update({ where: { id: event.id }, data, include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } } });
   await updateSyncedEventPost(event, updated, updated.createdById || req.user.id);
@@ -2276,7 +2377,7 @@ app.get('/api/messages/threads', auth, async (req, res) => {
 
 app.get('/api/messages/:userId', auth, async (req, res) => {
   const otherUserId = req.params.userId;
-  const limit = Math.min(Math.max(Number(req.query.limit || 30), 1), 50);
+  const limit = normalizeLimit(req.query.limit, 30, 50);
   const before = req.query.before ? new Date(String(req.query.before)) : null;
   const filters = [{ OR: [{ senderId: req.user.id, receiverId: otherUserId }, { senderId: otherUserId, receiverId: req.user.id }] }];
   if (before && Number.isFinite(before.getTime())) filters.push({ createdAt: { lt: before } });
@@ -2381,7 +2482,7 @@ app.post('/api/messages/:messageId/reactions', auth, async (req, res) => {
 app.get('/api/location/masjids', async (req, res) => {
   const latitude = Number(req.query.lat);
   const longitude = Number(req.query.lng);
-  const radius = Math.min(Number(req.query.radius || 25000), 50000);
+  const radius = normalizeLimit(req.query.radius, 25000, 50000);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ error: 'lat and lng query parameters are required' });
 
   try {

@@ -67,6 +67,7 @@ model User {
   likedPosts               PostLike[]
   postComments             PostComment[]
   pushSubscriptions        PushSubscription[]
+  notifications            Notification[]
 }
 
 model UserWarning {
@@ -121,6 +122,27 @@ model PushSubscription {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Notification {
+  id             String    @id @default(cuid())
+  userId         String
+  type           String
+  title          String
+  body           String?
+  url            String?
+  organizationId String?
+  postId         String?
+  eventId        String?
+  messageId      String?
+  metadata       Json?
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
 }
 
 model Organization {
