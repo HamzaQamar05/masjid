@@ -103,6 +103,7 @@ const interestByNavKey = {
   network: 'Network',
   profile: 'Profile',
   events: 'Events',
+  posts: 'Home',
   library: 'Library',
   volunteers: 'Volunteer',
   jobs: 'Jobs',
@@ -114,6 +115,7 @@ const navItems = [
   { key: 'prayer', label: 'Prayer', icon: ShieldCheck },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'events', label: 'Events', icon: CalendarDays },
+  { key: 'posts', label: 'Posts', icon: MessageCircle },
   { key: 'organizations', label: 'Masjids', icon: Building2 },
   { key: 'network', label: 'Network', icon: Users },
   { key: 'volunteers', label: 'Volunteer', icon: HeartHandshake },
@@ -124,7 +126,7 @@ const navItems = [
   { key: 'dashboard', label: 'Admin', icon: BarChart3 }
 ];
 
-const leftNavKeys = ['organizations', 'events', 'library', 'volunteers', 'jobs', 'businesses', 'dashboard'];
+const leftNavKeys = ['organizations', 'events', 'posts', 'library', 'volunteers', 'jobs', 'businesses', 'dashboard'];
 const mobileNavKeys = ['home', 'prayer', 'messages', 'network', 'profile'];
 const swipeDistance = 64;
 const swipeEdgeWidth = 34;
@@ -135,6 +137,7 @@ function pathForTab(key, id) {
     home: '/home',
     prayer: '/prayer',
     events: id ? `/events/${id}` : '/events',
+    posts: '/posts',
     post: '/events/new',
     organizations: '/masjids',
     masjidProfile: id ? `/masjids/${id}` : '/masjids',
@@ -158,6 +161,7 @@ function tabForPath(pathname) {
   if (pathname === '/login' || pathname === '/register') return 'auth';
   if (pathname.startsWith('/events/new')) return 'post';
   if (pathname.startsWith('/events')) return 'events';
+  if (pathname.startsWith('/posts')) return 'posts';
   if (pathname.startsWith('/masjids/') && pathname !== '/masjids') return 'masjidProfile';
   if (pathname.startsWith('/masjids')) return 'organizations';
   if (pathname.startsWith('/network/jobs')) return 'jobs';
@@ -626,6 +630,51 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
         <section className="panel">
           <div className="section-title"><h2>Account</h2><button onClick={() => setTab('profile')}>Edit</button></div>
           <p className="helper-text">{orgAccount ? `Logged in as ${user.name}, an organization account. User-only application flows are hidden; use Dashboard for management.` : `Logged in as ${user.name}. Feed, applications, followed masjids, messages, and profile data are backend-backed.`}</p>
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+function PostsScreen({ user, posts, myOrganizations, announcementForm, setAnnouncementForm, submitAnnouncement, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment }) {
+  const orgAccount = isOrganizationAccount(user);
+  return (
+    <div className="content-grid">
+      <section className="feed-column">
+        {orgAccount && (
+          <section className="panel">
+            <div className="section-title">
+              <div><p className="eyebrow">Masjid posts</p><h2>Create announcement</h2></div>
+              <span>Social feed</span>
+            </div>
+            <form className="profile-form manager-edit-form" onSubmit={submitAnnouncement}>
+              <div className="form-grid">
+                <select value={announcementForm.organizationId || myOrganizations[0]?.id || ''} onChange={(event) => setAnnouncementForm({ ...announcementForm, organizationId: event.target.value })}>
+                  <option value="">Select masjid</option>
+                  {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                </select>
+                <select value={announcementForm.category} onChange={(event) => setAnnouncementForm({ ...announcementForm, category: event.target.value })}>
+                  {masjidAnnouncementTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+                <input required placeholder="Post title" value={announcementForm.title} onChange={(event) => setAnnouncementForm({ ...announcementForm, title: event.target.value })} />
+                <input placeholder="Image URL optional" value={announcementForm.imageUrl} onChange={(event) => setAnnouncementForm({ ...announcementForm, imageUrl: event.target.value })} />
+              </div>
+              <textarea required placeholder="Write the announcement like a social post..." value={announcementForm.content} onChange={(event) => setAnnouncementForm({ ...announcementForm, content: event.target.value })} />
+              <div className="profile-actions">
+                <button className="primary-button">Post to feed</button>
+              </div>
+            </form>
+          </section>
+        )}
+        <PostFeed user={user} posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />
+      </section>
+      <aside className="right-rail">
+        <section className="panel">
+          <div className="section-title"><h2>Post types</h2><span>{masjidAnnouncementTypes.length}</span></div>
+          <div className="tag-row">
+            {masjidAnnouncementTypes.map((item) => <span key={item.value}>{item.label}</span>)}
+          </div>
+          <p className="helper-text">Announcements and normal posts are combined here as one community feed.</p>
         </section>
       </aside>
     </div>
@@ -2361,7 +2410,6 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'followers', label: 'Followers', count: metrics.followers, detail: 'Community reach', icon: Users },
     { key: 'following', label: 'Following', count: 'Soon', detail: 'Not connected', icon: UserCheck },
     { key: 'team', label: 'Team', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Imams and staff', icon: UserCheck },
-    { key: 'announcements', label: 'Masjid Announcements', count: metrics.posts, detail: 'Social feed posts', icon: MessageCircle },
     { key: 'posts', label: 'Posts', count: metrics.posts, detail: 'All post tools', icon: MessageCircle },
     { key: 'events', label: 'Events', count: metrics.events, detail: `${upcomingEvents} upcoming`, icon: CalendarDays },
     { key: 'eventApprovals', label: 'Event Approvals', count: metrics.pendingRegistrations, detail: 'Pending entries', icon: CheckCircle2 },
@@ -2399,7 +2447,6 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const managementItems = [
     { key: 'events', label: 'Events', icon: CalendarDays },
     { key: 'programs', label: 'Programs', icon: Library },
-    { key: 'announcements', label: 'Announcements', icon: MessageCircle },
     { key: 'posts', label: 'Posts', icon: MessageCircle },
     { key: 'prayerTimes', label: 'Prayer Times', icon: ShieldCheck },
     { key: 'team', label: 'Team', icon: UserCheck },
@@ -2413,7 +2460,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'posts', label: 'Engagement', value: metrics.posts, icon: Bell }
   ];
   const activeDashboardFeature = hubItems.find((item) => item.key === activeSection);
-  const orgPanelSections = new Set(['followers', 'announcements', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs']);
+  const orgPanelSections = new Set(['followers', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs']);
   const showOrgPanels = orgPanelSections.has(activeSection);
   const showProfileTools = activeSection === 'prayerTimes';
   function openUserView() {
@@ -2512,7 +2559,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
       eventTime: ''
     });
     setAnnouncementForm({ organizationId, category: 'GENERAL', title: '', content: '', imageUrl: '' });
-    openDashboardSection('announcements');
+    setTab('posts');
   }
   async function submitPost(event) {
     event.preventDefault();
@@ -4589,7 +4636,7 @@ export default function App() {
     if (!query) return [];
     const index = [
       ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`, tab: 'network' })),
-      ...prioritizedPosts.map((post) => ({ id: post.id, kind: 'Post', title: post.title, subtitle: `${post.organization?.name || ''} ${post.type} ${post.content || ''}`, tab: 'home' })),
+      ...prioritizedPosts.map((post) => ({ id: post.id, kind: 'Post', title: post.title, subtitle: `${post.organization?.name || ''} ${post.type} ${post.content || ''}`, tab: 'posts' })),
       ...prioritizedMasjids.map((masjid) => ({ id: masjid.id, kind: 'Masjid', title: masjid.name, subtitle: `${masjid.address || ''} ${masjid.city || ''}`, tab: 'organizations' })),
       ...prioritizedEvents.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' })),
       ...prioritizedOpportunities.map((item) => ({ id: item.id, kind: item.type === 'JOB' ? 'Job' : 'Volunteer', title: item.title, subtitle: `${item.organization?.name || ''} ${item.description || ''} ${item.location || ''} ${Array.isArray(item.skills) ? item.skills.join(' ') : item.skills || ''}`, tab: item.type === 'JOB' ? 'jobs' : 'volunteers' })),
@@ -4605,6 +4652,7 @@ export default function App() {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />,
     prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} />,
     events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} loadPosts={loadPosts} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => navigate(-1)} />,
+    posts: <PostsScreen user={user} posts={prioritizedPosts} myOrganizations={myOrganizations} announcementForm={announcementForm} setAnnouncementForm={setAnnouncementForm} submitAnnouncement={submitAnnouncement} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
     masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onUnfollow={unfollowOrganization} onFavorite={toggleFavoriteOrganization} onBack={() => navigate(-1)} />,
