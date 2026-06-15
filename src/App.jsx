@@ -1487,7 +1487,7 @@ function BusinessDirectoryScreen() {
   );
 }
 
-function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavorite, onBack }) {
+function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavorite, onMessage, applyToOpportunity, onBack }) {
   if (!organization) return <Page title="Masjid Profile" subtitle="Choose a masjid to view its profile."><button className="secondary-button" onClick={onBack}>Back to masjids</button></Page>;
   const posts = organization.posts || [];
   const events = organization.events || [];
@@ -1512,6 +1512,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
   const featuredVolunteer = volunteer.slice(0, 2);
   const featuredJobs = jobs.slice(0, 2);
   const featuredTeam = (organization.people || []).slice(0, 3);
+  const messageContact = (organization.people || []).find((person) => person.user && person.user.id !== user?.id)?.user;
   const tags = [
     organization.verified ? 'Verified masjid' : null,
     organization.city,
@@ -1544,6 +1545,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
         <div className="profile-actions">
           {canFollowMasjid && <button className={organization.isFollowing ? 'secondary-button' : 'primary-button'} onClick={() => organization.isFollowing ? onUnfollow(organization.id) : onFollow(organization.id, organization.notifyPrayers)}>{organization.isFollowing ? 'Following' : 'Follow'}</button>}
           {canFollowMasjid && <button className={organization.isFavorited ? 'primary-button' : 'secondary-button'} onClick={() => onFavorite(organization.id, organization.isFavorited)}>{organization.isFavorited ? 'Favorited' : 'Favorite'}</button>}
+          {canFollowMasjid && messageContact && <button className="secondary-button" onClick={() => onMessage(messageContact)}><MessageCircle size={17} />Message</button>}
           {canFollowMasjid && <button className={organization.notifyPrayers ? 'primary-button' : 'secondary-button'} onClick={() => onFollow(organization.id, true)}>{organization.notifyPrayers ? 'Notifications on' : 'Notify Me'}</button>}
           {!canFollowMasjid && <span className="status-pill">Organization profile</span>}
           <a className="secondary-button" href={directionsUrl(organization)} target="_blank" rel="noreferrer">Directions</a>
@@ -1578,14 +1580,20 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
           <section className="panel masjid-profile-section">
             <div className="section-title"><h2>Opportunities</h2><span>{volunteer.length}</span></div>
             <div className="stack-list">
-              {featuredVolunteer.map((item) => <article className="mini-row compact-profile-row" key={item.id}><strong>{item.title}</strong><span>{item.type}</span><p>{item.description || item.location || 'No details yet.'}</p></article>)}
+              {featuredVolunteer.map((item) => {
+                const application = (item.applications || []).find((entry) => entry.applicantId === user?.id);
+                return <article className="mini-row compact-profile-row" key={item.id}><strong>{item.title}</strong><span>{item.type}</span><p>{item.description || item.location || 'No details yet.'}</p>{isUserAccount(user) && (application ? <span className="status-pill">{application.status}</span> : <button className="secondary-button" onClick={() => applyToOpportunity(item.id, {})}>Apply</button>)}</article>;
+              })}
               {!volunteer.length && <p className="helper-text">No opportunities yet.</p>}
             </div>
           </section>
           <section className="panel masjid-profile-section">
             <div className="section-title"><h2>Jobs</h2><span>{jobs.length}</span></div>
             <div className="stack-list">
-              {featuredJobs.map((item) => <article className="mini-row compact-profile-row" key={item.id}><strong>{item.title}</strong><span>{item.location || 'Location TBD'}</span><p>{item.description || 'No details yet.'}</p></article>)}
+              {featuredJobs.map((item) => {
+                const application = (item.applications || []).find((entry) => entry.applicantId === user?.id);
+                return <article className="mini-row compact-profile-row" key={item.id}><strong>{item.title}</strong><span>{item.location || 'Location TBD'}</span><p>{item.description || 'No details yet.'}</p>{isUserAccount(user) && (application ? <span className="status-pill">{application.status}</span> : <button className="secondary-button" onClick={() => applyToOpportunity(item.id, {})}>Apply</button>)}</article>;
+              })}
               {!jobs.length && <p className="helper-text">No jobs posted yet.</p>}
             </div>
           </section>
@@ -4243,7 +4251,10 @@ export default function App() {
 
   async function applyToOpportunity(id, form = {}) {
     await api(`/api/opportunities/${id}/apply`, { method: 'POST', body: JSON.stringify(form) });
-    await loadOpportunities();
+    const organizationId = selectedOrganization?.opportunities?.find((item) => item.id === id)?.organizationId || selectedOrganization?.id;
+    const refreshedOrganization = organizationId ? await api(`/api/organizations/${organizationId}`).catch(() => null) : null;
+    await Promise.all([loadOpportunities(), loadMyOrganizations(), loadNotificationHistory()]);
+    if (refreshedOrganization && selectedOrganization?.id === refreshedOrganization.id) setSelectedOrganization(refreshedOrganization);
   }
 
   async function registerEvent(id) {
@@ -4264,7 +4275,7 @@ export default function App() {
 
   async function createOpportunity(organizationId, form) {
     await api(`/api/organizations/${organizationId}/opportunities`, { method: 'POST', body: JSON.stringify(form) });
-    await Promise.all([loadMyOrganizations(), loadOpportunities()]);
+    await Promise.all([loadMyOrganizations(), loadOpportunities(), loadPosts(), loadLocationData(location), loadNotificationHistory()]);
   }
 
   async function updateOpportunity(id, form) {
@@ -4762,7 +4773,7 @@ export default function App() {
     events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} loadPosts={loadPosts} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => navigate(-1)} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
-    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onUnfollow={unfollowOrganization} onFavorite={toggleFavoriteOrganization} onBack={() => navigate(-1)} />,
+    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onUnfollow={unfollowOrganization} onFavorite={toggleFavoriteOrganization} onMessage={startMessage} applyToOpportunity={applyToOpportunity} onBack={() => navigate(-1)} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
     volunteers: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
     jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,

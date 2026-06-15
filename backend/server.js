@@ -413,6 +413,7 @@ function notificationDataForUser(userId, payload = {}) {
     eventId: payload.eventId || null,
     messageId: payload.messageId || null,
     metadata: {
+      ...(payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}),
       tag: payload.tag || null,
       prayer: payload.prayer || null,
       scheduledAt: payload.scheduledAt || null,
@@ -422,12 +423,64 @@ function notificationDataForUser(userId, payload = {}) {
 }
 
 async function createNotificationHistory(userId, payload) {
+  const type = String(payload?.type || 'GENERAL').toUpperCase();
   try {
+    const dedupeWhere = { userId, type };
+    if (payload?.postId) dedupeWhere.postId = payload.postId;
+    else if (payload?.eventId) dedupeWhere.eventId = payload.eventId;
+    else if (payload?.messageId) dedupeWhere.messageId = payload.messageId;
+    if (payload?.postId || payload?.eventId || payload?.messageId) {
+      if (payload?.organizationId) dedupeWhere.organizationId = payload.organizationId;
+      const existing = await prisma.notification.findFirst({ where: dedupeWhere, orderBy: { createdAt: 'desc' } });
+      if (existing) return existing;
+    } else if (payload?.tag) {
+      const recent = await prisma.notification.findMany({
+        where: { userId, type, createdAt: { gte: new Date(Date.now() - 5 * 60 * 1000) } },
+        orderBy: { createdAt: 'desc' },
+        take: 20
+      });
+      const existing = recent.find((notification) => notification.metadata?.tag === payload.tag);
+      if (existing) return existing;
+    }
     return await prisma.notification.create({ data: notificationDataForUser(userId, payload) });
   } catch (error) {
     console.error('Notification history write failed', { userId, type: payload?.type, message: error.message });
     return null;
   }
+}
+
+async function notifyOrganizationFollowers(organizationId, payload, options = {}) {
+  const [push, whatsapp] = await Promise.all([
+    sendPushToOrganizationFollowers(organizationId, payload, options),
+    sendWhatsappToOrganizationFollowers(organizationId, payload, options)
+  ]);
+  return { push, whatsapp };
+}
+
+async function notifyApplicationStatus(application, opportunity) {
+  const preference = await prisma.userNotificationPreference.findUnique({ where: { userId: application.applicantId } });
+  if (!publicNotificationPreferences(preference).applicationStatusUpdates) {
+    return { push: { sent: 0, skipped: true, reason: 'application status preference disabled' }, whatsapp: { sent: 0, skipped: true, reason: 'application status preference disabled' } };
+  }
+  const status = normalizeApplicationStatus(application.status, application.status);
+  const title = `Application ${status.toLowerCase()}: ${opportunity.title}`;
+  const body = opportunity.type === 'JOB'
+    ? 'Your job application status was updated.'
+    : 'Your volunteer application status was updated.';
+  const payload = {
+    type: 'APPLICATION',
+    title,
+    body,
+    url: opportunity.type === 'JOB' ? '/network/jobs' : '/network/volunteers',
+    organizationId: opportunity.organizationId,
+    tag: `application-status-${application.id}-${status}`,
+    metadata: { opportunityId: opportunity.id, applicationId: application.id, status }
+  };
+  const [push, whatsapp] = await Promise.all([
+    sendPushToUser(application.applicantId, payload),
+    sendWhatsappToUser(application.applicantId, payload)
+  ]);
+  return { push, whatsapp };
 }
 
 function publicPost(post) {
@@ -532,6 +585,73 @@ async function deleteSyncedEventPosts(event) {
         { title: event.title, eventTime: event.startTime },
         { title: event.title, eventTime: null }
       ]
+    }
+  });
+}
+
+function opportunityPostContent(opportunity) {
+  return [
+    opportunity.description,
+    opportunity.location ? `Location: ${opportunity.location}` : null,
+    opportunity.requirements ? `Requirements: ${opportunity.requirements}` : null,
+    opportunity.deadline ? `Deadline: ${new Date(opportunity.deadline).toLocaleDateString('en-CA')}` : null
+  ].filter(Boolean).join('\n\n') || 'Details coming soon.';
+}
+
+async function syncOpportunityPost(opportunity, authorId) {
+  if (!opportunity.organizationId) return null;
+  const type = opportunity.type === 'JOB' ? 'JOB' : 'VOLUNTEER';
+  const existing = await prisma.post.findFirst({
+    where: {
+      organizationId: opportunity.organizationId,
+      type,
+      title: opportunity.title
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+  const data = {
+    organizationId: opportunity.organizationId,
+    authorId,
+    title: opportunity.title,
+    content: opportunityPostContent(opportunity),
+    type,
+    location: opportunity.location || null
+  };
+  if (existing) return prisma.post.update({ where: { id: existing.id }, data });
+  return prisma.post.create({ data });
+}
+
+async function updateSyncedOpportunityPost(previousOpportunity, updatedOpportunity, authorId) {
+  const type = updatedOpportunity.type === 'JOB' ? 'JOB' : 'VOLUNTEER';
+  const previousType = previousOpportunity.type === 'JOB' ? 'JOB' : 'VOLUNTEER';
+  const existing = await prisma.post.findFirst({
+    where: {
+      organizationId: updatedOpportunity.organizationId,
+      OR: [
+        { type: previousType, title: previousOpportunity.title },
+        { type, title: updatedOpportunity.title }
+      ]
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+  const data = {
+    organizationId: updatedOpportunity.organizationId,
+    authorId,
+    title: updatedOpportunity.title,
+    content: opportunityPostContent(updatedOpportunity),
+    type,
+    location: updatedOpportunity.location || null
+  };
+  if (existing) return prisma.post.update({ where: { id: existing.id }, data });
+  return prisma.post.create({ data });
+}
+
+async function deleteSyncedOpportunityPosts(opportunity) {
+  return prisma.post.deleteMany({
+    where: {
+      organizationId: opportunity.organizationId,
+      title: opportunity.title,
+      type: opportunity.type === 'JOB' ? 'JOB' : 'VOLUNTEER'
     }
   });
 }
@@ -1845,21 +1965,11 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
     },
     include: { author: true, organization: true }
   });
-  let push = null;
-  let whatsapp = null;
-  push = await sendPushToOrganizationFollowers(req.params.id, {
+  const { push, whatsapp } = await notifyOrganizationFollowers(req.params.id, {
     title: post.title,
     body: post.content,
     url: `/masjids/${req.params.id}`,
     tag: `${type.toLowerCase()}-${post.id}`,
-    type,
-    organizationId: req.params.id,
-    postId: post.id
-  }, { excludeUserIds: [req.user.id] });
-  whatsapp = await sendWhatsappToOrganizationFollowers(req.params.id, {
-    title: post.title,
-    body: post.content,
-    url: `/masjids/${req.params.id}`,
     type,
     organizationId: req.params.id,
     postId: post.id
@@ -2080,22 +2190,14 @@ app.post('/api/events', auth, async (req, res) => {
   let push = null;
   let whatsapp = null;
   if (organizationId) {
-    push = await sendPushToOrganizationFollowers(organizationId, {
+    ({ push, whatsapp } = await notifyOrganizationFollowers(organizationId, {
       title: `New event: ${event.title}`,
       body: event.description || event.location || 'A masjid you follow posted a new event.',
       url: `/events/${event.id}`,
       type: 'EVENT',
       organizationId,
       eventId: event.id
-    }, { excludeUserIds: [req.user.id] });
-    whatsapp = await sendWhatsappToOrganizationFollowers(organizationId, {
-      title: `New event: ${event.title}`,
-      body: event.description || event.location || 'A masjid you follow posted a new event.',
-      url: `/events/${event.id}`,
-      type: 'EVENT',
-      organizationId,
-      eventId: event.id
-    }, { excludeUserIds: [req.user.id] });
+    }, { excludeUserIds: [req.user.id] }));
   }
   res.json({ ...event, push, whatsapp });
 });
@@ -2132,22 +2234,14 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
   let push = null;
   let whatsapp = null;
   if (updated.organizationId) {
-    push = await sendPushToOrganizationFollowers(updated.organizationId, {
+    ({ push, whatsapp } = await notifyOrganizationFollowers(updated.organizationId, {
       title: `Event updated: ${updated.title}`,
       body: updated.description || updated.location || 'An event from a masjid you follow was updated.',
       url: `/events/${updated.id}`,
       type: 'EVENT',
       organizationId: updated.organizationId,
       eventId: updated.id
-    }, { excludeUserIds: [req.user.id] });
-    whatsapp = await sendWhatsappToOrganizationFollowers(updated.organizationId, {
-      title: `Event updated: ${updated.title}`,
-      body: updated.description || updated.location || 'An event from a masjid you follow was updated.',
-      url: `/events/${updated.id}`,
-      type: 'EVENT',
-      organizationId: updated.organizationId,
-      eventId: updated.id
-    }, { excludeUserIds: [req.user.id] });
+    }, { excludeUserIds: [req.user.id] }));
   }
   res.json({ ...updated, push, whatsapp, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) });
 });
@@ -2188,8 +2282,14 @@ app.post('/api/events/:eventId/register', auth, async (req, res) => {
     if (['MASJID', 'MSA'].includes(req.user.accountType)) return res.status(403).json({ error: 'Masjid and MSA accounts manage events from the dashboard and cannot register as attendees' });
     const event = await prisma.event.findUnique({ where: { id: req.params.eventId }, include: { registrations: true } });
     if (!event) return res.status(404).json({ error: 'Event not found' });
+    const existingRegistration = event.registrations.find((registration) => registration.userId === req.user.id);
+    if (existingRegistration) return res.json(existingRegistration);
     if (event.capacity && event.registrations.filter((registration) => registration.status !== 'DENIED').length >= event.capacity) return res.status(400).json({ error: 'Event is full' });
-    const registration = await prisma.eventRegistration.create({ data: { userId: req.user.id, eventId: req.params.eventId, status: event.requiresApproval ? 'PENDING' : 'APPROVED' } });
+    const registration = await prisma.eventRegistration.upsert({
+      where: { userId_eventId: { userId: req.user.id, eventId: req.params.eventId } },
+      create: { userId: req.user.id, eventId: req.params.eventId, status: event.requiresApproval ? 'PENDING' : 'APPROVED' },
+      update: {}
+    });
     res.json(registration);
   } catch {
     res.status(400).json({ error: 'Already registered or event not found' });
@@ -2255,9 +2355,22 @@ app.post('/api/organizations/:id/opportunities', auth, async (req, res) => {
       workType: req.body.workType || null,
       deadline: normalizeDate(req.body.deadline),
       applicationQuestions: normalizeJsonList(req.body.applicationQuestions)
-    }
+    },
+    include: { organization: true }
   });
-  res.json(opportunity);
+  const notificationType = type === 'JOB' ? 'JOB' : 'VOLUNTEER';
+  const syncedPost = await syncOpportunityPost(opportunity, req.user.id);
+  const { push, whatsapp } = await notifyOrganizationFollowers(req.params.id, {
+    title: `${type === 'JOB' ? 'New job' : 'New volunteer opportunity'}: ${opportunity.title}`,
+    body: opportunity.description || opportunity.location || 'A masjid you follow posted a new opportunity.',
+    url: type === 'JOB' ? '/network/jobs' : '/network/volunteers',
+    type: notificationType,
+    organizationId: req.params.id,
+    postId: syncedPost?.id,
+    tag: `opportunity-${opportunity.id}`,
+    metadata: { opportunityId: opportunity.id }
+  }, { excludeUserIds: [req.user.id] });
+  res.json({ ...opportunity, push, whatsapp });
 });
 
 app.put('/api/opportunities/:id', auth, async (req, res) => {
@@ -2280,6 +2393,8 @@ app.put('/api/opportunities/:id', auth, async (req, res) => {
   if (req.body.applicationQuestions !== undefined) data.applicationQuestions = normalizeJsonList(req.body.applicationQuestions);
   if (req.body.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
   const updated = await prisma.opportunity.update({ where: { id: opportunity.id }, data, include: { applications: { include: { applicant: true } } } });
+  if (updated.isActive) await updateSyncedOpportunityPost(opportunity, updated, req.user.id);
+  else await deleteSyncedOpportunityPosts(updated);
   res.json({ ...updated, applications: updated.applications.map((application) => ({ ...application, applicant: publicUser(application.applicant) })) });
 });
 
@@ -2288,6 +2403,7 @@ app.delete('/api/opportunities/:id', auth, async (req, res) => {
   if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
   if (!(await canManageOrganization(req.user, opportunity.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can delete opportunities' });
   await prisma.volunteerApplication.deleteMany({ where: { opportunityId: opportunity.id } });
+  await deleteSyncedOpportunityPosts(opportunity);
   await prisma.opportunity.delete({ where: { id: opportunity.id } });
   res.json({ message: 'Opportunity deleted' });
 });
@@ -2295,7 +2411,7 @@ app.delete('/api/opportunities/:id', auth, async (req, res) => {
 app.post('/api/opportunities/:id/apply', auth, async (req, res) => {
   if (['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Organization and admin accounts manage listings; only user accounts can apply' });
   const [opportunity, currentUser] = await Promise.all([
-    prisma.opportunity.findUnique({ where: { id: req.params.id } }),
+    prisma.opportunity.findUnique({ where: { id: req.params.id }, include: { organization: true } }),
     prisma.user.findUnique({ where: { id: req.user.id } })
   ]);
   if (!opportunity || !opportunity.isActive) return res.status(404).json({ error: 'Opportunity not found' });
@@ -2313,6 +2429,21 @@ app.post('/api/opportunities/:id/apply', auth, async (req, res) => {
     create: { opportunityId: req.params.id, applicantId: req.user.id, ...data },
     update: { ...data, status: 'PENDING' }
   });
+  const managerIds = [
+    opportunity.organization?.ownerId,
+    ...(await prisma.organizationPerson.findMany({ where: { organizationId: opportunity.organizationId }, select: { userId: true, roleLabel: true } }))
+      .filter((person) => canOperateOrganizationRole(person.roleLabel))
+      .map((person) => person.userId)
+  ].filter(Boolean).filter((managerId) => managerId !== req.user.id);
+  await Promise.all([...new Set(managerIds)].map((managerId) => sendPushToUser(managerId, {
+    type: 'APPLICATION',
+    title: `New application: ${opportunity.title}`,
+    body: `${data.applicantName} applied to ${opportunity.type === 'JOB' ? 'a job' : 'an opportunity'}.`,
+    url: '/dashboard',
+    organizationId: opportunity.organizationId,
+    tag: `application-${application.id}`,
+    metadata: { opportunityId: opportunity.id, applicationId: application.id }
+  })));
   res.json(application);
 });
 
@@ -2323,12 +2454,14 @@ app.put('/api/opportunities/:id/applications', auth, async (req, res) => {
   const status = normalizeApplicationStatus(req.body.status);
   const where = { opportunityId: opportunity.id };
   if (req.body.fromStatus && applicationStatuses.includes(req.body.fromStatus)) where.status = req.body.fromStatus;
+  const affectedApplications = await prisma.volunteerApplication.findMany({ where, select: { id: true, applicantId: true, status: true } });
   const data = { status, approvedById: req.user.id };
   if (req.body.approvedHours != null) data.approvedHours = Number(req.body.approvedHours);
   if (req.body.checkedInAt === true) data.checkedInAt = new Date();
   if (req.body.checkedOutAt === true) data.checkedOutAt = new Date();
   const result = await prisma.volunteerApplication.updateMany({ where, data });
-  res.json({ updated: result.count, status });
+  const notificationResults = await Promise.all(affectedApplications.map((application) => notifyApplicationStatus({ ...application, status }, opportunity)));
+  res.json({ updated: result.count, status, notifications: notificationResults.length });
 });
 
 app.put('/api/opportunities/:id/applications/:applicationId', auth, async (req, res) => {
@@ -2348,7 +2481,8 @@ app.put('/api/opportunities/:id/applications/:applicationId', auth, async (req, 
       approvedById: req.user.id
     }
   });
-  res.json(application);
+  const notifications = await notifyApplicationStatus(application, opportunity);
+  res.json({ ...application, notifications });
 });
 
 app.get('/api/messages/threads', auth, async (req, res) => {
