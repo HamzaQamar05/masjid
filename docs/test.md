@@ -38,10 +38,12 @@ Notification launch checklist
    - Send a DM from one account to another.
    - Confirm unread count updates through sockets.
    - Confirm the receiver gets a push unless message notifications are disabled in settings.
+   - Open the notification bell and confirm the DM appears in notification history, then becomes read after opening the sheet.
 
 7. Failure checks.
    - Temporarily remove VAPID keys in a non-production environment and confirm backend logs show push skipped rather than fake success.
    - Delete or invalidate a browser subscription and confirm stale subscriptions are cleaned after a failed send.
+   - Create an event/post with push disabled and confirm the in-app notification history still records eligible notifications.
 
 8. WhatsApp foundation.
    - Open Settings and save a phone number in E.164 format, for example +15551234567.

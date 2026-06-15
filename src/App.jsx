@@ -419,7 +419,7 @@ async function showAppNotification({ title, body, tag, url }) {
   };
 }
 
-function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, onNotificationsClick, openSettings, detailMode = false, mobileTabs = mobileNavKeys }) {
+function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searchResults, onSearchSelect, onLogout, hasDashboardAccess, onNotificationsClick, notificationUnread = 0, openSettings, detailMode = false, mobileTabs = mobileNavKeys }) {
   const [navOpen, setNavOpen] = useState(false);
   const [pageMotion, setPageMotion] = useState('');
   const [dragOffset, setDragOffset] = useState(0);
@@ -535,7 +535,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
           )}
         </div>
         <div className="top-actions">
-          <button className="icon-button" onClick={onNotificationsClick} aria-label="Notifications"><Bell size={20} /></button>
+          <button className="icon-button notification-button" onClick={onNotificationsClick} aria-label="Notifications"><Bell size={20} />{notificationUnread > 0 && <em>{notificationUnread > 9 ? '9+' : notificationUnread}</em>}</button>
           <button className="icon-button" onClick={openSettings} aria-label="Open settings"><Settings size={20} /></button>
           <button className="post-button" onClick={() => navigate(canPost(user) ? 'dashboard' : 'events')}><Plus size={18} /><span>{canPost(user) ? 'Create' : 'Event'}</span></button>
           <button className="dm-top-button" onClick={() => navigate('messages')} aria-label="Open messages">
@@ -3907,6 +3907,8 @@ export default function App() {
   const [prayerTimes, setPrayerTimes] = useState(prayers);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationHistory, setNotificationHistory] = useState([]);
+  const [notificationUnread, setNotificationUnread] = useState(0);
   const [notificationState, setNotificationState] = useState({ permission: 'default', message: '' });
   const [prayerPreferences, setPrayerPreferences] = useState({ enabled: false, offsetMinutes: 0, prayers: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true } });
   const [notificationPreferences, setNotificationPreferences] = useState(defaultNotificationPreferences);
@@ -3920,7 +3922,7 @@ export default function App() {
     const me = await api('/api/me');
     persistAuth(me);
     setUser(me);
-    await Promise.all([loadNetwork(), loadOrganizations(), loadPosts(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids(), loadNotificationPreferences()]);
+    await Promise.all([loadNetwork(), loadOrganizations(), loadPosts(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids(), loadNotificationPreferences(), loadNotificationHistory()]);
   }
 
   async function loadNetwork() {
@@ -4084,6 +4086,23 @@ export default function App() {
     setNotificationState({ permission, message: 'Notifications are enabled for this device.' });
     if (!prayerPreferences.enabled) updatePrayerPreferences({ ...prayerPreferences, enabled: true }).catch(console.error);
     loadNotificationPreferences().catch(console.error);
+  }
+
+  async function loadNotificationHistory() {
+    const loaded = await api('/api/notifications/history').catch(() => ({ notifications: [], unread: 0 }));
+    setNotificationHistory(loaded.notifications || []);
+    setNotificationUnread(loaded.unread || 0);
+    return loaded;
+  }
+
+  async function openNotifications() {
+    setShowNotifications(true);
+    const loaded = await loadNotificationHistory();
+    if ((loaded.unread || 0) > 0) {
+      const result = await api('/api/notifications/history/read', { method: 'PUT', body: JSON.stringify({}) }).catch(() => null);
+      if (result) setNotificationUnread(result.unread || 0);
+      setNotificationHistory((current) => current.map((item) => item.readAt ? item : { ...item, readAt: new Date().toISOString() }));
+    }
   }
 
   async function updatePrayerPreferences(nextPreferences) {
@@ -4494,6 +4513,7 @@ export default function App() {
         loadPosts();
         loadEvents({ preserveCurrent: true });
         loadMyOrganizations(user, { preserveCurrent: true });
+        loadNotificationHistory();
       }
     }
     document.addEventListener('visibilitychange', refreshOnFocus);
@@ -4546,6 +4566,7 @@ export default function App() {
         }).catch(console.error);
       }
       loadThreads().catch(console.error);
+      loadNotificationHistory().catch(console.error);
     });
     nextSocket.on('message:update', (message) => {
       mergeMessage(message);
@@ -4679,7 +4700,8 @@ export default function App() {
         onSearchSelect={handleSearchSelect}
         onLogout={logout}
         hasDashboardAccess={myOrganizations.length > 0 || isImamAccount(user)}
-        onNotificationsClick={() => setShowNotifications(true)}
+        onNotificationsClick={openNotifications}
+        notificationUnread={notificationUnread}
         openSettings={() => setTab('settings')}
         detailMode={isDetailRoute}
         mobileTabs={visibleMobileTabs}
@@ -4703,26 +4725,23 @@ export default function App() {
       </div>
 
       <div className="people-list">
-        <article className="person-list-row">
-          <div>
-            <strong>New message from Ahmed</strong>
-            <span>2 minutes ago</span>
-          </div>
-        </article>
-
-        <article className="person-list-row">
-          <div>
-            <strong>Imam Bukhari Centre posted an event</strong>
-            <span>Today</span>
-          </div>
-        </article>
-
-        <article className="person-list-row">
-          <div>
-            <strong>Friday prayer reminder</strong>
-            <span>Upcoming</span>
-          </div>
-        </article>
+        {notificationHistory.map((item) => (
+          <button className={item.readAt ? 'person-list-row notification-row' : 'person-list-row notification-row unread'} key={item.id} onClick={() => { setShowNotifications(false); if (item.url) navigate(item.url); }}>
+            <div>
+              <strong>{item.title}</strong>
+              {item.body && <p>{item.body}</p>}
+              <span>{item.createdAt ? new Date(item.createdAt).toLocaleString() : item.type}</span>
+            </div>
+          </button>
+        ))}
+        {!notificationHistory.length && (
+          <article className="person-list-row">
+            <div>
+              <strong>No notifications yet</strong>
+              <span>Messages, followed masjid posts, events, and prayer reminders will appear here.</span>
+            </div>
+          </article>
+        )}
       </div>
     </div>
   </div>

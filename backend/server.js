@@ -367,6 +367,53 @@ function normalizeWhatsappPhone(value) {
   return phone.startsWith('+') ? phone : `+${phone}`;
 }
 
+function publicNotification(notification) {
+  if (!notification) return null;
+  return {
+    id: notification.id,
+    type: notification.type,
+    title: notification.title,
+    body: notification.body,
+    url: notification.url,
+    organizationId: notification.organizationId,
+    postId: notification.postId,
+    eventId: notification.eventId,
+    messageId: notification.messageId,
+    metadata: notification.metadata || {},
+    readAt: notification.readAt,
+    createdAt: notification.createdAt
+  };
+}
+
+function notificationDataForUser(userId, payload = {}) {
+  return {
+    userId,
+    type: String(payload.type || 'GENERAL').toUpperCase(),
+    title: String(payload.title || 'Ummah Connect').slice(0, 180),
+    body: payload.body ? String(payload.body).slice(0, 500) : null,
+    url: payload.url || null,
+    organizationId: payload.organizationId || null,
+    postId: payload.postId || null,
+    eventId: payload.eventId || null,
+    messageId: payload.messageId || null,
+    metadata: {
+      tag: payload.tag || null,
+      prayer: payload.prayer || null,
+      scheduledAt: payload.scheduledAt || null,
+      senderId: payload.senderId || null
+    }
+  };
+}
+
+async function createNotificationHistory(userId, payload) {
+  try {
+    return await prisma.notification.create({ data: notificationDataForUser(userId, payload) });
+  } catch (error) {
+    console.error('Notification history write failed', { userId, type: payload?.type, message: error.message });
+    return null;
+  }
+}
+
 function publicPost(post) {
   if (!post) return null;
   const comments = post.comments || [];
@@ -694,6 +741,7 @@ function normalizePrayerPreferences(value = {}) {
 }
 
 async function sendPushToUser(userId, payload) {
+  await createNotificationHistory(userId, payload);
   if (!vapidPublicKey || !vapidPrivateKey) {
     console.warn('Push skipped: VAPID keys are not configured', { userId, type: payload?.type });
     return { sent: 0, failed: 0, stale: 0, disabled: true };
@@ -730,10 +778,6 @@ async function sendPushToUser(userId, payload) {
 }
 
 async function sendPushToOrganizationFollowers(organizationId, payload, options = {}) {
-  if (!vapidPublicKey || !vapidPrivateKey) {
-    console.warn('Organization push skipped: VAPID keys are not configured', { organizationId, type: payload?.type });
-    return { sent: 0, failed: 0, stale: 0, disabled: true, followers: 0, favorites: 0, eligibleRecipients: 0 };
-  }
   const [follows, favorites] = await Promise.all([
     prisma.organizationFollow.findMany({ where: { organizationId }, select: { userId: true } }),
     prisma.favoriteMasjid.findMany({ where: { organizationId }, select: { userId: true } })
@@ -1280,6 +1324,28 @@ app.delete('/api/notifications/subscriptions', auth, async (req, res) => {
     await prisma.pushSubscription.deleteMany({ where: { userId: req.user.id } });
   }
   res.json({ ok: true });
+});
+
+app.get('/api/notifications/history', auth, async (req, res) => {
+  const requestedLimit = Number(req.query.limit);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(50, Math.max(1, requestedLimit)) : 25;
+  const [notifications, unread] = await Promise.all([
+    prisma.notification.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: limit
+    }),
+    prisma.notification.count({ where: { userId: req.user.id, readAt: null } })
+  ]);
+  res.json({ notifications: notifications.map(publicNotification), unread });
+});
+
+app.put('/api/notifications/history/read', auth, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).filter(Boolean) : [];
+  const where = ids.length ? { userId: req.user.id, id: { in: ids } } : { userId: req.user.id, readAt: null };
+  const result = await prisma.notification.updateMany({ where, data: { readAt: new Date() } });
+  const unread = await prisma.notification.count({ where: { userId: req.user.id, readAt: null } });
+  res.json({ ok: true, updated: result.count, unread });
 });
 
 app.get('/api/users', auth, async (req, res) => {

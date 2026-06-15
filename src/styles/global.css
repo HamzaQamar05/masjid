@@ -525,6 +525,27 @@ a {
   padding: 0;
 }
 
+.notification-button {
+  position: relative;
+}
+
+.notification-button em {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #9f1239;
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .dm-top-button {
   position: relative;
   min-width: 40px;
@@ -2921,6 +2942,25 @@ button.mini-org-avatar {
 
 .person-list-row {
   justify-content: space-between;
+}
+
+.notification-row {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-row p {
+  margin: 4px 0;
+  color: inherit;
+  opacity: .82;
+  line-height: 1.35;
+}
+
+.notification-row.unread {
+  border-color: rgba(20, 184, 166, .5);
+  background: rgba(20, 184, 166, .1);
 }
 
 .person-list-row div:nth-child(2) {
