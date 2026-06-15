@@ -615,7 +615,7 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment, notificationState, enablePushNotifications }) {
+function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment, notificationState, enablePushNotifications, prayerPreferences }) {
   const orgAccount = isOrganizationAccount(user);
   const favoritePrograms = favoriteMasjids.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program) => ({ ...program, masjid })));
   return (
@@ -636,6 +636,15 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
         <PostFeed user={user} posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />
       </section>
       <aside className="right-rail">
+        <FirstRunSetupCard
+          favoriteMasjids={favoriteMasjids}
+          locationStatus={locationStatus}
+          notificationState={notificationState}
+          prayerPreferences={prayerPreferences}
+          requestLocation={requestLocation}
+          enablePushNotifications={enablePushNotifications}
+          setTab={setTab}
+        />
         <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
         {orgAccount ? <MasjidPrayerManagerNotice setTab={setTab} /> : <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />}
         <FavoritePrograms programs={favoritePrograms} openOrganization={openOrganization} />
@@ -646,6 +655,41 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
         </section>
       </aside>
     </div>
+  );
+}
+
+function FirstRunSetupCard({ favoriteMasjids = [], locationStatus, notificationState, prayerPreferences, requestLocation, enablePushNotifications, setTab }) {
+  const hasLocation = !/waiting|permission denied|fallback/i.test(locationStatus || '');
+  const hasNotifications = notificationState?.permission === 'granted';
+  const hasMasjid = favoriteMasjids.length > 0;
+  const hasPrayerSetup = Boolean(prayerPreferences?.enabled);
+  const complete = hasLocation && hasNotifications && hasMasjid && hasPrayerSetup;
+  if (complete) return null;
+  const steps = [
+    { label: 'Location', done: hasLocation, action: requestLocation, actionLabel: hasLocation ? 'Refresh' : 'Enable', icon: Navigation },
+    { label: 'Notifications', done: hasNotifications, action: enablePushNotifications, actionLabel: hasNotifications ? 'Refresh' : 'Enable', icon: Bell },
+    { label: 'Follow masjid', done: hasMasjid, action: () => setTab('organizations'), actionLabel: hasMasjid ? 'View' : 'Find', icon: Building2 },
+    { label: 'Prayer reminders', done: hasPrayerSetup, action: () => setTab('prayer'), actionLabel: hasPrayerSetup ? 'Edit' : 'Set up', icon: ShieldCheck }
+  ];
+  return (
+    <section className="panel first-run-card">
+      <div className="section-title">
+        <div><p className="eyebrow">First-run setup</p><h2>Get Ummah Connect ready</h2></div>
+        <CheckCircle2 size={22} />
+      </div>
+      <div className="setup-step-list">
+        {steps.map((step) => {
+          const Icon = step.icon;
+          return (
+            <div className={step.done ? 'setup-step done' : 'setup-step'} key={step.label}>
+              <span><Icon size={16} /></span>
+              <strong>{step.label}</strong>
+              <button disabled={step.done} onClick={step.action}>{step.done ? 'Done' : step.actionLabel}</button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -3929,6 +3973,7 @@ export default function App() {
   const eventsLoadedRef = useRef(false);
   const organizationsLoadedRef = useRef(false);
   const myOrganizationsLoadedRef = useRef(false);
+  const locationDataLoadedRef = useRef(false);
 
   async function bootstrap() {
     if (!token()) return;
@@ -4502,7 +4547,12 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('theme', theme);
   }, [theme]);
-  useEffect(() => { if (user) requestLocation(); }, [Boolean(user)]);
+  useEffect(() => {
+    if (!user || locationDataLoadedRef.current) return;
+    locationDataLoadedRef.current = true;
+    setLocationStatus('Showing Milton fallback data. Enable location to find nearby masjids and accurate prayer times.');
+    loadLocationData(defaultLocation);
+  }, [Boolean(user)]);
   useEffect(() => { scheduleLocationPrayerNotifications(prayerTimes, prayerPreferences); }, [prayerTimes, prayerPreferences, notificationState.permission]);
   useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
   useEffect(() => {
@@ -4636,6 +4686,7 @@ export default function App() {
     setMessages([]);
     setThreads([]);
     setUnreadTotal(0);
+    locationDataLoadedRef.current = false;
     setSocket((activeSocket) => {
       activeSocket?.disconnect();
       return null;
@@ -4706,7 +4757,7 @@ export default function App() {
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />,
+    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} />,
     prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} />,
     events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} loadPosts={loadPosts} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => navigate(-1)} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,

@@ -227,10 +227,53 @@
 }
 
 .notification-card,
+.first-run-card,
 .prayer-settings-card,
 .prayer-app-layout {
   display: grid;
   gap: 12px;
+}
+
+.setup-step-list {
+  display: grid;
+  gap: 8px;
+}
+
+.setup-step {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.setup-step > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent);
+}
+
+.setup-step strong {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.setup-step button {
+  min-width: 68px;
+  min-height: 34px;
+}
+
+.setup-step.done {
+  color: var(--muted);
+}
+
+.setup-step.done > span {
+  color: #16803c;
+  background: rgba(22, 128, 60, 0.12);
 }
 
 .compact-location-form {
