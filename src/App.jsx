@@ -812,18 +812,21 @@ function NotificationSetupCard({ notificationState, enablePushNotifications }) {
   const standalone = isStandalonePwa();
   const unsupported = !('Notification' in window);
   const pushUnavailable = !('serviceWorker' in navigator) || !('PushManager' in window);
+  const blocked = notificationState.permission === 'denied';
   return (
     <section className="panel notification-card">
       <div className="section-title">
-        <div><p className="eyebrow">PWA alerts</p><h2>Notifications</h2></div>
+        <div><p className="eyebrow">First-run setup</p><h2>Notifications</h2></div>
         <Bell size={22} />
       </div>
+      <p>Enable prayer reminders, followed masjid posts, event updates, direct messages, and important community announcements.</p>
       {unsupported ? (
         <p className="helper-text">This browser does not support PWA push notifications.</p>
       ) : (
         <>
           <p className="helper-text">{standalone ? 'Running from the installed app. You can receive message and prayer reminders.' : 'On iPhone, add Ummah Connect to your Home Screen and open it from the app icon for full push support. Browser notifications still help while the app is open.'}</p>
           {pushUnavailable && <p className="helper-text">Full closed-app push is unavailable in this browser, but live message notifications can still work after permission is granted.</p>}
+          {blocked && <p className="helper-text warning-text">Notifications are blocked in this browser. Re-enable them from browser or device settings, then return here and refresh notifications.</p>}
           <div className="manager-row">
             <button className="primary-button" onClick={enablePushNotifications}>{notificationState.permission === 'granted' ? 'Refresh notifications' : 'Enable notifications'}</button>
             <span className="status-pill">{notificationState.permission || 'default'}</span>
@@ -4043,6 +4046,7 @@ export default function App() {
     await api('/api/notifications/subscriptions', { method: 'POST', body: JSON.stringify({ subscription }) });
     setNotificationState({ permission, message: 'Notifications are enabled for this device.' });
     if (!prayerPreferences.enabled) updatePrayerPreferences({ ...prayerPreferences, enabled: true }).catch(console.error);
+    loadNotificationPreferences().catch(console.error);
   }
 
   async function updatePrayerPreferences(nextPreferences) {
@@ -4050,6 +4054,7 @@ export default function App() {
     const updated = await api('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ prayerNotificationPreferences: nextPreferences }) });
     setUser(updated);
     persistAuth(updated);
+    if (updated.notificationPreferences) setNotificationPreferences({ ...defaultNotificationPreferences, ...updated.notificationPreferences });
   }
 
   async function updateNotificationPreferences(nextPreferences) {
@@ -4331,9 +4336,9 @@ export default function App() {
 
   async function followOrganization(id, notifyPrayers = false) {
     if (!user) return alert('Log in to follow masjids and manage notifications.');
-    if (notifyPrayers && 'Notification' in window && Notification.permission !== 'granted') {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return alert('Notifications were not enabled.');
+    if (notifyPrayers && notificationState.permission !== 'granted') {
+      await enablePushNotifications();
+      if ('Notification' in window && Notification.permission !== 'granted') return alert('Notifications were not enabled.');
     }
     const result = await api(`/api/organizations/${id}/follow`, { method: 'POST', body: JSON.stringify({ notifyPrayers }) });
     const org = result.organization || await api(`/api/organizations/${id}`);

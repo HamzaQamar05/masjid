@@ -39,6 +39,9 @@ const onlineUsers = new Map();
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || '';
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
 const vapidSubject = process.env.VAPID_SUBJECT || process.env.FRONTEND_URL || 'mailto:admin@ummahconnect.app';
+const prayerNotificationJobEnabled = process.env.PRAYER_NOTIFICATION_JOB_ENABLED !== 'false';
+const prayerNotificationPollMs = Math.max(30_000, Number(process.env.PRAYER_NOTIFICATION_POLL_MS || 60_000));
+const prayerNotificationLookaheadMs = Math.max(prayerNotificationPollMs, Number(process.env.PRAYER_NOTIFICATION_LOOKAHEAD_MS || 90_000));
 const messageLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 45,
@@ -680,9 +683,15 @@ function normalizePrayerPreferences(value = {}) {
 }
 
 async function sendPushToUser(userId, payload) {
-  if (!vapidPublicKey || !vapidPrivateKey) return { sent: 0, disabled: true };
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    console.warn('Push skipped: VAPID keys are not configured', { userId, type: payload?.type });
+    return { sent: 0, failed: 0, stale: 0, disabled: true };
+  }
   const subscriptions = await prisma.pushSubscription.findMany({ where: { userId } });
+  if (!subscriptions.length) return { sent: 0, failed: 0, stale: 0, disabled: false, noSubscriptions: true };
   let sent = 0;
+  let failed = 0;
+  let stale = 0;
   await Promise.all(subscriptions.map(async (subscription) => {
     try {
       await webPush.sendNotification({
@@ -693,21 +702,34 @@ async function sendPushToUser(userId, payload) {
     } catch (error) {
       if ([404, 410].includes(error.statusCode)) {
         await prisma.pushSubscription.deleteMany({ where: { endpoint: subscription.endpoint } });
+        stale += 1;
       } else {
-        console.error('Push notification failed', error.statusCode || error.message);
+        failed += 1;
+        console.error('Push notification failed', {
+          userId,
+          type: payload?.type,
+          endpoint: subscription.endpoint,
+          statusCode: error.statusCode,
+          message: error.message
+        });
       }
     }
   }));
-  return { sent, disabled: false };
+  return { sent, failed, stale, disabled: false };
 }
 
-async function sendPushToOrganizationFollowers(organizationId, payload) {
-  if (!vapidPublicKey || !vapidPrivateKey) return { sent: 0, disabled: true, followers: 0 };
-  const follows = await prisma.organizationFollow.findMany({
-    where: { organizationId },
-    select: { userId: true }
-  });
-  const uniqueUserIds = [...new Set(follows.map((follow) => follow.userId))];
+async function sendPushToOrganizationFollowers(organizationId, payload, options = {}) {
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    console.warn('Organization push skipped: VAPID keys are not configured', { organizationId, type: payload?.type });
+    return { sent: 0, failed: 0, stale: 0, disabled: true, followers: 0, favorites: 0, eligibleRecipients: 0 };
+  }
+  const [follows, favorites] = await Promise.all([
+    prisma.organizationFollow.findMany({ where: { organizationId }, select: { userId: true } }),
+    prisma.favoriteMasjid.findMany({ where: { organizationId }, select: { userId: true } })
+  ]);
+  const excludedUserIds = new Set((options.excludeUserIds || []).filter(Boolean));
+  const uniqueUserIds = [...new Set([...follows.map((follow) => follow.userId), ...favorites.map((favorite) => favorite.userId)])]
+    .filter((userId) => !excludedUserIds.has(userId));
   const preferences = await prisma.userNotificationPreference.findMany({ where: { userId: { in: uniqueUserIds } } });
   const preferenceMap = new Map(preferences.map((preference) => [preference.userId, publicNotificationPreferences(preference)]));
   const type = String(payload?.type || '').toUpperCase();
@@ -723,10 +745,142 @@ async function sendPushToOrganizationFollowers(organizationId, payload) {
   const results = await Promise.all(allowedUserIds.map((userId) => sendPushToUser(userId, payload)));
   return {
     sent: results.reduce((sum, result) => sum + (result.sent || 0), 0),
+    failed: results.reduce((sum, result) => sum + (result.failed || 0), 0),
+    stale: results.reduce((sum, result) => sum + (result.stale || 0), 0),
     disabled: results.some((result) => result.disabled),
-    followers: uniqueUserIds.length,
-    eligibleFollowers: allowedUserIds.length
+    followers: follows.length,
+    favorites: favorites.length,
+    recipients: uniqueUserIds.length,
+    eligibleRecipients: allowedUserIds.length
   };
+}
+
+const sentPrayerNotificationKeys = new Map();
+const prayerTimeCache = new Map();
+
+function compactPrayerNotificationKeys(now = Date.now()) {
+  const maxAgeMs = 36 * 60 * 60 * 1000;
+  for (const [key, timestamp] of sentPrayerNotificationKeys.entries()) {
+    if (now - timestamp > maxAgeMs) sentPrayerNotificationKeys.delete(key);
+  }
+}
+
+function zonedParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(date);
+  return Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]));
+}
+
+function zonedTimeToUtc({ year, month, day, hour, minute }, timeZone) {
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  const localAtGuess = zonedParts(new Date(utcGuess), timeZone);
+  const localAsUtc = Date.UTC(localAtGuess.year, localAtGuess.month - 1, localAtGuess.day, localAtGuess.hour, localAtGuess.minute, localAtGuess.second || 0, 0);
+  return new Date(utcGuess - (localAsUtc - utcGuess));
+}
+
+function parsePrayerClock(value) {
+  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return { hour, minute };
+}
+
+async function fetchPrayerTimings({ latitude, longitude, method, dateKey }) {
+  const cacheKey = `${Number(latitude).toFixed(4)}:${Number(longitude).toFixed(4)}:${method || 2}:${dateKey}`;
+  const cached = prayerTimeCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < 6 * 60 * 60 * 1000) return cached.timings;
+  const date = Math.floor(new Date(`${dateKey}T12:00:00Z`).getTime() / 1000);
+  const url = `https://api.aladhan.com/v1/timings/${date}?latitude=${latitude}&longitude=${longitude}&method=${method || 2}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Prayer time API failed with ${response.status}`);
+  const data = await response.json();
+  const timings = data.data?.timings || {};
+  prayerTimeCache.set(cacheKey, { cachedAt: Date.now(), timings });
+  return timings;
+}
+
+async function runPrayerNotificationJob() {
+  if (!prayerNotificationJobEnabled) return;
+  const now = new Date();
+  compactPrayerNotificationKeys(now.getTime());
+  const users = await prisma.user.findMany({
+    where: {
+      latitude: { not: null },
+      longitude: { not: null },
+      pushSubscriptions: { some: {} }
+    },
+    select: {
+      id: true,
+      name: true,
+      latitude: true,
+      longitude: true,
+      timezone: true,
+      prayerMethod: true,
+      prayerNotificationPreferences: true,
+      notificationPreference: true
+    }
+  });
+
+  await Promise.all(users.map(async (user) => {
+    const notificationPreference = publicNotificationPreferences(user.notificationPreference);
+    if (!notificationPreference.prayerTimeReminders) return;
+    const preferences = normalizePrayerPreferences(user.prayerNotificationPreferences || {});
+    if (!preferences.enabled) return;
+    const timeZone = user.timezone || 'UTC';
+    const today = zonedParts(now, timeZone);
+    const dateKey = `${String(today.year).padStart(4, '0')}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
+    let timings = {};
+    try {
+      timings = await fetchPrayerTimings({
+        latitude: user.latitude,
+        longitude: user.longitude,
+        method: user.prayerMethod,
+        dateKey
+      });
+    } catch (error) {
+      console.error('Prayer notification timing lookup failed', { userId: user.id, message: error.message });
+      return;
+    }
+
+    await Promise.all(Object.entries(preferences.prayers || {}).map(async ([prayer, enabled]) => {
+      if (!enabled) return;
+      const clock = parsePrayerClock(timings[prayer]);
+      if (!clock) return;
+      const scheduledAt = zonedTimeToUtc({
+        year: today.year,
+        month: today.month,
+        day: today.day,
+        hour: clock.hour,
+        minute: clock.minute - Number(preferences.offsetMinutes || 0)
+      }, timeZone);
+      const delta = scheduledAt.getTime() - now.getTime();
+      if (delta < 0 || delta > prayerNotificationLookaheadMs) return;
+      const key = `${user.id}:${dateKey}:${prayer}:${preferences.offsetMinutes || 0}`;
+      if (sentPrayerNotificationKeys.has(key)) return;
+      sentPrayerNotificationKeys.set(key, now.getTime());
+      const prefix = preferences.offsetMinutes ? `${preferences.offsetMinutes} minutes until` : '';
+      const result = await sendPushToUser(user.id, {
+        type: 'PRAYER',
+        title: `${prefix} ${prayer} time`.trim(),
+        body: preferences.offsetMinutes ? `${prayer} time starts soon.` : `${prayer} time has started.`,
+        url: '/prayer',
+        tag: key,
+        prayer,
+        scheduledAt: scheduledAt.toISOString()
+      });
+      console.log('Prayer notification processed', { userId: user.id, prayer, scheduledAt: scheduledAt.toISOString(), ...result });
+    }));
+  }));
 }
 
 async function auth(req, res, next) {
@@ -985,6 +1139,11 @@ app.put('/api/notifications/preferences', auth, async (req, res) => {
   }
   if (req.body.prayerNotificationPreferences) {
     data.prayerNotificationPreferences = normalizePrayerPreferences(req.body.prayerNotificationPreferences);
+    notificationPreferences = await prisma.userNotificationPreference.upsert({
+      where: { userId: req.user.id },
+      create: { userId: req.user.id, prayerTimeReminders: data.prayerNotificationPreferences.enabled },
+      update: { prayerTimeReminders: data.prayerNotificationPreferences.enabled }
+    });
   }
   if (req.body.notificationPreferences) {
     notificationPreferences = await prisma.userNotificationPreference.upsert({
@@ -1501,17 +1660,15 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
     include: { author: true, organization: true }
   });
   let push = null;
-  if (type === 'ANNOUNCEMENT') {
-    push = await sendPushToOrganizationFollowers(req.params.id, {
-      title: post.title,
-      body: post.content,
-      url: `/masjids/${req.params.id}`,
-      tag: `announcement-${post.id}`,
-      type: 'ANNOUNCEMENT',
-      organizationId: req.params.id,
-      postId: post.id
-    });
-  }
+  push = await sendPushToOrganizationFollowers(req.params.id, {
+    title: post.title,
+    body: post.content,
+    url: `/masjids/${req.params.id}`,
+    tag: `${type.toLowerCase()}-${post.id}`,
+    type,
+    organizationId: req.params.id,
+    postId: post.id
+  }, { excludeUserIds: [req.user.id] });
   res.json({ ...publicPost(post), push });
 });
 
@@ -1723,7 +1880,7 @@ app.post('/api/events', auth, async (req, res) => {
       type: 'EVENT',
       organizationId,
       eventId: event.id
-    });
+    }, { excludeUserIds: [req.user.id] });
   }
   res.json({ ...event, push });
 });
@@ -1759,7 +1916,7 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
       type: 'EVENT',
       organizationId: updated.organizationId,
       eventId: updated.id
-    });
+    }, { excludeUserIds: [req.user.id] });
   }
   res.json({ ...updated, push, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) });
 });
@@ -2022,16 +2179,20 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
   const serialized = serializeMessage(message);
   io.to(threadRoom(req.user.id, receiverId)).emit('message:new', serialized);
   io.to(userRoom(receiverId)).emit('message:new', serialized);
-  await sendPushToUser(receiverId, {
-    type: 'message',
-    title: `New message from ${message.sender.name}`,
-    body: content.trim().slice(0, 120),
-    url: `/messages/${req.user.id}`,
-    messageId: message.id,
-    senderId: req.user.id
-  });
+  const receiverPreference = await prisma.userNotificationPreference.findUnique({ where: { userId: receiverId } });
+  const messagePush = publicNotificationPreferences(receiverPreference).messages
+    ? await sendPushToUser(receiverId, {
+        type: 'MESSAGE',
+        title: `New message from ${message.sender.name}`,
+        body: content.trim().slice(0, 120),
+        url: `/messages/${req.user.id}`,
+        tag: `message-${message.id}`,
+        messageId: message.id,
+        senderId: req.user.id
+      })
+    : { sent: 0, skipped: true, reason: 'messages preference disabled' };
   await emitUnread(receiverId);
-  res.json(serialized);
+  res.json({ ...serialized, push: messagePush });
 });
 
 app.delete('/api/messages/:messageId', auth, async (req, res) => {
@@ -2183,4 +2344,18 @@ app.get('/api/prayer-times', async (req, res) => {
 });
 
 const port = process.env.PORT || 5000;
-server.listen(port, () => console.log(`API running on http://localhost:${port}`));
+server.listen(port, () => {
+  console.log(`API running on http://localhost:${port}`);
+  if (prayerNotificationJobEnabled) {
+    console.log('Prayer notification job enabled', {
+      pollMs: prayerNotificationPollMs,
+      lookaheadMs: prayerNotificationLookaheadMs
+    });
+    runPrayerNotificationJob().catch((error) => console.error('Prayer notification job failed', error));
+    setInterval(() => {
+      runPrayerNotificationJob().catch((error) => console.error('Prayer notification job failed', error));
+    }, prayerNotificationPollMs);
+  } else {
+    console.log('Prayer notification job disabled');
+  }
+});
