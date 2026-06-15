@@ -19,17 +19,35 @@ const app = express();
 const server = createServer(app);
 const prisma = new PrismaClient();
 
+const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://localhost:4173',
   process.env.FRONTEND_URL,
   'https://ummah-connect-psi.vercel.app',
   'https://masjid-hamzaqamar05s-projects.vercel.app',
-  'https://masjid-fx6xjm2vo-hamzaqamar05s-projects.vercel.app'
+  'https://masjid-fx6xjm2vo-hamzaqamar05s-projects.vercel.app',
+  ...configuredOrigins
 ].filter(Boolean);
+const allowedOriginSet = new Set(allowedOrigins);
+const allowedOriginSuffixes = (process.env.CORS_ALLOWED_SUFFIXES || '')
+  .split(',')
+  .map((suffix) => suffix.trim())
+  .filter(Boolean);
+
+function isAllowedOrigin(origin) {
+  if (!origin || allowedOriginSet.has(origin)) return true;
+  return allowedOriginSuffixes.some((suffix) => origin.endsWith(suffix));
+}
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin(origin, callback) {
+      return callback(null, isAllowedOrigin(origin));
+    },
     credentials: true
   }
 });
@@ -51,6 +69,28 @@ const messageLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+const notificationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32 || process.env.JWT_SECRET === 'dev_secret')) {
+  console.error('SECURITY WARNING: set a strong JWT_SECRET of at least 32 characters before serving production traffic.');
+}
 
 if (redis) {
   redis.connect().catch((error) => console.error('Redis unavailable, using memory fallback', error.message));
@@ -149,13 +189,18 @@ const fallbackMasjids = [
 ];
 
 
+app.disable('x-powered-by');
+app.use((_, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
+  next();
+});
+
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    if (origin.endsWith('.vercel.app')) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
 
@@ -236,6 +281,14 @@ function normalizeLimit(value, fallback = 25, max = 50) {
   return Number.isFinite(limit) ? Math.min(max, Math.max(1, Math.floor(limit))) : fallback;
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || ''));
+}
+
 function normalizeOptionalNumber(value) {
   if (value == null || value === '') return null;
   const number = Number(value);
@@ -270,12 +323,11 @@ function normalizeApplicationStatus(value, fallback = 'APPROVED') {
   return applicationStatuses.includes(status) ? status : fallback;
 }
 
-function publicUser(user) {
+function publicUser(user, options = {}) {
   if (!user) return null;
-  return {
+  const safeUser = {
     id: user.id,
     name: user.name,
-    email: user.email,
     accountType: user.accountType,
     dateOfBirth: user.dateOfBirth,
     age: calculateAge(user.dateOfBirth),
@@ -298,6 +350,8 @@ function publicUser(user) {
     prayerNotificationPreferences: user.prayerNotificationPreferences,
     createdAt: user.createdAt
   };
+  if (options.includeEmail) safeUser.email = user.email;
+  return safeUser;
 }
 
 function publicOrganization(org, viewerId, options = {}) {
@@ -307,21 +361,27 @@ function publicOrganization(org, viewerId, options = {}) {
   const people = org.people || [];
   const viewerCanManage = viewerId && (org.ownerId === viewerId || people.some((person) => person.userId === viewerId && canOperateOrganizationRole(person.roleLabel)));
   const showPrograms = options.includeUnclaimedPrograms || org.claimed || org.verified || org.ownerId || viewerCanManage;
-  const events = (org.events || []).map((event) => ({
-    ...event,
-    registrations: (event.registrations || []).map((registration) => ({
-      ...registration,
-      user: publicUser(registration.user)
-    }))
-  }));
+  const events = (org.events || []).map((event) => {
+    const visibleRegistrations = (event.registrations || []).filter((registration) => viewerCanManage || registration.userId === viewerId);
+    return {
+      ...event,
+      registrations: visibleRegistrations.map((registration) => ({
+        ...registration,
+        user: publicUser(registration.user, { includeEmail: viewerCanManage || registration.userId === viewerId })
+      }))
+    };
+  });
   const posts = (org.posts || []).filter((post) => hasMatchingEvent(post, events)).map(publicPost);
-  const opportunities = (org.opportunities || []).map((opportunity) => ({
-    ...opportunity,
-    applications: (opportunity.applications || []).map((application) => ({
-      ...application,
-      applicant: publicUser(application.applicant)
-    }))
-  }));
+  const opportunities = (org.opportunities || []).map((opportunity) => {
+    const visibleApplications = (opportunity.applications || []).filter((application) => viewerCanManage || application.applicantId === viewerId);
+    return {
+      ...opportunity,
+      applications: visibleApplications.map((application) => ({
+        ...application,
+        applicant: publicUser(application.applicant, { includeEmail: viewerCanManage || application.applicantId === viewerId })
+      }))
+    };
+  });
   const { followers: _followers, favoritedBy: _favoritedBy, people: _people, posts: _posts, events: _events, opportunities: _opportunities, ...safeOrg } = org;
   const viewerFollow = viewerId ? followers.find((follow) => follow.userId === viewerId) : null;
   return {
@@ -332,7 +392,7 @@ function publicOrganization(org, viewerId, options = {}) {
     events,
     opportunities,
     followers: followers.map((follow) => ({ ...follow, user: publicUser(follow.user) })),
-    people: people.map((person) => ({ ...person, user: publicUser(person.user) })),
+    people: people.map((person) => ({ ...person, user: publicUser(person.user, { includeEmail: viewerCanManage }) })),
     followerCount: followers.length,
     favoriteCount: favorites.length,
     peopleCount: people.length,
@@ -919,7 +979,7 @@ async function sendPushToOrganizationFollowers(organizationId, payload, options 
     prisma.favoriteMasjid.findMany({ where: { organizationId }, select: { userId: true } })
   ]);
   const excludedUserIds = new Set((options.excludeUserIds || []).filter(Boolean));
-  const uniqueUserIds = [...new Set([...follows.map((follow) => follow.userId), ...favorites.map((favorite) => favorite.userId)])]
+  const uniqueUserIds = [...new Set(follows.map((follow) => follow.userId))]
     .filter((userId) => !excludedUserIds.has(userId));
   const preferences = await prisma.userNotificationPreference.findMany({ where: { userId: { in: uniqueUserIds } } });
   const preferenceMap = new Map(preferences.map((preference) => [preference.userId, publicNotificationPreferences(preference)]));
@@ -988,7 +1048,7 @@ async function sendWhatsappToOrganizationFollowers(organizationId, payload, opti
     prisma.favoriteMasjid.findMany({ where: { organizationId }, select: { userId: true } })
   ]);
   const excludedUserIds = new Set((options.excludeUserIds || []).filter(Boolean));
-  const recipientIds = [...new Set([...follows.map((follow) => follow.userId), ...favorites.map((favorite) => favorite.userId)])]
+  const recipientIds = [...new Set(follows.map((follow) => follow.userId))]
     .filter((userId) => !excludedUserIds.has(userId));
   const users = await prisma.user.findMany({
     where: { id: { in: recipientIds } },
@@ -1178,8 +1238,9 @@ function optionalViewerId(req) {
 }
 
 async function createOrUpdateOrganizationOwner({ organization, ownerEmail, ownerName }) {
-  const email = String(ownerEmail || '').trim().toLowerCase();
+  const email = normalizeEmail(ownerEmail);
   if (!email) throw new Error('Masjid admin login email is required');
+  if (!isValidEmail(email)) throw new Error('Masjid admin login email must be valid');
   const accountType = organizationType(organization.type) === 'MSA' ? 'MSA' : 'MASJID';
   let temporaryPassword = null;
   let owner = await prisma.user.findUnique({ where: { email } });
@@ -1253,17 +1314,20 @@ function osmAddress(tags = {}) {
 app.get('/', (_, res) => res.json({ message: 'Ummah Connect API running' }));
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { name, email, password, city, bio } = req.body;
+    const normalizedEmail = normalizeEmail(email);
     const dateOfBirth = normalizeBirthDate(req.body.dateOfBirth);
     if (!name || !email || !password || !dateOfBirth) return res.status(400).json({ error: 'Name, email, password, and date of birth are required' });
+    if (!isValidEmail(normalizedEmail)) return res.status(400).json({ error: 'A valid email is required' });
+    if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
       data: {
-        name,
-        email: email.toLowerCase(),
+        name: String(name).trim().slice(0, 120),
+        email: normalizedEmail,
         passwordHash,
         dateOfBirth,
         accountType: 'USER',
@@ -1275,24 +1339,24 @@ app.post('/api/auth/register', async (req, res) => {
         hobbies: normalizeList(req.body.hobbies)
       }
     });
-    res.json({ token: createToken(user), user: publicUser(user) });
+    res.json({ token: createToken(user), user: publicUser(user, { includeEmail: true }) });
   } catch (err) {
     console.error(err);
     res.status(400).json({ error: err.code === 'P2002' ? 'Email already exists' : err.message });
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email: email?.toLowerCase() || '' } });
+  const user = await prisma.user.findUnique({ where: { email: normalizeEmail(email) } });
   if (!user) return res.status(401).json({ error: 'Invalid login' });
   const valid = await bcrypt.compare(password || '', user.passwordHash);
   if (!valid) return res.status(401).json({ error: 'Invalid login' });
-  res.json({ token: createToken(user), user: publicUser(user) });
+  res.json({ token: createToken(user), user: publicUser(user, { includeEmail: true }) });
 });
 
-app.post('/api/auth/forgot-password', async (req, res) => {
-  const email = String(req.body.email || '').trim().toLowerCase();
+app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body.email);
   const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
   if (user) {
     const rawToken = randomBytes(32).toString('hex');
@@ -1305,11 +1369,11 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   res.json({ message: 'Password reset email sent if the account exists.' });
 });
 
-app.post('/api/auth/reset-password', async (req, res) => {
-  const email = String(req.body.email || '').trim().toLowerCase();
+app.post('/api/auth/reset-password', passwordResetLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body.email);
   const resetToken = String(req.body.resetToken || '');
   const password = String(req.body.password || '');
-  if (!email || !resetToken || password.length < 6) return res.status(400).json({ error: 'Email, reset token, and a 6+ character password are required' });
+  if (!email || !resetToken || password.length < 8) return res.status(400).json({ error: 'Email, reset token, and an 8+ character password are required' });
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user?.passwordResetTokenHash || !user.passwordResetExpiresAt || user.passwordResetExpiresAt < new Date()) {
     return res.status(400).json({ error: 'Reset link is invalid or expired' });
@@ -1321,12 +1385,12 @@ app.post('/api/auth/reset-password', async (req, res) => {
     where: { id: user.id },
     data: { passwordHash, passwordResetTokenHash: null, passwordResetExpiresAt: null }
   });
-  res.json({ token: createToken(updated), user: publicUser(updated) });
+  res.json({ token: createToken(updated), user: publicUser(updated, { includeEmail: true }) });
 });
 
 app.get('/api/me', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-  res.json(publicUser(user));
+  res.json(publicUser(user, { includeEmail: true }));
 });
 
 app.put('/api/me', auth, async (req, res) => {
@@ -1353,7 +1417,7 @@ app.put('/api/me', auth, async (req, res) => {
   };
   Object.keys(data).forEach((key) => data[key] === undefined && delete data[key]);
   const user = await prisma.user.update({ where: { id: req.user.id }, data });
-  res.json(publicUser(user));
+  res.json(publicUser(user, { includeEmail: true }));
 });
 
 app.get('/api/notifications/vapid-public-key', auth, (_, res) => {
@@ -1392,7 +1456,7 @@ app.get('/api/notifications/preferences', auth, async (req, res) => {
   });
 });
 
-app.put('/api/notifications/preferences', auth, async (req, res) => {
+app.put('/api/notifications/preferences', auth, notificationLimiter, async (req, res) => {
   const data = {};
   let notificationPreferences = null;
   if (req.body.location) {
@@ -1431,7 +1495,7 @@ app.put('/api/notifications/preferences', auth, async (req, res) => {
   }
   const user = Object.keys(data).length ? await prisma.user.update({ where: { id: req.user.id }, data }) : await prisma.user.findUnique({ where: { id: req.user.id } });
   res.json({
-    ...publicUser(user),
+    ...publicUser(user, { includeEmail: true }),
     whatsapp: {
       phone: user.whatsappPhone || '',
       enabled: Boolean(notificationPreferences?.whatsappNotifications),
@@ -1442,7 +1506,7 @@ app.put('/api/notifications/preferences', auth, async (req, res) => {
   });
 });
 
-app.post('/api/notifications/subscriptions', auth, async (req, res) => {
+app.post('/api/notifications/subscriptions', auth, notificationLimiter, async (req, res) => {
   const { endpoint, keys } = req.body.subscription || req.body;
   if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ error: 'Valid push subscription is required' });
   const subscription = await prisma.pushSubscription.upsert({
@@ -1495,7 +1559,11 @@ app.get('/api/users', auth, async (req, res) => {
     const otherId = connection.requesterId === req.user.id ? connection.receiverId : connection.requesterId;
     connectionMap.set(otherId, connection.status);
   });
-  res.json(users.map((user) => ({ ...publicUser(user), warningCount: warningCountMap.get(user.id) || 0, connectionStatus: user.id === req.user.id ? 'SELF' : connectionMap.get(user.id) || 'NONE' })));
+  res.json(users.map((user) => ({
+    ...publicUser(user, { includeEmail: req.user.accountType === 'ADMIN' || user.id === req.user.id }),
+    warningCount: warningCountMap.get(user.id) || 0,
+    connectionStatus: user.id === req.user.id ? 'SELF' : connectionMap.get(user.id) || 'NONE'
+  })));
 });
 
 app.get('/api/users/:id/social', auth, async (req, res) => {
@@ -1568,7 +1636,7 @@ app.put('/api/users/:id/role', auth, requireAdmin, async (req, res) => {
   const allowed = ['USER', 'MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'BUSINESS', 'ADMIN'];
   if (!allowed.includes(req.body.accountType)) return res.status(400).json({ error: 'Invalid account type' });
   const user = await prisma.user.update({ where: { id: req.params.id }, data: { accountType: req.body.accountType } });
-  res.json(publicUser(user));
+  res.json(publicUser(user, { includeEmail: true }));
 });
 
 app.post('/api/users/:id/password-reset', auth, requireAdmin, async (req, res) => {
@@ -1719,7 +1787,8 @@ app.post('/api/organizations', auth, async (req, res) => {
   const orgType = organizationType(type);
   let ownerId = null;
   let temporaryPassword = null;
-  const loginEmail = String(ownerEmail || '').trim().toLowerCase();
+  const loginEmail = normalizeEmail(ownerEmail);
+  if (loginEmail && !isValidEmail(loginEmail)) return res.status(400).json({ error: 'Owner email must be valid' });
   if (loginEmail) {
     const accountType = orgType === 'MSA' ? 'MSA' : 'MASJID';
     const existingOwner = await prisma.user.findUnique({ where: { email: loginEmail } });
@@ -1844,7 +1913,7 @@ app.post('/api/organizations/:id/onboard', auth, requireAdmin, async (req, res) 
         opportunities: { include: { applications: { include: { applicant: true } } }, orderBy: { createdAt: 'desc' } }
       }
     });
-    res.json({ organization: publicOrganization(updated, req.user.id), owner: publicUser(owner), temporaryPassword, existingUser: !temporaryPassword });
+    res.json({ organization: publicOrganization(updated, req.user.id), owner: publicUser(owner, { includeEmail: true }), temporaryPassword, existingUser: !temporaryPassword });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not onboard masjid' });
   }
@@ -2027,6 +2096,7 @@ async function hydratedOrganizationForViewer(organizationId, viewerId) {
 }
 
 app.post('/api/organizations/:id/follow', auth, async (req, res) => {
+  if (['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Organization and admin accounts manage masjids from the dashboard' });
   const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
   if (!organization) return res.status(404).json({ error: 'Organization not found' });
 
@@ -2054,6 +2124,7 @@ app.delete('/api/organizations/:id/follow', auth, async (req, res) => {
 });
 
 app.post('/api/organizations/:id/favorite', auth, async (req, res) => {
+  if (['MASJID', 'MSA', 'ADMIN'].includes(req.user.accountType)) return res.status(403).json({ error: 'Organization and admin accounts manage masjids from the dashboard' });
   const organization = await prisma.organization.findUnique({ where: { id: req.params.id }, select: { id: true } });
   if (!organization) return res.status(404).json({ error: 'Organization not found' });
   const favorite = await prisma.favoriteMasjid.upsert({
@@ -2088,14 +2159,15 @@ app.post('/api/organizations/:id/people', auth, async (req, res) => {
     update: { roleLabel },
     include: { user: true }
   });
-  res.json({ ...person, user: publicUser(person.user) });
+  res.json({ ...person, user: publicUser(person.user, { includeEmail: true }) });
 });
 
 app.post('/api/organizations/:id/people/invite', auth, async (req, res) => {
   if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can invite team members' });
-  const email = String(req.body.email || '').trim().toLowerCase();
+  const email = normalizeEmail(req.body.email);
   const name = String(req.body.name || '').trim();
   if (!email) return res.status(400).json({ error: 'Email is required' });
+  if (!isValidEmail(email)) return res.status(400).json({ error: 'Email must be valid' });
   const roleLabel = String(req.body.roleLabel || 'Team member').trim().slice(0, 80) || 'Team member';
   const requestedType = String(req.body.accountType || 'USER').toUpperCase();
   const accountType = ['IMAM', 'STUDENT_OF_KNOWLEDGE', 'USER', 'MASJID', 'MSA'].includes(requestedType) ? requestedType : 'USER';
@@ -2120,7 +2192,7 @@ app.post('/api/organizations/:id/people/invite', auth, async (req, res) => {
     update: { roleLabel },
     include: { user: true }
   });
-  res.json({ ...person, user: publicUser(person.user), temporaryPassword, existingUser: !temporaryPassword });
+  res.json({ ...person, user: publicUser(person.user, { includeEmail: true }), temporaryPassword, existingUser: !temporaryPassword });
 });
 
 app.delete('/api/organizations/:id/people/:userId', auth, async (req, res) => {
@@ -2156,7 +2228,9 @@ app.get('/api/events', async (req, res) => {
       isFromFavoriteMasjid: Boolean(viewerFavorite),
       isSaved: Boolean(subscription?.saved),
       notifyMe: Boolean(subscription?.notify),
-      registrations: event.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) }))
+      registrations: event.registrations
+        .filter((registration) => registration.userId === viewerId)
+        .map((registration) => ({ ...registration, user: publicUser(registration.user, { includeEmail: true }) }))
     };
   }).sort((a, b) => Number(b.isFromFavoriteMasjid) - Number(a.isFromFavoriteMasjid) || Number(b.isFromFollowedMasjid) - Number(a.isFromFollowedMasjid) || new Date(a.startTime) - new Date(b.startTime)));
 });
@@ -2243,7 +2317,7 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
       eventId: updated.id
     }, { excludeUserIds: [req.user.id] }));
   }
-  res.json({ ...updated, push, whatsapp, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user) })) });
+  res.json({ ...updated, push, whatsapp, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user, { includeEmail: true }) })) });
 });
 
 app.delete('/api/events/:eventId', auth, async (req, res) => {
@@ -2395,7 +2469,7 @@ app.put('/api/opportunities/:id', auth, async (req, res) => {
   const updated = await prisma.opportunity.update({ where: { id: opportunity.id }, data, include: { applications: { include: { applicant: true } } } });
   if (updated.isActive) await updateSyncedOpportunityPost(opportunity, updated, req.user.id);
   else await deleteSyncedOpportunityPosts(updated);
-  res.json({ ...updated, applications: updated.applications.map((application) => ({ ...application, applicant: publicUser(application.applicant) })) });
+  res.json({ ...updated, applications: updated.applications.map((application) => ({ ...application, applicant: publicUser(application.applicant, { includeEmail: true }) })) });
 });
 
 app.delete('/api/opportunities/:id', auth, async (req, res) => {
@@ -2532,12 +2606,14 @@ app.get('/api/messages/:userId', auth, async (req, res) => {
 
 app.post('/api/messages', auth, messageLimiter, async (req, res) => {
   const { receiverId, content } = req.body;
-  if (!receiverId || !content?.trim()) return res.status(400).json({ error: 'Receiver and content are required' });
+  const normalizedContent = String(content || '').trim();
+  if (!receiverId || !normalizedContent) return res.status(400).json({ error: 'Receiver and content are required' });
+  if (normalizedContent.length > 2000) return res.status(400).json({ error: 'Message must be 2000 characters or less' });
   if (receiverId === req.user.id) return res.status(400).json({ error: 'Cannot message yourself' });
   const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
   if (!receiver) return res.status(404).json({ error: 'Receiver not found' });
   const message = await prisma.message.create({
-    data: { senderId: req.user.id, receiverId, content: content.trim() },
+    data: { senderId: req.user.id, receiverId, content: normalizedContent },
     include: { sender: true, receiver: true, reactions: { include: { user: true } } }
   });
   await invalidateUnread(receiverId);
@@ -2549,7 +2625,7 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
     ? await sendPushToUser(receiverId, {
         type: 'MESSAGE',
         title: `New message from ${message.sender.name}`,
-        body: content.trim().slice(0, 120),
+        body: normalizedContent.slice(0, 120),
         url: `/messages/${req.user.id}`,
         tag: `message-${message.id}`,
         messageId: message.id,
@@ -2560,7 +2636,7 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
     ? await sendWhatsappToUser(receiverId, {
         type: 'MESSAGE',
         title: `New message from ${message.sender.name}`,
-        body: content.trim().slice(0, 120),
+        body: normalizedContent.slice(0, 120),
         url: `/messages/${req.user.id}`,
         messageId: message.id,
         senderId: req.user.id

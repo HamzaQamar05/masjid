@@ -179,14 +179,28 @@ function routeId(pathname, prefix) {
   return decodeURIComponent(pathname.slice(prefix.length).split('/')[0] || '');
 }
 function token() {
-  return sessionStorage.getItem('token') || localStorage.getItem('token');
+  const sessionToken = sessionStorage.getItem('token');
+  if (sessionToken) return sessionToken;
+  const legacyToken = localStorage.getItem('token');
+  if (legacyToken) {
+    sessionStorage.setItem('token', legacyToken);
+    localStorage.removeItem('token');
+  }
+  return legacyToken;
 }
 
 function storedUser() {
-  const saved = sessionStorage.getItem('user') || localStorage.getItem('user');
+  const sessionUser = sessionStorage.getItem('user');
+  const legacyUser = !sessionUser ? localStorage.getItem('user') : null;
+  const saved = sessionUser || legacyUser;
   if (!saved) return null;
   try {
-    return JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    if (legacyUser) {
+      sessionStorage.setItem('user', legacyUser);
+      localStorage.removeItem('user');
+    }
+    return parsed;
   } catch {
     localStorage.removeItem('user');
     sessionStorage.removeItem('user');
@@ -195,10 +209,10 @@ function storedUser() {
 }
 
 function persistAuth(nextUser, nextToken = token()) {
-  if (nextToken) localStorage.setItem('token', nextToken);
-  if (nextUser) localStorage.setItem('user', JSON.stringify(nextUser));
-  sessionStorage.removeItem('token');
-  sessionStorage.removeItem('user');
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  if (nextToken) sessionStorage.setItem('token', nextToken);
+  if (nextUser) sessionStorage.setItem('user', JSON.stringify(nextUser));
 }
 
 function isStandalonePwa() {
