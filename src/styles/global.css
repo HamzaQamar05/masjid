@@ -5687,3 +5687,953 @@ button.mini-org-avatar {
     font-size: 10px;
   }
 }
+
+/* Social mobile refresh: keeps every existing feature visible while making the app feel like a modern feed/product surface. */
+:root {
+  --app-max: 1180px;
+  --nav-height: 62px;
+  --mobile-nav-height: 66px;
+  --surface: #ffffff;
+  --surface-raised: rgba(255, 255, 255, 0.96);
+  --surface-muted: #f7f8fa;
+  --ink: #121417;
+  --ink-soft: #56616b;
+  --line: #dde3ea;
+  --brand: #0f766e;
+  --brand-strong: #0b5f58;
+  --accent: #7c3aed;
+  --gold: #b7791f;
+  --danger: #be123c;
+  --radius: 8px;
+  --shadow: 0 10px 28px rgba(19, 31, 45, 0.08);
+  --shadow-soft: 0 2px 10px rgba(19, 31, 45, 0.06);
+}
+
+:root[data-theme="dark"] {
+  --surface: #161a1f;
+  --surface-raised: rgba(22, 26, 31, 0.96);
+  --surface-muted: #20262d;
+  --ink: #f4f7fb;
+  --ink-soft: #b4beca;
+  --line: #303943;
+  --shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
+  --shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.24);
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(15, 118, 110, 0.06), transparent 280px),
+    var(--page-bg);
+  color: var(--ink);
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 34%, transparent);
+  outline-offset: 2px;
+}
+
+.app {
+  width: min(var(--app-max), 100%);
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 18px;
+  padding-top: calc(var(--nav-height) + 18px);
+}
+
+.app-glow {
+  display: none;
+}
+
+.top-nav {
+  height: var(--nav-height);
+  grid-template-columns: 224px minmax(260px, 520px) minmax(0, 1fr);
+  gap: 14px;
+  padding: 0 max(18px, calc((100vw - var(--app-max)) / 2 + 18px));
+  background: var(--surface-raised);
+  border-bottom-color: var(--line);
+  box-shadow: 0 1px 0 rgba(19, 31, 45, 0.03);
+}
+
+.brand {
+  color: var(--ink);
+}
+
+.brand span,
+.profile-avatar,
+.org-logo,
+.tiny-avatar {
+  background:
+    linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--accent) 42%, var(--brand)));
+}
+
+.brand span {
+  width: 34px;
+  height: 34px;
+}
+
+.brand strong {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.global-search {
+  height: 40px;
+  background: var(--surface-muted);
+  border-color: transparent;
+  border-radius: 999px;
+  color: var(--ink-soft);
+}
+
+.global-search:focus-within {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--line));
+  box-shadow: var(--shadow-soft);
+}
+
+.global-search input {
+  color: var(--ink);
+}
+
+.search-results {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.search-results button {
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.search-results button:hover {
+  background: var(--surface-muted);
+  border-color: var(--line);
+}
+
+.top-actions {
+  gap: 8px;
+}
+
+.icon-button,
+.dm-top-button,
+.post-button,
+.primary-button,
+.secondary-button,
+.operator-preview-button,
+.compact-card button,
+.setup-step button,
+.manager-row button,
+.manager-row .secondary-button,
+.profile-actions > *,
+.card-footer > *,
+.nearby-actions > * {
+  min-height: 38px;
+  border-radius: 999px;
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.icon-button,
+.dm-top-button {
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.post-button,
+.primary-button {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.post-button:hover,
+.primary-button:hover {
+  background: var(--brand-strong);
+  border-color: var(--brand-strong);
+}
+
+.secondary-button {
+  background: var(--surface);
+  color: var(--brand);
+}
+
+.secondary-button:hover,
+.icon-button:hover,
+.dm-top-button:hover {
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--brand) 28%, var(--line));
+}
+
+.profile-chip {
+  max-width: 190px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 999px;
+}
+
+.profile-chip:hover {
+  background: var(--surface-muted);
+}
+
+.profile-chip span {
+  width: 32px;
+  height: 32px;
+}
+
+.rail {
+  top: calc(var(--nav-height) + 18px);
+}
+
+.profile-card,
+.panel,
+.composer,
+.feed-post,
+.event-card,
+.organization-card,
+.person-card,
+.role-card,
+.library-card,
+.business-card,
+.metric-card,
+.nearby-card,
+.compact-card,
+.mini-row,
+.application-card {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+}
+
+.profile-card,
+.left-rail .side-nav,
+.right-rail,
+.feed-column {
+  gap: 12px;
+}
+
+.profile-cover {
+  height: 58px;
+}
+
+.profile-body {
+  padding: 0 14px 14px;
+}
+
+.profile-avatar {
+  width: 58px;
+  height: 58px;
+}
+
+.profile-body h2 {
+  font-size: 18px;
+}
+
+.profile-body p,
+.feed-post p,
+.event-card p,
+.organization-card p,
+.person-card p,
+.role-card p,
+.library-card p,
+.business-card p,
+.compact-card p,
+.page-header p,
+.helper-text {
+  color: var(--ink-soft);
+}
+
+.profile-meta span,
+.role-meta span,
+.org-detail-row span,
+.check-row span,
+.check-row strong,
+.status-pill,
+.tag-row span {
+  border-color: color-mix(in srgb, var(--brand) 18%, var(--line));
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  color: color-mix(in srgb, var(--brand) 78%, var(--ink));
+}
+
+.text-action {
+  color: var(--gold);
+}
+
+.side-nav {
+  gap: 3px;
+}
+
+.side-nav button {
+  height: 42px;
+  border-radius: 999px;
+  color: var(--ink-soft);
+}
+
+.side-nav button.active,
+.side-nav button:hover {
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  color: var(--brand);
+  box-shadow: none;
+}
+
+.main-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.content-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  gap: 16px;
+}
+
+.feed-column {
+  max-width: 720px;
+  justify-self: stretch;
+}
+
+.composer {
+  padding: 14px;
+}
+
+.composer-main button {
+  min-height: 44px;
+  background: var(--surface-muted);
+  border-color: transparent;
+  color: var(--ink-soft);
+}
+
+.composer-main button:hover {
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  color: var(--ink);
+}
+
+.composer-actions {
+  margin-top: 10px;
+}
+
+.composer-actions button {
+  min-height: 38px;
+  background: transparent;
+  color: var(--ink-soft);
+  border-color: transparent;
+}
+
+.composer-actions button:hover {
+  background: var(--surface-muted);
+  color: var(--brand);
+}
+
+.feed-post {
+  padding: 0;
+  overflow: hidden;
+}
+
+.feed-post > *:not(.post-image) {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+
+.feed-post .thread-head,
+.feed-post .post-head {
+  margin: 0;
+  padding: 14px 16px 10px;
+}
+
+.feed-post .thread-head + .post-image,
+.feed-post .post-head + .post-image {
+  margin-top: 0;
+}
+
+.feed-post strong,
+.feed-post h2 {
+  display: block;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.feed-post p {
+  font-size: 14px;
+}
+
+.post-image {
+  min-height: 0;
+  max-height: 680px;
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+  background: #eef1f4;
+}
+
+.post-social-row,
+.post-actions,
+.post-comments {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.post-social-row button,
+.post-actions button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.post-social-row button:hover,
+.post-actions button:hover {
+  background: var(--surface-muted);
+  color: var(--brand);
+}
+
+.comment-bubble,
+.comment-form input {
+  background: var(--surface-muted);
+  border-color: transparent;
+}
+
+.right-rail {
+  top: calc(var(--nav-height) + 18px);
+}
+
+.right-rail .panel,
+.nearby-panel,
+.favorite-programs {
+  padding: 14px;
+}
+
+.section-title {
+  margin-bottom: 12px;
+}
+
+.section-title h2 {
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.eyebrow {
+  color: var(--accent);
+}
+
+.page {
+  display: grid;
+  gap: 14px;
+}
+
+.page-header {
+  padding: 4px 2px;
+}
+
+.page-header h1 {
+  font-size: clamp(26px, 4vw, 34px);
+  line-height: 1.05;
+}
+
+.card-grid,
+.organization-grid,
+.metric-grid,
+.admin-grid,
+.event-discovery,
+.messaging-layout,
+.prayer-app-layout {
+  gap: 14px;
+}
+
+.nearby-card,
+.organization-card,
+.person-card,
+.role-card,
+.event-card,
+.business-card,
+.library-card {
+  transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.nearby-card:hover,
+.organization-card:hover,
+.person-card:hover,
+.role-card:hover,
+.event-card:hover,
+.business-card:hover,
+.library-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--brand) 26%, var(--line));
+  box-shadow: var(--shadow);
+}
+
+.nearby-card {
+  grid-template-columns: 92px minmax(0, 1fr);
+  padding: 12px;
+}
+
+.nearby-image {
+  width: 92px;
+  height: 92px;
+}
+
+.nearby-card h3,
+.organization-card h3,
+.person-card h3,
+.role-card h3,
+.event-card h3 {
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.filter-panel,
+.event-filters,
+.opportunity-filters {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+}
+
+.filter-panel input,
+.filter-panel select,
+.event-filters input,
+.event-filters select,
+.auth-form input,
+.auth-form textarea,
+.form-grid input,
+.modal-form input,
+.modal-form textarea,
+textarea,
+select {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius);
+}
+
+.filter-panel input:focus,
+.filter-panel select:focus,
+.event-filters input:focus,
+.event-filters select:focus,
+.auth-form input:focus,
+.auth-form textarea:focus,
+.form-grid input:focus,
+.modal-form input:focus,
+.modal-form textarea:focus,
+textarea:focus,
+select:focus {
+  border-color: color-mix(in srgb, var(--brand) 44%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.masjid-profile {
+  padding: 0;
+  overflow: hidden;
+}
+
+.masjid-hero {
+  min-height: 190px;
+  align-items: end;
+  padding: 18px;
+}
+
+.masjid-profile-summary,
+.profile-actions {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.masjid-stat-strip,
+.profile-info-grid {
+  gap: 8px;
+}
+
+.masjid-stat-strip div,
+.profile-info-grid div,
+.metric-card,
+.operator-snapshot article,
+.analytics-strip button,
+.event-attendance-grid div,
+.attention-list button,
+.inbox-preview-list button {
+  background: var(--surface-muted);
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.message-thread {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.message-list {
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--brand) 8%, transparent), transparent 260px),
+    var(--surface-muted);
+}
+
+.chat-bubble {
+  box-shadow: var(--shadow-soft);
+}
+
+.message-composer {
+  background: var(--surface);
+}
+
+.dm-search,
+.dm-inbox-summary {
+  background: var(--surface-muted);
+  border-color: transparent;
+}
+
+.inbox-list button {
+  background: transparent;
+  border-color: transparent;
+}
+
+.inbox-list button:hover {
+  background: var(--surface-muted);
+}
+
+.masjid-hub,
+.ops-overview,
+.profile-detail,
+.profile-social,
+.settings-grid > .panel,
+.prayer-panel,
+.hours-summary {
+  box-shadow: var(--shadow-soft);
+}
+
+.dashboard-menu-grid button,
+.operator-management-grid button {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: var(--shadow-soft);
+}
+
+.dashboard-menu-grid button:hover,
+.dashboard-menu-grid button.active,
+.operator-management-grid button:hover {
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--line));
+}
+
+.notification-row.unread {
+  border-color: color-mix(in srgb, var(--brand) 34%, var(--line));
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+}
+
+.auth-screen {
+  width: min(460px, 100%);
+  padding: 28px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.brand-mark {
+  background:
+    linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--accent) 45%, var(--brand)));
+}
+
+@media (max-width: 1100px) {
+  .app {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .left-rail .profile-card {
+    display: none;
+  }
+
+  .left-rail .side-nav button {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .left-rail .side-nav span {
+    display: none;
+  }
+
+  .content-grid {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+}
+
+@media (max-width: 880px) {
+  :root {
+    --nav-height: 104px;
+  }
+
+  body {
+    background: var(--page-bg);
+  }
+
+  .app {
+    display: block;
+    width: 100%;
+    padding: calc(var(--nav-height) + 8px) 0 calc(var(--mobile-nav-height) + 12px);
+  }
+
+  .top-nav {
+    height: auto;
+    min-height: var(--nav-height);
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    grid-template-rows: 50px 44px;
+    align-content: center;
+    gap: 6px 8px;
+    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
+  }
+
+  .mobile-menu {
+    display: inline-flex;
+  }
+
+  .brand {
+    justify-self: start;
+  }
+
+  .brand strong {
+    display: inline;
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .search-wrap {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+
+  .global-search {
+    height: 40px;
+  }
+
+  .top-actions {
+    grid-column: 3;
+  }
+
+  .top-actions .post-button {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    padding: 0;
+  }
+
+  .top-actions .post-button span {
+    display: none;
+  }
+
+  .rail {
+    display: none;
+  }
+
+  .main-panel {
+    display: block;
+  }
+
+  .page,
+  .content-grid,
+  .feed-column,
+  .right-rail,
+  .card-grid,
+  .organization-grid,
+  .metric-grid,
+  .admin-grid,
+  .event-discovery,
+  .messaging-layout,
+  .prayer-app-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .page-header,
+  .composer,
+  .panel,
+  .event-card,
+  .organization-card,
+  .person-card,
+  .role-card,
+  .library-card,
+  .business-card,
+  .metric-card,
+  .nearby-card,
+  .feed-post {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .page-header {
+    padding: 14px 14px 4px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .page-header h1 {
+    font-size: 24px;
+  }
+
+  .composer,
+  .panel,
+  .feed-post {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .feed-post {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .feed-post > *:not(.post-image) {
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+
+  .post-social-row,
+  .post-actions,
+  .post-comments {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .post-image {
+    max-height: 56dvh;
+    object-fit: cover;
+  }
+
+  .right-rail {
+    position: static;
+  }
+
+  .nearby-card {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .nearby-image {
+    width: 82px;
+    height: 86px;
+  }
+
+  .profile-actions,
+  .card-footer,
+  .nearby-actions,
+  .manager-row,
+  .post-social-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-actions > *,
+  .card-footer > *,
+  .nearby-actions > *,
+  .manager-row > *,
+  .post-social-row button {
+    min-height: 40px;
+  }
+
+  .mobile-bottom-nav {
+    display: grid;
+    height: var(--mobile-nav-height);
+    border-radius: 0;
+    padding: 6px 8px max(6px, env(safe-area-inset-bottom));
+    background: var(--surface-raised);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -8px 20px rgba(19, 31, 45, 0.08);
+  }
+
+  .mobile-bottom-nav button {
+    border-radius: 999px;
+    color: var(--ink-soft);
+  }
+
+  .mobile-bottom-nav button.active {
+    background: var(--brand);
+    color: #fff;
+  }
+
+  .mobile-drawer {
+    background: var(--surface);
+  }
+
+  .drawer-scrim {
+    backdrop-filter: blur(3px);
+  }
+
+  .message-thread {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+
+  .masjid-hero {
+    min-height: 164px;
+  }
+
+  .auth-screen {
+    min-height: auto;
+    margin: 0 auto;
+    border-radius: var(--radius);
+  }
+}
+
+@media (max-width: 520px) {
+  .brand strong {
+    display: none;
+  }
+
+  .top-actions {
+    gap: 4px;
+  }
+
+  .top-actions .icon-button,
+  .dm-top-button,
+  .top-actions .post-button {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    min-height: 36px;
+  }
+
+  .composer-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .composer-actions button {
+    font-size: 12px;
+  }
+
+  .profile-actions,
+  .card-footer,
+  .nearby-actions,
+  .manager-row,
+  .post-social-row,
+  .operator-quick-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .masjid-stat-strip,
+  .operator-snapshot {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prayer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mobile-bottom-nav button span {
+    font-size: 10px;
+  }
+}
