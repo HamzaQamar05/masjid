@@ -300,24 +300,24 @@ function cleanPrayerRows(rows = [], temporary = false) {
 }
 
 function buildPrayerEditForm(org = {}) {
-  const prayer = org.prayerTimes || {};
-  const iqamah = org.iqamahTimes || {};
+  const apiPrayer = org.iqamahTimes || {};
+  const jamat = org.prayerTimes || {};
   return {
-    Fajr: prayer.Fajr || prayer.fajr || '',
-    FajrJamat: iqamah.Fajr || iqamah.fajr || '',
-    Dhuhr: prayer.Dhuhr || prayer.dhuhr || '',
-    DhuhrJamat: iqamah.Dhuhr || iqamah.dhuhr || '',
-    Asr: prayer.Asr || prayer.asr || '',
-    AsrJamat: iqamah.Asr || iqamah.asr || '',
-    Maghrib: prayer.Maghrib || prayer.maghrib || '',
-    MaghribJamat: iqamah.Maghrib || iqamah.maghrib || '',
-    Isha: prayer.Isha || prayer.isha || '',
-    IshaJamat: iqamah.Isha || iqamah.isha || '',
-    Jumuah: prayer.Jumuah || prayer.jumuah || '',
-    JumuahJamat: iqamah.Jumuah || iqamah.jumuah || '',
-    prayerNotes: org.prayerNotes || iqamah.notes || '',
-    additionalPrayers: cleanPrayerRows(iqamah.additionalPrayers || []),
-    temporaryPrayers: cleanPrayerRows(iqamah.temporaryPrayers || [], true)
+    Fajr: apiPrayer.Fajr || apiPrayer.fajr || '',
+    FajrJamat: jamat.Fajr || jamat.fajr || '',
+    Dhuhr: apiPrayer.Dhuhr || apiPrayer.dhuhr || '',
+    DhuhrJamat: jamat.Dhuhr || jamat.dhuhr || '',
+    Asr: apiPrayer.Asr || apiPrayer.asr || '',
+    AsrJamat: jamat.Asr || jamat.asr || '',
+    Maghrib: apiPrayer.Maghrib || apiPrayer.maghrib || '',
+    MaghribJamat: jamat.Maghrib || jamat.maghrib || '',
+    Isha: apiPrayer.Isha || apiPrayer.isha || '',
+    IshaJamat: jamat.Isha || jamat.isha || '',
+    Jumuah: apiPrayer.Jumuah || apiPrayer.jumuah || '',
+    JumuahJamat: jamat.Jumuah || jamat.jumuah || '',
+    prayerNotes: org.prayerNotes || apiPrayer.notes || '',
+    additionalPrayers: cleanPrayerRows(apiPrayer.additionalPrayers || []),
+    temporaryPrayers: cleanPrayerRows(apiPrayer.temporaryPrayers || [], true)
   };
 }
 
@@ -2791,12 +2791,13 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   }
   async function submitEditPrayers(event, org) {
     event.preventDefault();
-    const prayerTimes = standardPrayerKeys.reduce((times, key) => ({ ...times, [key]: editPrayerForm[key] || '' }), {});
-    const iqamahTimes = standardPrayerKeys.reduce((times, key) => ({ ...times, [key]: editPrayerForm[`${key}Jamat`] || '' }), {
+    const prayerTimes = standardPrayerKeys.reduce((times, key) => ({ ...times, [key]: editPrayerForm[`${key}Jamat`] || '' }), {});
+    const iqamahTimes = {
+      ...(org.iqamahTimes || {}),
       notes: editPrayerForm.prayerNotes || '',
       additionalPrayers: cleanPrayerRows(editPrayerForm.additionalPrayers || []),
       temporaryPrayers: cleanPrayerRows(editPrayerForm.temporaryPrayers || [], true)
-    });
+    };
     await updateOrganization(org.id, { prayerTimes, iqamahTimes, prayerNotes: editPrayerForm.prayerNotes || '' });
     setEditingPrayerOrgId('');
     setEditPrayerForm(buildPrayerEditForm());
@@ -3289,7 +3290,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                   <div className="section-title compact-title"><h3>Edit Prayers</h3><span>Shown on public profile</span></div>
                   <div className="prayer-grid detailed manager-prayer-grid">
                     {standardPrayerKeys.map((name) => (
-                      <div key={name}><span>{name}</span><strong>{org.prayerTimes?.[name] || org.prayerTimes?.[name.toLowerCase()] || 'Not set'} / {org.iqamahTimes?.[name] || org.iqamahTimes?.[name.toLowerCase()] || 'Not set'} Iqamah/Jamat</strong><em>Prayer time / jamat time</em></div>
+                      <div key={name}><span>{name}</span><strong>{org.iqamahTimes?.[name] || org.iqamahTimes?.[name.toLowerCase()] || 'Not set'} / {org.prayerTimes?.[name] || org.prayerTimes?.[name.toLowerCase()] || 'Not set'}</strong><em>Prayer time / jamat time</em></div>
                     ))}
                   </div>
                   {(org.iqamahTimes?.additionalPrayers || []).length > 0 && (
@@ -3297,7 +3298,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                       {(org.iqamahTimes.additionalPrayers || []).map((prayer, index) => (
                         <article className="mini-row" key={prayer.id || `${prayer.name}-${index}`}>
                           <strong>{prayer.name}</strong>
-                          <span>{prayer.time || 'Prayer time not set'} / {prayer.jamatTime || 'Jamat not set'} Iqamah/Jamat</span>
+                          <span>{prayer.time || 'Prayer time not set'} / {prayer.jamatTime || 'Not set'}</span>
                           {prayer.notes && <p>{prayer.notes}</p>}
                         </article>
                       ))}
@@ -3308,7 +3309,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                       {(org.iqamahTimes.temporaryPrayers || []).map((prayer, index) => (
                         <article className="mini-row" key={prayer.id || `${prayer.name}-${index}`}>
                           <strong>{prayer.name}</strong>
-                          <span>{prayer.time || 'Prayer time not set'} / {prayer.jamatTime || 'Jamat not set'} Iqamah/Jamat{prayer.startsAt || prayer.endsAt ? ` - ${prayer.startsAt || 'now'} to ${prayer.endsAt || 'until removed'}` : ''}</span>
+                          <span>{prayer.time || 'Prayer time not set'} / {prayer.jamatTime || 'Not set'}{prayer.startsAt || prayer.endsAt ? ` - ${prayer.startsAt || 'now'} to ${prayer.endsAt || 'until removed'}` : ''}</span>
                           {prayer.notes && <p>{prayer.notes}</p>}
                         </article>
                       ))}
@@ -3325,7 +3326,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                       <div className="form-grid">
                         {standardPrayerKeys.map((name) => (
                           <React.Fragment key={name}>
-                            <input placeholder={`${name} prayer time, e.g. 4:14 AM`} value={editPrayerForm[name] || ''} onChange={(event) => setEditPrayerForm({ ...editPrayerForm, [name]: event.target.value })} />
+                            <input readOnly placeholder={`${name} prayer time from API`} value={editPrayerForm[name] || ''} />
                             <input placeholder={`${name} jamat time, e.g. 4:30 AM`} value={editPrayerForm[`${name}Jamat`] || ''} onChange={(event) => setEditPrayerForm({ ...editPrayerForm, [`${name}Jamat`]: event.target.value })} />
                           </React.Fragment>
                         ))}
