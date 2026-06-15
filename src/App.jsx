@@ -282,6 +282,16 @@ function textToList(value) {
 }
 
 const standardPrayerKeys = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha', 'Jumuah'];
+const masjidAnnouncementTypes = [
+  { value: 'GENERAL', label: 'General announcement', postType: 'ANNOUNCEMENT' },
+  { value: 'EVENT_UPDATE', label: 'Event update', postType: 'EVENT' },
+  { value: 'CLASS_REMINDER', label: 'Class reminder', postType: 'CLASS' },
+  { value: 'JUMUAH_UPDATE', label: 'Jumuah update', postType: 'REMINDER' },
+  { value: 'FUNDRAISER_NOTICE', label: 'Fundraiser notice', postType: 'FUNDRAISER' },
+  { value: 'RAMADAN_EID_NOTICE', label: 'Ramadan/Eid notice', postType: 'ANNOUNCEMENT' },
+  { value: 'CANCELLATION_NOTICE', label: 'Cancellation notice', postType: 'REMINDER' },
+  { value: 'VOLUNTEER_REQUEST', label: 'Volunteer request', postType: 'VOLUNTEER' }
+];
 const emptyAdditionalPrayer = { name: '', time: '', jamatTime: '', notes: '' };
 const emptyTemporaryPrayer = { name: '', time: '', jamatTime: '', startsAt: '', endsAt: '', notes: '' };
 
@@ -2229,6 +2239,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
+  const [announcementForm, setAnnouncementForm] = useState({ organizationId: '', category: 'GENERAL', title: '', content: '', imageUrl: '' });
   const [eventForm, setEventForm] = useState({ organizationId: '', title: '', description: '', location: '', imageUrl: '', startTime: '', capacity: '', requiresApproval: false });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', requirements: '', location: '', skills: '', hours: '', workType: 'volunteer', deadline: '', applicationQuestions: '' });
   const emptyClassForm = { organizationId: '', title: '', teacher: '', description: '', dayTime: '', location: '', imageUrl: '', notes: '', registrationLink: '' };
@@ -2350,7 +2361,8 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'followers', label: 'Followers', count: metrics.followers, detail: 'Community reach', icon: Users },
     { key: 'following', label: 'Following', count: 'Soon', detail: 'Not connected', icon: UserCheck },
     { key: 'team', label: 'Team', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Imams and staff', icon: UserCheck },
-    { key: 'posts', label: 'Posts', count: metrics.posts, detail: 'Announcements', icon: MessageCircle },
+    { key: 'announcements', label: 'Masjid Announcements', count: metrics.posts, detail: 'Social feed posts', icon: MessageCircle },
+    { key: 'posts', label: 'Posts', count: metrics.posts, detail: 'All post tools', icon: MessageCircle },
     { key: 'events', label: 'Events', count: metrics.events, detail: `${upcomingEvents} upcoming`, icon: CalendarDays },
     { key: 'eventApprovals', label: 'Event Approvals', count: metrics.pendingRegistrations, detail: 'Pending entries', icon: CheckCircle2 },
     { key: 'programs', label: 'Programs / Classes', count: metrics.programs, detail: 'Classes and halaqas', icon: Library },
@@ -2387,6 +2399,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
   const managementItems = [
     { key: 'events', label: 'Events', icon: CalendarDays },
     { key: 'programs', label: 'Programs', icon: Library },
+    { key: 'announcements', label: 'Announcements', icon: MessageCircle },
     { key: 'posts', label: 'Posts', icon: MessageCircle },
     { key: 'prayerTimes', label: 'Prayer Times', icon: ShieldCheck },
     { key: 'team', label: 'Team', icon: UserCheck },
@@ -2400,7 +2413,7 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { key: 'posts', label: 'Engagement', value: metrics.posts, icon: Bell }
   ];
   const activeDashboardFeature = hubItems.find((item) => item.key === activeSection);
-  const orgPanelSections = new Set(['followers', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs']);
+  const orgPanelSections = new Set(['followers', 'announcements', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs']);
   const showOrgPanels = orgPanelSections.has(activeSection);
   const showProfileTools = activeSection === 'prayerTimes';
   function openUserView() {
@@ -2483,6 +2496,23 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     if (upperType === 'JOB') return 'Post job';
     if (upperType === 'ANNOUNCEMENT') return 'Send announcement';
     return 'Publish to home';
+  }
+  async function submitAnnouncement(event) {
+    event.preventDefault();
+    const organizationId = announcementForm.organizationId || myOrganizations[0]?.id;
+    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!announcementForm.title.trim() || !announcementForm.content.trim()) return alert('Title and announcement content are required.');
+    const category = masjidAnnouncementTypes.find((item) => item.value === announcementForm.category) || masjidAnnouncementTypes[0];
+    await createPost(organizationId, {
+      type: category.postType,
+      title: `${category.label}: ${announcementForm.title.trim()}`,
+      content: announcementForm.content.trim(),
+      imageUrl: announcementForm.imageUrl.trim(),
+      location: '',
+      eventTime: ''
+    });
+    setAnnouncementForm({ organizationId, category: 'GENERAL', title: '', content: '', imageUrl: '' });
+    openDashboardSection('announcements');
   }
   async function submitPost(event) {
     event.preventDefault();
@@ -3467,6 +3497,47 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                         </div>
                       </article>
                     )) : <p className="helper-text">No imams or team members attached yet.</p>}
+                  </div>
+                </div>
+              )}
+
+              {activeSection === 'announcements' && (
+                <div className="manager-section">
+                  <div className="section-title compact-title"><h3>Masjid Announcements</h3><span>Simple social feed</span></div>
+                  <p className="helper-text">Post quick updates for the community. These appear like social feed posts from the masjid.</p>
+
+                  <form className="profile-form manager-edit-form" onSubmit={submitAnnouncement}>
+                    <div className="form-grid">
+                      <select value={announcementForm.organizationId || org.id} onChange={(event) => setAnnouncementForm({ ...announcementForm, organizationId: event.target.value })}>
+                        <option value={org.id}>{org.name}</option>
+                        {myOrganizations.filter((item) => item.id !== org.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                      </select>
+                      <select value={announcementForm.category} onChange={(event) => setAnnouncementForm({ ...announcementForm, category: event.target.value })}>
+                        {masjidAnnouncementTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                      </select>
+                      <input required placeholder="Announcement title" value={announcementForm.title} onChange={(event) => setAnnouncementForm({ ...announcementForm, title: event.target.value })} />
+                      <input placeholder="Image URL optional" value={announcementForm.imageUrl} onChange={(event) => setAnnouncementForm({ ...announcementForm, imageUrl: event.target.value })} />
+                    </div>
+                    <textarea required placeholder="Write the announcement like a social post..." value={announcementForm.content} onChange={(event) => setAnnouncementForm({ ...announcementForm, content: event.target.value })} />
+                    <div className="profile-actions">
+                      <button className="primary-button">Post announcement</button>
+                    </div>
+                  </form>
+
+                  <div className="section-title compact-title"><h3>Announcement Feed</h3><span>{(org.posts || []).length}</span></div>
+                  <div className="stack-list">
+                    {(org.posts || []).length ? (org.posts || []).map((post) => (
+                      <article className="mini-row" key={post.id}>
+                        <strong>{post.title}</strong>
+                        <span>{post.type} - {new Date(post.createdAt).toLocaleString()}</span>
+                        <p>{post.content}</p>
+                        {post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}
+                        <div className="manager-row">
+                          <button onClick={() => startEditPost(post)}>Edit post</button>
+                          <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
+                        </div>
+                      </article>
+                    )) : <p className="helper-text">No announcements posted yet.</p>}
                   </div>
                 </div>
               )}
