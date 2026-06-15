@@ -182,6 +182,18 @@ function token() {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
 }
 
+function storedUser() {
+  const saved = sessionStorage.getItem('user') || localStorage.getItem('user');
+  if (!saved) return null;
+  try {
+    return JSON.parse(saved);
+  } catch {
+    localStorage.removeItem('user');
+    sessionStorage.removeItem('user');
+    return null;
+  }
+}
+
 function persistAuth(nextUser, nextToken = token()) {
   if (nextToken) localStorage.setItem('token', nextToken);
   if (nextUser) localStorage.setItem('user', JSON.stringify(nextUser));
@@ -353,7 +365,11 @@ async function api(path, options = {}) {
   if (savedToken) headers.Authorization = `Bearer ${savedToken}`;
   const res = await fetch(`${API}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  if (!res.ok) {
+    const error = new Error(data.error || 'Request failed');
+    error.status = res.status;
+    throw error;
+  }
   return data;
 }
 
@@ -3878,10 +3894,7 @@ export default function App() {
   function setTab(key, id) {
     navigate(pathForTab(key, id));
   }
-  const [user, setUser] = useState(() => {
-    const saved = sessionStorage.getItem('user') || localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [user, setUser] = useState(() => storedUser());
   const [users, setUsers] = useState([]);
   const [posts, setPosts] = useState([]);
   const [events, setEvents] = useState([]);
@@ -3922,7 +3935,21 @@ export default function App() {
     const me = await api('/api/me');
     persistAuth(me);
     setUser(me);
-    await Promise.all([loadNetwork(), loadOrganizations(), loadPosts(), loadEvents(), loadOpportunities(), loadMyOrganizations(me), loadProfileSocial(me.id), loadThreads(), loadNotificationMasjids(), loadNotificationPreferences(), loadNotificationHistory()]);
+    const results = await Promise.allSettled([
+      loadNetwork(),
+      loadOrganizations(),
+      loadPosts(),
+      loadEvents(),
+      loadOpportunities(),
+      loadMyOrganizations(me),
+      loadProfileSocial(me.id),
+      loadThreads(),
+      loadNotificationMasjids(),
+      loadNotificationPreferences(),
+      loadNotificationHistory()
+    ]);
+    const failed = results.filter((result) => result.status === 'rejected');
+    if (failed.length) console.warn('Some startup data failed to load; keeping the signed-in session.', failed.map((result) => result.reason?.message || result.reason));
   }
 
   async function loadNetwork() {
@@ -4458,7 +4485,15 @@ export default function App() {
     );
   }
 
-  useEffect(() => { bootstrap().catch(() => logout()); }, []);
+  useEffect(() => {
+    bootstrap().catch((error) => {
+      if ([401, 403].includes(error?.status)) {
+        logout();
+        return;
+      }
+      console.warn('Session restore failed; keeping cached user until the connection recovers.', error);
+    });
+  }, []);
   useEffect(() => {
     if (locationRoute.pathname === '/') navigate(user ? '/home' : '/login', { replace: true });
     if (user && ['/login', '/register'].includes(locationRoute.pathname)) navigate('/home', { replace: true });
