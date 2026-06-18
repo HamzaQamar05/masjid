@@ -437,10 +437,13 @@ function normalizeNotificationPreferences(input = {}) {
 }
 
 function normalizeWhatsappPhone(value) {
-  const phone = String(value || '').replace(/[^\d+]/g, '');
-  if (!phone) return null;
-  if (!/^\+?[1-9]\d{7,14}$/.test(phone)) return null;
-  return phone.startsWith('+') ? phone : `+${phone}`;
+  const raw = String(value || '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+  if (!raw.startsWith('+') && digits.length === 10) return `+1${digits}`;
+  if (!raw.startsWith('+') && digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  const phone = `+${digits}`;
+  return /^\+[1-9]\d{7,14}$/.test(phone) ? phone : null;
 }
 
 function publicNotification(notification) {
@@ -510,11 +513,31 @@ async function createNotificationHistory(userId, payload) {
 }
 
 async function notifyOrganizationFollowers(organizationId, payload, options = {}) {
+  let enrichedPayload = payload;
+  if (!payload.organizationName) {
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true }
+    }).catch((error) => {
+      console.error('Notification organization lookup failed', { organizationId, message: error.message });
+      return null;
+    });
+    if (organization?.name) enrichedPayload = { ...payload, organizationName: organization.name };
+  }
   const [push, whatsapp] = await Promise.all([
-    sendPushToOrganizationFollowers(organizationId, payload, options),
-    sendWhatsappToOrganizationFollowers(organizationId, payload, options)
+    safeNotificationDelivery('push', () => sendPushToOrganizationFollowers(organizationId, enrichedPayload, options)),
+    safeNotificationDelivery('whatsapp', () => sendWhatsappToOrganizationFollowers(organizationId, enrichedPayload, options))
   ]);
   return { push, whatsapp };
+}
+
+async function safeNotificationDelivery(channel, deliver) {
+  try {
+    return await deliver();
+  } catch (error) {
+    console.error(`${channel} notification delivery failed without blocking content creation`, { message: error.message });
+    return { sent: 0, failed: 1, skipped: false, error: error.message };
+  }
 }
 
 async function notifyApplicationStatus(application, opportunity) {
@@ -937,40 +960,45 @@ function normalizePrayerPreferences(value = {}) {
 }
 
 async function sendPushToUser(userId, payload) {
-  await createNotificationHistory(userId, payload);
-  if (!vapidPublicKey || !vapidPrivateKey) {
-    console.warn('Push skipped: VAPID keys are not configured', { userId, type: payload?.type });
-    return { sent: 0, failed: 0, stale: 0, disabled: true };
-  }
-  const subscriptions = await prisma.pushSubscription.findMany({ where: { userId } });
-  if (!subscriptions.length) return { sent: 0, failed: 0, stale: 0, disabled: false, noSubscriptions: true };
-  let sent = 0;
-  let failed = 0;
-  let stale = 0;
-  await Promise.all(subscriptions.map(async (subscription) => {
-    try {
-      await webPush.sendNotification({
-        endpoint: subscription.endpoint,
-        keys: subscription.keys
-      }, JSON.stringify(payload));
-      sent += 1;
-    } catch (error) {
-      if ([404, 410].includes(error.statusCode)) {
-        await prisma.pushSubscription.deleteMany({ where: { endpoint: subscription.endpoint } });
-        stale += 1;
-      } else {
-        failed += 1;
-        console.error('Push notification failed', {
-          userId,
-          type: payload?.type,
-          endpoint: subscription.endpoint,
-          statusCode: error.statusCode,
-          message: error.message
-        });
-      }
+  try {
+    await createNotificationHistory(userId, payload);
+    if (!vapidPublicKey || !vapidPrivateKey) {
+      console.warn('Push skipped: VAPID keys are not configured', { userId, type: payload?.type });
+      return { sent: 0, failed: 0, stale: 0, disabled: true };
     }
-  }));
-  return { sent, failed, stale, disabled: false };
+    const subscriptions = await prisma.pushSubscription.findMany({ where: { userId } });
+    if (!subscriptions.length) return { sent: 0, failed: 0, stale: 0, disabled: false, noSubscriptions: true };
+    let sent = 0;
+    let failed = 0;
+    let stale = 0;
+    await Promise.all(subscriptions.map(async (subscription) => {
+      try {
+        await webPush.sendNotification({
+          endpoint: subscription.endpoint,
+          keys: subscription.keys
+        }, JSON.stringify(payload));
+        sent += 1;
+      } catch (error) {
+        if ([404, 410].includes(error.statusCode)) {
+          await prisma.pushSubscription.deleteMany({ where: { endpoint: subscription.endpoint } });
+          stale += 1;
+        } else {
+          failed += 1;
+          console.error('Push notification failed', {
+            userId,
+            type: payload?.type,
+            endpoint: subscription.endpoint,
+            statusCode: error.statusCode,
+            message: error.message
+          });
+        }
+      }
+    }));
+    return { sent, failed, stale, disabled: false };
+  } catch (error) {
+    console.error('Push delivery failed without blocking the triggering action', { userId, type: payload?.type, message: error.message });
+    return { sent: 0, failed: 1, stale: 0, disabled: false, error: error.message };
+  }
 }
 
 async function sendPushToOrganizationFollowers(organizationId, payload, options = {}) {
@@ -1012,37 +1040,63 @@ async function sendPushToOrganizationFollowers(organizationId, payload, options 
 
 async function dispatchWhatsappMessage(phone, payload) {
   if (!whatsappEnabled) return { sent: 0, disabled: true };
-  if (!whatsappServiceUrl) {
-    console.warn('WhatsApp notification skipped: WHATSAPP_SERVICE_URL is not configured', { type: payload?.type });
+  if (!whatsappServiceUrl || !whatsappServiceToken) {
+    console.warn('WhatsApp notification skipped: sender URL or service token is not configured', { type: payload?.type });
     return { sent: 0, failed: 0, disabled: false, notConfigured: true };
   }
   try {
+    const appUrl = payload.url
+      ? new URL(payload.url, process.env.FRONTEND_URL || 'https://ummahconnect.app').toString()
+      : process.env.FRONTEND_URL || '';
+    const type = String(payload.type || 'UPDATE').replaceAll('_', ' ').toLowerCase();
+    const preview = String(payload.body || '').trim().slice(0, 240);
+    const message = [
+      payload.organizationName ? `*${payload.organizationName}*` : '*Ummah Connect*',
+      `${type.charAt(0).toUpperCase()}${type.slice(1)}: ${payload.title || 'New community update'}`,
+      preview,
+      appUrl
+    ].filter(Boolean).join('\n');
     const response = await fetch(`${whatsappServiceUrl}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(whatsappServiceToken ? { Authorization: `Bearer ${whatsappServiceToken}` } : {})
+        Authorization: `Bearer ${whatsappServiceToken}`
       },
-      body: JSON.stringify({ to: phone, message: payload.body || payload.title || '', payload })
+      signal: AbortSignal.timeout(12_000),
+      body: JSON.stringify({
+        to: phone,
+        message,
+        idempotencyKey: `${payload.messageId || payload.eventId || payload.postId || payload.tag || 'notification'}:${phone}`
+      })
     });
-    if (!response.ok) throw new Error(`WhatsApp service returned ${response.status}`);
-    return { sent: 1, failed: 0, disabled: false };
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `WhatsApp service returned ${response.status}`);
+    return { sent: result.duplicate ? 0 : 1, duplicate: Boolean(result.duplicate), failed: 0, disabled: false };
   } catch (error) {
-    console.error('WhatsApp notification failed', { phone, type: payload?.type, message: error.message });
+    console.error('WhatsApp notification failed without blocking the triggering action', {
+      phone: phone ? `${phone.slice(0, 3)}***${phone.slice(-2)}` : null,
+      type: payload?.type,
+      message: error.message
+    });
     return { sent: 0, failed: 1, disabled: false };
   }
 }
 
 async function sendWhatsappToUser(userId, payload) {
-  if (!whatsappEnabled) return { sent: 0, disabled: true };
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { whatsappPhone: true, notificationPreference: true }
-  });
-  const preferences = publicNotificationPreferences(user?.notificationPreference);
-  if (!preferences.whatsappNotifications) return { sent: 0, skipped: true, reason: 'whatsapp preference disabled' };
-  if (!user?.whatsappPhone) return { sent: 0, skipped: true, reason: 'whatsapp phone missing' };
-  return dispatchWhatsappMessage(user.whatsappPhone, payload);
+  try {
+    if (!whatsappEnabled) return { sent: 0, disabled: true };
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { whatsappPhone: true, notificationPreference: true }
+    });
+    const preferences = publicNotificationPreferences(user?.notificationPreference);
+    if (!preferences.whatsappNotifications) return { sent: 0, skipped: true, reason: 'whatsapp preference disabled' };
+    if (!user?.whatsappPhone) return { sent: 0, skipped: true, reason: 'whatsapp phone missing' };
+    return dispatchWhatsappMessage(user.whatsappPhone, payload);
+  } catch (error) {
+    console.error('WhatsApp user lookup failed without blocking the triggering action', { userId, message: error.message });
+    return { sent: 0, failed: 1, error: error.message };
+  }
 }
 
 async function sendWhatsappToOrganizationFollowers(organizationId, payload, options = {}) {
@@ -1457,7 +1511,7 @@ app.get('/api/notifications/preferences', auth, async (req, res) => {
       phone: user.whatsappPhone || '',
       enabled: Boolean(notificationPreferences.whatsappNotifications),
       integrationEnabled: whatsappEnabled,
-      serviceConfigured: Boolean(whatsappServiceUrl)
+      serviceConfigured: Boolean(whatsappServiceUrl && whatsappServiceToken)
     },
     prayerNotificationPreferences: normalizePrayerPreferences(user.prayerNotificationPreferences || { enabled: false }),
     notificationPreferences: publicNotificationPreferences(notificationPreferences)
@@ -1508,7 +1562,7 @@ app.put('/api/notifications/preferences', auth, notificationLimiter, async (req,
       phone: user.whatsappPhone || '',
       enabled: Boolean(notificationPreferences?.whatsappNotifications),
       integrationEnabled: whatsappEnabled,
-      serviceConfigured: Boolean(whatsappServiceUrl)
+      serviceConfigured: Boolean(whatsappServiceUrl && whatsappServiceToken)
     },
     notificationPreferences: publicNotificationPreferences(notificationPreferences)
   });

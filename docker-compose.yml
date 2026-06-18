@@ -9,10 +9,22 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       FRONTEND_URL: https://masjid-nine-chi.vercel.app
+      WHATSAPP_SERVICE_URL: http://whatsapp:8080
     depends_on:
       - redis
+      - whatsapp
     ports:
       - "5000:5000"
+
+  whatsapp:
+    build:
+      context: ./whatsapp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    ports:
+      - "127.0.0.1:8088:8080"
 
   redis:
     image: redis:7-alpine

@@ -38,11 +38,22 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,png,svg,ico}']
       },
       devOptions: {
-        enabled: true
+        enabled: false
       }
     })
   ],
   server: {
-    port: 5173
+    port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/socket.io': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        ws: true
+      }
+    }
   }
 });

@@ -5295,6 +5295,68 @@ button.mini-org-avatar {
   }
 }
 
+.fatal-error-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--text, #17212b);
+  background: var(--background, #eef2f5);
+}
+
+.fatal-error-card {
+  width: min(100%, 520px);
+  padding: 28px;
+  border: 1px solid var(--border, #d7dee8);
+  border-radius: 24px;
+  background: var(--surface, #fff);
+  box-shadow: 0 22px 70px rgba(15, 23, 42, 0.15);
+}
+
+.fatal-error-card > span {
+  color: var(--brand, #0f766e);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fatal-error-card h1 {
+  margin: 10px 0 8px;
+}
+
+.fatal-error-card p {
+  color: var(--muted, #607080);
+  line-height: 1.6;
+}
+
+.fatal-error-card > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.fatal-error-card button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--brand, #0f766e);
+  font-weight: 800;
+}
+
+.fatal-error-card pre {
+  overflow: auto;
+  margin-top: 18px;
+  padding: 12px;
+  border-radius: 12px;
+  color: #fecaca;
+  background: #450a0a;
+  white-space: pre-wrap;
+}
+
 .analytics-strip button {
   min-width: 0;
   display: grid;

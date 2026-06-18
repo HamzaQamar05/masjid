@@ -9,6 +9,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
+  ChevronRight,
   HeartHandshake,
   Home,
   Library,
@@ -2124,6 +2125,7 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
     phone: whatsappSettings.phone || '',
     enabled: Boolean(whatsappSettings.enabled)
   }));
+  const [whatsappSaveState, setWhatsappSaveState] = useState('');
   const preferences = { ...defaultNotificationPreferences, ...notificationPreferences };
   const favoriteMasjids = social.favoriteMasjids || [];
   const followedMasjids = social.followingMasjids || [];
@@ -2172,7 +2174,14 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
 
   async function saveWhatsAppSettings(event) {
     event.preventDefault();
-    await updateWhatsAppSettings(whatsappForm);
+    setWhatsappSaveState('Saving...');
+    try {
+      const saved = await updateWhatsAppSettings(whatsappForm);
+      setWhatsappForm({ phone: saved?.phone || whatsappForm.phone, enabled: Boolean(saved?.enabled) });
+      setWhatsappSaveState(saved?.enabled ? 'WhatsApp notifications enabled for this account.' : 'WhatsApp notifications are off for this account.');
+    } catch (error) {
+      setWhatsappSaveState(error.message || 'Could not save WhatsApp settings.');
+    }
   }
 
   return (
@@ -2249,11 +2258,12 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
       </section>
 
       <form className="panel settings-panel mobile-settings" onSubmit={saveWhatsAppSettings}>
-        <div className="section-title"><div><p className="eyebrow">WhatsApp</p><h2>Optional message channel</h2></div><MessageCircle size={20} /></div>
-        <p className="helper-text">WhatsApp delivery is feature-flagged and isolated from core push notifications. Keep this off unless the backend WhatsApp service is configured.</p>
+        <div className="section-title"><div><p className="eyebrow">Every account</p><h2>WhatsApp notifications</h2></div><MessageCircle size={20} /></div>
+        <p className="helper-text">Users, masjids, imams, MSAs, businesses, and admins can save their own number here. Your number is private and is used only for notification types you enable.</p>
         <label className="field-label">
-          <span>Phone number</span>
-          <input value={whatsappForm.phone} onChange={(event) => setWhatsappForm({ ...whatsappForm, phone: event.target.value })} placeholder="+15551234567" />
+          <span>WhatsApp phone number</span>
+          <input type="tel" autoComplete="tel" inputMode="tel" value={whatsappForm.phone} onChange={(event) => setWhatsappForm({ ...whatsappForm, phone: event.target.value })} placeholder="+1 647 555 1234" />
+          <small>Canadian and US 10-digit numbers are saved with +1 automatically. Other countries should include their country code.</small>
         </label>
         <label className="switch-row">
           <span>Receive WhatsApp notifications</span>
@@ -2264,6 +2274,7 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
           <span>{whatsappSettings.serviceConfigured ? 'Service configured' : 'Service not configured'}</span>
         </div>
         <button className="primary-button">Save WhatsApp settings</button>
+        {whatsappSaveState && <p className="helper-text" role="status">{whatsappSaveState}</p>}
       </form>
 
       <section className="panel settings-panel mobile-settings">
@@ -2355,7 +2366,7 @@ function ImamDashboard({ user, social, setTab }) {
   );
 }
 
-function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, myOrganizations, createOrganization, onboardOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
+function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrganizations, myOrganizations = [], createOrganization, onboardOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
@@ -4244,6 +4255,7 @@ export default function App() {
     const updated = await api('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ whatsapp: nextSettings }) });
     if (updated.whatsapp) setWhatsappSettings(updated.whatsapp);
     if (updated.notificationPreferences) setNotificationPreferences({ ...defaultNotificationPreferences, ...updated.notificationPreferences });
+    return updated.whatsapp;
   }
 
   async function saveManualLocation(nextLocation) {
