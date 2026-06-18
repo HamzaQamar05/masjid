@@ -979,7 +979,10 @@ async function sendPushToOrganizationFollowers(organizationId, payload, options 
     prisma.favoriteMasjid.findMany({ where: { organizationId }, select: { userId: true } })
   ]);
   const excludedUserIds = new Set((options.excludeUserIds || []).filter(Boolean));
-  const uniqueUserIds = [...new Set(follows.map((follow) => follow.userId))]
+  const uniqueUserIds = [...new Set([
+    ...follows.map((follow) => follow.userId),
+    ...favorites.map((favorite) => favorite.userId)
+  ])]
     .filter((userId) => !excludedUserIds.has(userId));
   const preferences = await prisma.userNotificationPreference.findMany({ where: { userId: { in: uniqueUserIds } } });
   const preferenceMap = new Map(preferences.map((preference) => [preference.userId, publicNotificationPreferences(preference)]));
@@ -989,6 +992,7 @@ async function sendPushToOrganizationFollowers(organizationId, payload, options 
     if (type === 'ANNOUNCEMENT' && !preference.masjidAnnouncements) return false;
     if (type === 'EVENT' && !preference.eventsFromFollowedMasjids) return false;
     if (type === 'CLASS' && !preference.programsFromFollowedMasjids) return false;
+    if (type === 'PRAYER_UPDATE' && !preference.jamaatTimeUpdates) return false;
     if (type === 'JOB' && !preference.jobOpportunities) return false;
     if (['VOLUNTEER', 'OPPORTUNITY'].includes(type) && !preference.volunteerOpportunities) return false;
     return true;
@@ -1048,7 +1052,10 @@ async function sendWhatsappToOrganizationFollowers(organizationId, payload, opti
     prisma.favoriteMasjid.findMany({ where: { organizationId }, select: { userId: true } })
   ]);
   const excludedUserIds = new Set((options.excludeUserIds || []).filter(Boolean));
-  const recipientIds = [...new Set(follows.map((follow) => follow.userId))]
+  const recipientIds = [...new Set([
+    ...follows.map((follow) => follow.userId),
+    ...favorites.map((favorite) => favorite.userId)
+  ])]
     .filter((userId) => !excludedUserIds.has(userId));
   const users = await prisma.user.findMany({
     where: { id: { in: recipientIds } },
@@ -1061,6 +1068,7 @@ async function sendWhatsappToOrganizationFollowers(organizationId, payload, opti
     if (type === 'ANNOUNCEMENT' && !preference.masjidAnnouncements) return false;
     if (type === 'EVENT' && !preference.eventsFromFollowedMasjids) return false;
     if (type === 'CLASS' && !preference.programsFromFollowedMasjids) return false;
+    if (type === 'PRAYER_UPDATE' && !preference.jamaatTimeUpdates) return false;
     if (type === 'JOB' && !preference.jobOpportunities) return false;
     if (['VOLUNTEER', 'OPPORTUNITY'].includes(type) && !preference.volunteerOpportunities) return false;
     return true;
@@ -1874,6 +1882,8 @@ app.get('/api/organizations/:id', async (req, res) => {
 
 app.put('/api/organizations/:id', auth, async (req, res) => {
   if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can update it' });
+  const existing = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Organization not found' });
   const allowed = ['name', 'type', 'city', 'address', 'website', 'email', 'phone', 'description', 'facilities', 'imageUrl', 'heroImageUrl', 'donationUrl', 'instagramUrl', 'facebookUrl', 'prayerTimes', 'iqamahTimes', 'prayerNotes', 'classes'];
   const data = {};
   allowed.forEach((key) => {
@@ -1885,7 +1895,41 @@ app.put('/api/organizations/:id', auth, async (req, res) => {
   if (req.body.latitude !== undefined) data.latitude = req.body.latitude === '' ? null : Number(req.body.latitude);
   if (req.body.longitude !== undefined) data.longitude = req.body.longitude === '' ? null : Number(req.body.longitude);
   const org = await prisma.organization.update({ where: { id: req.params.id }, data });
-  res.json(org);
+  const notifications = {};
+  const prayerScheduleChanged = ['prayerTimes', 'iqamahTimes', 'prayerNotes'].some((key) =>
+    data[key] !== undefined && JSON.stringify(data[key] ?? null) !== JSON.stringify(existing[key] ?? null)
+  );
+  const previousClasses = Array.isArray(existing.classes) ? existing.classes : [];
+  const nextClasses = Array.isArray(data.classes) ? data.classes : previousClasses;
+  const newPrograms = data.classes !== undefined && nextClasses.length > previousClasses.length
+    ? nextClasses.slice(previousClasses.length)
+    : [];
+
+  if (prayerScheduleChanged) {
+    notifications.prayerTimes = await notifyOrganizationFollowers(req.params.id, {
+      title: `${org.name} updated prayer times`,
+      body: org.prayerNotes || 'The latest jamaat and prayer schedule is now available.',
+      url: `/masjids/${org.id}`,
+      tag: `prayer-update-${org.id}-${Date.now()}`,
+      type: 'PRAYER_UPDATE',
+      organizationId: org.id
+    }, { excludeUserIds: [req.user.id] });
+  }
+
+  if (newPrograms.length) {
+    const program = newPrograms[newPrograms.length - 1];
+    notifications.program = await notifyOrganizationFollowers(req.params.id, {
+      title: `New program: ${program.title || 'Masjid program'}`,
+      body: program.description || program.dayTime || program.location || `${org.name} added a new class or program.`,
+      url: `/masjids/${org.id}`,
+      tag: `program-${org.id}-${program.id || Date.now()}`,
+      type: 'CLASS',
+      organizationId: org.id,
+      metadata: { programId: program.id || null }
+    }, { excludeUserIds: [req.user.id] });
+  }
+
+  res.json({ ...org, notifications });
 });
 
 app.post('/api/organizations/:id/onboard', auth, requireAdmin, async (req, res) => {

@@ -809,7 +809,7 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
 
 function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization, notificationState, enablePushNotifications }) {
   const favorite = favoriteMasjids[0];
-  const iqamah = favorite?.iqamahTimes || {};
+  const iqamah = favorite?.prayerTimes || {};
   return (
     <section className="panel prayer-panel">
       <div className="section-title"><div><p className="eyebrow">{favorite ? 'Favorite masjid' : 'Live API'}</p><h2>{favorite ? favorite.name : 'Prayer times today'}</h2></div><ShieldCheck size={22} /></div>
@@ -963,7 +963,7 @@ function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = []
             <article className="organization-card" key={org.id}>
               <h3>{org.name}</h3>
               <p>{org.prayerNotes || 'No prayer notes added yet.'}</p>
-              <TagRow tags={[org.iqamahTimes?.Fajr && `Fajr ${org.iqamahTimes.Fajr}`, org.iqamahTimes?.Dhuhr && `Dhuhr ${org.iqamahTimes.Dhuhr}`, org.iqamahTimes?.Asr && `Asr ${org.iqamahTimes.Asr}`, org.iqamahTimes?.Maghrib && `Maghrib ${org.iqamahTimes.Maghrib}`, org.iqamahTimes?.Isha && `Isha ${org.iqamahTimes.Isha}`].filter(Boolean)} />
+              <TagRow tags={[org.prayerTimes?.Fajr && `Fajr ${org.prayerTimes.Fajr}`, org.prayerTimes?.Dhuhr && `Dhuhr ${org.prayerTimes.Dhuhr}`, org.prayerTimes?.Asr && `Asr ${org.prayerTimes.Asr}`, org.prayerTimes?.Maghrib && `Maghrib ${org.prayerTimes.Maghrib}`, org.prayerTimes?.Isha && `Isha ${org.prayerTimes.Isha}`].filter(Boolean)} />
             </article>
           ))}
         </div>
@@ -1508,7 +1508,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
   const opportunities = organization.opportunities || [];
   const jobs = opportunities.filter((item) => item.type === 'JOB');
   const volunteer = opportunities.filter((item) => item.type !== 'JOB');
-  const iqamah = organization.iqamahTimes || organization.iqamah || {};
+  const iqamah = organization.prayerTimes || organization.iqamah || {};
   const classes = organization.classes || organization.programs || [];
   const facilities = normalizeList(organization.facilities);
   const profileImage = organization.imageUrl || organization.heroImageUrl || organization.cover;
@@ -2505,7 +2505,15 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
     { label: 'New Event', icon: CalendarDays, action: () => openDashboardSection('events'), primary: true },
     { label: 'New Post', icon: Plus, action: () => openDashboardSection('posts') },
     { label: 'New Program', icon: Library, action: () => openDashboardSection('programs') },
+    { label: 'Prayer Times', icon: ShieldCheck, action: () => openDashboardSection('prayerTimes') },
     { label: 'Announcement', icon: Send, action: openAnnouncementComposer }
+  ];
+  const communityPublishingItems = [
+    { key: 'prayerTimes', label: 'Prayer times', detail: 'Public profile + jamaat update notification', icon: ShieldCheck },
+    { key: 'events', label: 'Events', detail: 'Events discovery + follower notification', icon: CalendarDays },
+    { key: 'programs', label: 'Programs', detail: 'Masjid profile + program notification', icon: Library },
+    { key: 'posts', label: 'Posts', detail: 'Home feed + announcement notification', icon: MessageCircle },
+    { key: 'jobs', label: 'Opportunities', detail: 'Jobs/volunteer pages + user alerts', icon: Briefcase }
   ];
   const attentionItems = [
     { key: 'messages', label: 'Messages', count: unreadMessages, icon: Mail, action: () => setTab?.('messages') },
@@ -3131,6 +3139,25 @@ function AdminScreen({ user, users, threads, loadNetwork, loadMyOrganizations, m
                 return <button key={item.label} type="button" className={item.primary ? 'primary-button' : 'secondary-button'} onClick={item.action}><Icon size={18} />{item.label}</button>;
               })}
             </div>
+            <section className="operator-section community-publishing">
+              <div className="operator-section-title">
+                <div><p className="eyebrow">Your masjid account</p><h3>Publish everything your community needs</h3></div>
+                <span>Followers stay updated</span>
+              </div>
+              <p className="helper-text">Every tool below updates the public user experience. Followed and favorited masjids appear first, and eligible users receive in-app history plus push or WhatsApp alerts when enabled.</p>
+              <div className="community-publishing-grid">
+                {communityPublishingItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button key={item.key} type="button" onClick={() => openDashboardSection(item.key)}>
+                      <span className="publishing-icon"><Icon size={20} /></span>
+                      <span><strong>{item.label}</strong><small>{item.detail}</small></span>
+                      <ChevronRight size={17} />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
             <section className="operator-section attention-section">
               <div className="operator-section-title"><h3>Needs Attention</h3><span>Today</span></div>
               <div className="attention-list">
@@ -4442,7 +4469,7 @@ export default function App() {
 
   function schedulePrayerNotification(org) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    const iqamah = org.iqamahTimes || {};
+    const iqamah = org.prayerTimes || {};
     const now = new Date();
     const candidates = prayers.map((prayer) => {
       const time = iqamah[prayer.name] || prayer.iqamah;
