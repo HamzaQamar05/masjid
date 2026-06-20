@@ -1457,6 +1457,15 @@ function MessagesScreen({
   const messageEndRef = useRef(null);
   const [conversationQuery, setConversationQuery] = useState('');
   const [conversationFilter, setConversationFilter] = useState('all');
+  const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [groupMessages, setGroupMessages] = useState([]);
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [newChatMode, setNewChatMode] = useState('direct');
+  const [newChatQuery, setNewChatQuery] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [groupMemberIds, setGroupMemberIds] = useState([]);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const conversationTouch = useRef(null);
   const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
   const conversationUsers = conversationQuery.trim()
@@ -1474,6 +1483,22 @@ function MessagesScreen({
       const bThread = threads.find((item) => item.user.id === b.id);
       return new Date(bThread?.lastMessageAt || 0) - new Date(aThread?.lastMessageAt || 0);
     });
+
+  async function loadGroups() {
+    const loaded = await api('/api/groups').catch(() => ({ groups: [] }));
+    setGroups(loaded.groups || []);
+    return loaded.groups || [];
+  }
+
+  async function loadGroupMessages(groupId) {
+    const loaded = await api(`/api/groups/${groupId}/messages?limit=60`);
+    setGroupMessages(loaded.messages || []);
+    return loaded.messages || [];
+  }
+
+  useEffect(() => {
+    loadGroups();
+  }, []);
 
   useEffect(() => {
     if (!selectedUser?.id) return undefined;
@@ -1497,6 +1522,29 @@ function MessagesScreen({
   }, [selectedUser?.id]);
 
   useEffect(() => {
+    if (!selectedGroup?.id) return undefined;
+    let active = true;
+    async function refreshGroup() {
+      try {
+        if (active) {
+          await loadGroupMessages(selectedGroup.id);
+          const refreshed = await loadGroups();
+          const current = refreshed.find((group) => group.id === selectedGroup.id);
+          if (current) setSelectedGroup(current);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    refreshGroup();
+    const timer = setInterval(refreshGroup, 2500);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [selectedGroup?.id]);
+
+  useEffect(() => {
     if (!selectedUser?.id) return undefined;
     sendTyping(selectedUser.id, Boolean(draft.trim()));
     const timer = setTimeout(() => sendTyping(selectedUser.id, false), 900);
@@ -1504,9 +1552,38 @@ function MessagesScreen({
   }, [draft, selectedUser?.id]);
 
   async function chooseUser(person) {
+    setSelectedGroup(null);
+    setGroupMessages([]);
     setSelectedUser(person);
     onThreadOpen?.(person);
     await loadMessages(person.id);
+  }
+
+  async function chooseGroup(group) {
+    setSelectedUser(null);
+    setSelectedGroup(group);
+    await loadGroupMessages(group.id);
+  }
+
+  async function createGroupChat() {
+    if (!groupName.trim() || !groupMemberIds.length) return;
+    setCreatingGroup(true);
+    try {
+      const group = await api('/api/groups', {
+        method: 'POST',
+        body: JSON.stringify({ name: groupName.trim(), memberIds: groupMemberIds })
+      });
+      setShowNewChat(false);
+      setGroupName('');
+      setGroupMemberIds([]);
+      setNewChatQuery('');
+      await loadGroups();
+      await chooseGroup(group);
+    } catch (error) {
+      setMessageError(error.message || 'Group could not be created.');
+    } finally {
+      setCreatingGroup(false);
+    }
   }
 
   async function toggleThreadMute(person, thread) {
@@ -1521,15 +1598,21 @@ function MessagesScreen({
     await loadThreads();
   }
   async function sendMessage() {
-    if (!selectedUser || !draft.trim()) return;
+    if ((!selectedUser && !selectedGroup) || !draft.trim()) return;
     const content = draft.trim();
     setDraft('');
     setSendingMessage(true);
     setMessageError('');
     try {
-      await api('/api/messages', { method: 'POST', body: JSON.stringify({ receiverId: selectedUser.id, content }) });
-      await loadMessages(selectedUser.id);
-      await loadThreads();
+      if (selectedGroup) {
+        await api(`/api/groups/${selectedGroup.id}/messages`, { method: 'POST', body: JSON.stringify({ content }) });
+        await loadGroupMessages(selectedGroup.id);
+        await loadGroups();
+      } else {
+        await api('/api/messages', { method: 'POST', body: JSON.stringify({ receiverId: selectedUser.id, content }) });
+        await loadMessages(selectedUser.id);
+        await loadThreads();
+      }
     } catch (error) {
       setDraft(content);
       setMessageError(error.message || 'Message failed to send.');
@@ -1540,10 +1623,10 @@ function MessagesScreen({
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages.length, selectedUser?.id]);
+  }, [messages.length, groupMessages.length, selectedUser?.id, selectedGroup?.id]);
 
   function onMessageScroll(event) {
-    if (event.currentTarget.scrollTop < 24 && messagePage.hasMore && !messagePage.loadingOlder) {
+    if (!selectedGroup && event.currentTarget.scrollTop < 24 && messagePage.hasMore && !messagePage.loadingOlder) {
       loadOlderMessages(selectedUser.id);
     }
   }
@@ -1575,24 +1658,27 @@ function MessagesScreen({
     conversationTouch.current = null;
   }
 
-  const renderedMessages = messages.map((message, index) => {
-    const previous = messages[index - 1];
+  const activeMessages = selectedGroup ? groupMessages : messages;
+  const renderedMessages = activeMessages.map((message, index) => {
+    const previous = activeMessages[index - 1];
     const showDay = !previous || messageDayLabel(previous.createdAt) !== messageDayLabel(message.createdAt);
-    const incoming = message.senderId === selectedUser?.id;
+    const incoming = message.senderId !== currentUser?.id;
+    const sender = selectedGroup ? message.sender : selectedUser;
     return (
       <React.Fragment key={message.id}>
         {showDay && <div className="message-day"><span>{messageDayLabel(message.createdAt)}</span></div>}
         <div className={incoming ? 'chat-line received' : 'chat-line sent'}>
           {incoming && (
             <span className="chat-avatar">
-              <ResilientImage src={selectedUser?.avatarUrl} alt="" fallback={initials(selectedUser?.name || 'U')} />
+              <ResilientImage src={sender?.avatarUrl} alt="" fallback={initials(sender?.name || 'U')} />
             </span>
           )}
           <div className={incoming ? 'chat-bubble received' : 'chat-bubble sent'}>
+            {selectedGroup && incoming && <b className="group-message-sender">{sender?.name}</b>}
             <p>{message.content}</p>
             <small>{message.createdAt ? new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</small>
             {!!message.reactions?.length && <div className="reaction-row">{message.reactions.map((reaction) => <span key={reaction.id}>{reaction.emoji}</span>)}</div>}
-            {!message.isDeleted && (
+            {!selectedGroup && !message.isDeleted && (
               <div className="message-actions">
                 {['heart', 'smile', 'dua', 'like'].map((emoji) => <button key={emoji} onClick={() => reactToMessage(message.id, emoji)}>{emoji}</button>)}
                 {incoming ? null : <button onClick={() => unsendMessage(message.id)}>Unsend</button>}
@@ -1606,12 +1692,12 @@ function MessagesScreen({
 
   return (
     <Page>
-      <div className={detailMode ? 'messaging-layout thread-route' : 'messaging-layout'}>
+      <div className={detailMode || selectedGroup ? 'messaging-layout thread-route' : 'messaging-layout'}>
         <section className="panel inbox-list">
           <div className="dm-mobile-titlebar">
             <span className="org-logo dm-self-avatar"><ResilientImage src={currentUser?.avatarUrl} alt="" fallback={initials(currentUser?.name || 'M')} /></span>
             <strong>Chats</strong>
-            <button type="button" aria-label="Message options"><MoreHorizontal size={22} /></button>
+            <button type="button" onClick={() => setShowNewChat(true)} aria-label="Create new chat"><Plus size={23} /></button>
           </div>
           <label className="dm-search"><Search size={16} /><input placeholder="Search conversations" value={conversationQuery} onChange={(event) => setConversationQuery(event.target.value)} /></label>
           <div className="dm-filter-row">
@@ -1621,6 +1707,13 @@ function MessagesScreen({
               ['online', 'Online']
             ].map(([key, label]) => <button key={key} className={conversationFilter === key ? 'active' : ''} onClick={() => setConversationFilter(key)}>{label}</button>)}
           </div>
+          {groups.map((group) => (
+            <button type="button" className={`dm-thread-row dm-group-row${selectedGroup?.id === group.id ? ' active' : ''}`} key={group.id} onClick={() => chooseGroup(group)}>
+              <span className="org-logo dm-avatar"><ResilientImage src={group.avatarUrl} alt="" fallback={initials(group.name)} /></span>
+              <span className="dm-thread-copy"><strong>{group.name}</strong><span>{group.lastMessage}</span></span>
+              <span className="dm-thread-meta"><time>{formatConversationTime(group.lastMessageAt)}</time>{group.unread > 0 && <em>{group.unread > 99 ? '99+' : group.unread}</em>}</span>
+            </button>
+          ))}
           {visibleUsers.map((person) => {
             const thread = threads.find((item) => item.user.id === person.id);
             const isOnline = onlineUserIds.includes(person.id);
@@ -1629,23 +1722,25 @@ function MessagesScreen({
           {!visibleUsers.length && <div className="dm-empty-inbox"><MessageCircle size={30} /><strong>No conversations yet</strong><span>Search for someone above to start a private chat.</span></div>}
         </section>
         <section className="panel message-thread" onTouchStart={onConversationTouchStart} onTouchMove={onConversationTouchMove} onTouchEnd={onConversationTouchEnd}>
-          {selectedUser ? (
+          {selectedUser || selectedGroup ? (
             <>
               <div className="dm-conversation-header">
-                <button type="button" className="dm-back-button" onClick={onBackToInbox} aria-label="Back to chats"><ChevronLeft size={26} /></button>
-                <span className="org-logo"><ResilientImage src={selectedUser.avatarUrl} alt="" fallback={initials(selectedUser.name)} />{onlineUserIds.includes(selectedUser.id) && <i className="dm-online-dot" />}</span>
-                <div><strong>{selectedUser.name}</strong><span>{onlineUserIds.includes(selectedUser.id) ? 'Active now' : displayRoleLabel(selectedUser.accountType)}</span></div>
-                <button type="button" className="dm-header-action" onClick={() => toggleThreadMute(selectedUser, selectedThread)} aria-label={selectedThread?.muted ? 'Unmute chat' : 'Mute chat'}>{selectedThread?.muted ? <Volume2 size={21} /> : <VolumeX size={21} />}</button>
+                <button type="button" className="dm-back-button" onClick={() => { if (selectedGroup) { setSelectedGroup(null); setGroupMessages([]); } else onBackToInbox?.(); }} aria-label="Back to chats"><ChevronLeft size={26} /></button>
+                <span className="org-logo"><ResilientImage src={selectedGroup?.avatarUrl || selectedUser?.avatarUrl} alt="" fallback={initials(selectedGroup?.name || selectedUser?.name)} />{selectedUser && onlineUserIds.includes(selectedUser.id) && <i className="dm-online-dot" />}</span>
+                <div><strong>{selectedGroup?.name || selectedUser?.name}</strong><span>{selectedGroup ? `${selectedGroup.members?.length || 0} members` : onlineUserIds.includes(selectedUser.id) ? 'Active now' : displayRoleLabel(selectedUser.accountType)}</span></div>
+                {selectedGroup
+                  ? <button type="button" className="dm-header-action" onClick={async () => { await api(`/api/groups/${selectedGroup.id}`, { method: 'PUT', body: JSON.stringify({ muted: !selectedGroup.muted }) }); await loadGroups(); }} aria-label={selectedGroup.muted ? 'Unmute group' : 'Mute group'}>{selectedGroup.muted ? <Volume2 size={21} /> : <VolumeX size={21} />}</button>
+                  : <button type="button" className="dm-header-action" onClick={() => toggleThreadMute(selectedUser, selectedThread)} aria-label={selectedThread?.muted ? 'Unmute chat' : 'Mute chat'}>{selectedThread?.muted ? <Volume2 size={21} /> : <VolumeX size={21} />}</button>}
               </div>
               <div className="message-list" onScroll={onMessageScroll}>
-                {messagePage.hasMore && <button className="load-more" onClick={() => loadOlderMessages(selectedUser.id)}>{messagePage.loadingOlder ? 'Loading...' : 'Load older messages'}</button>}
+                {!selectedGroup && messagePage.hasMore && <button className="load-more" onClick={() => loadOlderMessages(selectedUser.id)}>{messagePage.loadingOlder ? 'Loading...' : 'Load older messages'}</button>}
                 {renderedMessages}
-                {typingUserIds.includes(selectedUser.id) && <div className="typing-indicator">{selectedUser.name} is typing...</div>}
+                {selectedUser && typingUserIds.includes(selectedUser.id) && <div className="typing-indicator">{selectedUser.name} is typing...</div>}
                 <div ref={messageEndRef} />
               </div>
               <div className="message-composer">
                 <button type="button" className="dm-add-button" aria-label="Add attachment"><Plus size={24} /></button>
-                <textarea rows="1" value={draft} onChange={(event) => setDraft(event.target.value)} onInput={(event) => { event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onComposerKeyDown} placeholder={`Message ${selectedUser.name}`} />
+                <textarea rows="1" value={draft} onChange={(event) => setDraft(event.target.value)} onInput={(event) => { event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onComposerKeyDown} placeholder={`Message ${selectedGroup?.name || selectedUser?.name}`} />
                 <button className="primary-button" onClick={sendMessage} disabled={sendingMessage || !draft.trim()} aria-label="Send message"><Send size={18} /></button>
               </div>
               {messageError && <p className="message-error">{messageError}</p>}
@@ -1653,6 +1748,35 @@ function MessagesScreen({
           ) : <div className="dm-empty-state"><MessageCircle size={30} /><h2>Select a conversation</h2><p>Search for a user, masjid, imam, or organization to start a direct message.</p></div>}
         </section>
       </div>
+      {showNewChat && (
+        <div className="modal-backdrop dm-new-chat-backdrop" onClick={() => setShowNewChat(false)}>
+          <section className="panel dm-new-chat-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="dm-new-chat-head"><button type="button" onClick={() => setShowNewChat(false)}><X size={22} /></button><strong>New message</strong><button type="button" disabled={newChatMode !== 'group' || !groupName.trim() || !groupMemberIds.length || creatingGroup} onClick={createGroupChat}>Create</button></div>
+            <div className="dm-new-chat-tabs"><button className={newChatMode === 'direct' ? 'active' : ''} onClick={() => setNewChatMode('direct')}>Direct</button><button className={newChatMode === 'group' ? 'active' : ''} onClick={() => setNewChatMode('group')}>Group</button></div>
+            {newChatMode === 'group' && <input className="dm-group-name" value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Group name" maxLength={80} />}
+            <label className="dm-search"><Search size={16} /><input value={newChatQuery} onChange={(event) => setNewChatQuery(event.target.value)} placeholder="Search people" /></label>
+            <div className="dm-new-chat-people">
+              {users.filter((person) => `${person.name} ${person.city || ''}`.toLowerCase().includes(newChatQuery.toLowerCase())).map((person) => {
+                const selected = groupMemberIds.includes(person.id);
+                return (
+                  <button type="button" key={person.id} onClick={() => {
+                    if (newChatMode === 'direct') {
+                      setShowNewChat(false);
+                      chooseUser(person);
+                    } else {
+                      setGroupMemberIds((ids) => selected ? ids.filter((id) => id !== person.id) : [...ids, person.id]);
+                    }
+                  }}>
+                    <span className="org-logo dm-avatar"><ResilientImage src={person.avatarUrl} alt="" fallback={initials(person.name)} /></span>
+                    <span><strong>{person.name}</strong><small>{displayRoleLabel(person.accountType)}</small></span>
+                    {newChatMode === 'group' && <i className={selected ? 'selected' : ''}>{selected ? '✓' : ''}</i>}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      )}
     </Page>
   );
 }
@@ -1692,6 +1816,88 @@ function BusinessDirectoryScreen() {
   );
 }
 
+function MasjidPrayerSchedule({ organization }) {
+  const [adhanTimes, setAdhanTimes] = useState({});
+  const [loading, setLoading] = useState(false);
+  const iqamahTimes = organization.prayerTimes || {};
+  const additionalPrayers = Array.isArray(organization.iqamahTimes?.additionalPrayers) ? organization.iqamahTimes.additionalPrayers : [];
+  const jumuahTime = iqamahTimes.Jumuah || iqamahTimes.jumuah;
+  const recurringPrayers = [
+    ...(jumuahTime ? [{ id: 'jumuah', name: 'Jumuah', time: 'Friday', jamatTime: jumuahTime }] : []),
+    ...additionalPrayers.filter((prayer) => !/jum|friday/i.test(prayer.name || ''))
+  ];
+  const temporaryPrayers = Array.isArray(organization.iqamahTimes?.temporaryPrayers) ? organization.iqamahTimes.temporaryPrayers : [];
+  const standardPrayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+  useEffect(() => {
+    let active = true;
+    if (!Number.isFinite(Number(organization.latitude)) || !Number.isFinite(Number(organization.longitude))) {
+      setAdhanTimes({});
+      return undefined;
+    }
+    setLoading(true);
+    api(`/api/prayer-times?lat=${encodeURIComponent(organization.latitude)}&lng=${encodeURIComponent(organization.longitude)}`)
+      .then((data) => {
+        if (active) setAdhanTimes(data.timings || {});
+      })
+      .catch(() => {
+        if (active) setAdhanTimes({});
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [organization.id, organization.latitude, organization.longitude]);
+
+  return (
+    <>
+      <section className="panel masjid-prayer-schedule">
+        <div className="section-title"><div><h2>Adhan & Iqamah</h2><p className="helper-text">Adhan is calculated live for this masjid. Iqamah is set by the masjid dashboard.</p></div><ShieldCheck size={20} /></div>
+        <div className="masjid-prayer-table">
+          <div className="masjid-prayer-table-head"><span>Prayer</span><span>Adhan</span><span>Iqamah</span></div>
+          {standardPrayers.map((name) => (
+            <div className="masjid-prayer-table-row" key={name}>
+              <strong>{name}</strong>
+              <span>{loading ? 'Loading…' : adhanTimes[name] || 'N/A'}</span>
+              <em>{iqamahTimes[name] || iqamahTimes[name.toLowerCase()] || 'N/A'}</em>
+            </div>
+          ))}
+        </div>
+        <div className="section-title compact-title"><h3>Recurring prayers</h3><span>{recurringPrayers.length || 'N/A'}</span></div>
+        {recurringPrayers.length ? (
+          <div className="stack-list">
+            {recurringPrayers.map((prayer, index) => (
+              <article className="mini-row prayer-extra-row" key={prayer.id || `${prayer.name}-${index}`}>
+                <strong>{prayer.name || 'Recurring prayer'}</strong>
+                <span>{prayer.time || 'Adhan N/A'} · Iqamah {prayer.jamatTime || prayer.iqamahTime || 'N/A'}</span>
+                {prayer.notes && <p>{prayer.notes}</p>}
+              </article>
+            ))}
+          </div>
+        ) : <p className="prayer-na">N/A</p>}
+      </section>
+
+      <section className="panel masjid-temporary-prayers">
+        <div className="section-title"><div><h2>Temporary prayers</h2><p className="helper-text">Janazah, Qiyam, Taraweeh, Eid, and other time-limited prayers.</p></div><CalendarDays size={20} /></div>
+        {temporaryPrayers.length ? (
+          <div className="stack-list">
+            {temporaryPrayers.map((prayer, index) => (
+              <article className="mini-row prayer-extra-row" key={prayer.id || `${prayer.name}-${index}`}>
+                <strong>{prayer.name || 'Temporary prayer'}</strong>
+                <span>{prayer.time || 'Prayer time N/A'} · Iqamah {prayer.jamatTime || prayer.iqamahTime || 'N/A'}</span>
+                {(prayer.startsAt || prayer.endsAt) && <small>{prayer.startsAt || 'Now'} – {prayer.endsAt || 'Until removed'}</small>}
+                {prayer.notes && <p>{prayer.notes}</p>}
+              </article>
+            ))}
+          </div>
+        ) : <p className="prayer-na">N/A</p>}
+      </section>
+    </>
+  );
+}
+
 function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavorite, onMessage, applyToOpportunity, onBack }) {
   if (!organization) return <Page title="Masjid Profile" subtitle="Choose a masjid to view its profile."><button className="secondary-button" onClick={onBack}>Back to masjids</button></Page>;
   const posts = organization.posts || [];
@@ -1699,7 +1905,6 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
   const opportunities = organization.opportunities || [];
   const jobs = opportunities.filter((item) => item.type === 'JOB');
   const volunteer = opportunities.filter((item) => item.type !== 'JOB');
-  const iqamah = organization.prayerTimes || organization.iqamah || {};
   const classes = organization.classes || organization.programs || [];
   const facilities = normalizeList(organization.facilities);
   const profileImage = organization.imageUrl || organization.heroImageUrl || organization.cover;
@@ -1817,12 +2022,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
               {!(organization.people || []).length && <p className="helper-text">No imams or team members listed yet.</p>}
             </div>
           </section>
-          <section className="panel">
-            <div className="section-title"><h2>Iqamah Times</h2><ShieldCheck size={20} /></div>
-            <div className="prayer-grid detailed">
-              {[...prayers, { name: 'Jumuah', iqamah: 'TBD' }].map((prayer) => <div key={prayer.name}><span>{prayer.name}</span><strong>{iqamah[prayer.name] || iqamah[prayer.name.toLowerCase()] || prayer.iqamah || 'TBD'}</strong></div>)}
-            </div>
-          </section>
+          <MasjidPrayerSchedule organization={organization} />
           <section className="panel">
             <div className="section-title"><h2>Links</h2></div>
             <p>{organization.phone || 'Phone not added'}</p>

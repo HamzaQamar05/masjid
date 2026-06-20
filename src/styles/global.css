@@ -4643,6 +4643,211 @@ button.mini-org-avatar {
   }
 }
 
+/* Masjid prayer profile schedule */
+.masjid-prayer-schedule,
+.masjid-temporary-prayers {
+  display: grid;
+  gap: 14px;
+}
+
+.masjid-prayer-table {
+  display: grid;
+  gap: 7px;
+}
+
+.masjid-prayer-table-head,
+.masjid-prayer-table-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.masjid-prayer-table-head {
+  padding: 0 10px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.masjid-prayer-table-row {
+  min-height: 52px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.masjid-prayer-table-head span:not(:first-child),
+.masjid-prayer-table-row span,
+.masjid-prayer-table-row em {
+  text-align: center;
+}
+
+.masjid-prayer-table-row em {
+  color: var(--brand);
+  font-style: normal;
+  font-weight: 900;
+}
+
+.prayer-extra-row small {
+  color: var(--ink-soft);
+}
+
+.prayer-na {
+  min-height: 72px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--ink-soft);
+  font-weight: 900;
+}
+
+/* Instagram-style new direct/group chat composer */
+.dm-group-row {
+  border-bottom: 1px solid var(--line) !important;
+}
+
+.group-message-sender {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--brand);
+  font-size: 11px;
+}
+
+.dm-new-chat-backdrop {
+  z-index: 120;
+}
+
+.dm-new-chat-sheet {
+  width: min(520px, calc(100vw - 24px));
+  max-height: min(760px, 90dvh);
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+  overflow: hidden;
+  border-radius: 22px;
+}
+
+.dm-new-chat-head {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 70px;
+  align-items: center;
+  text-align: center;
+}
+
+.dm-new-chat-head button {
+  min-height: 42px;
+  border: 0;
+  color: var(--brand);
+  background: transparent;
+  font-weight: 900;
+}
+
+.dm-new-chat-head button:first-child {
+  color: var(--ink);
+}
+
+.dm-new-chat-head button:disabled {
+  opacity: 0.35;
+}
+
+.dm-new-chat-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.dm-new-chat-tabs button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--ink-soft);
+  background: transparent;
+  font-weight: 900;
+}
+
+.dm-new-chat-tabs button.active {
+  color: #fff;
+  background: var(--brand);
+}
+
+.dm-group-name {
+  min-height: 46px;
+  border-radius: 12px;
+}
+
+.dm-new-chat-sheet .dm-search {
+  margin: 0;
+}
+
+.dm-new-chat-people {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.dm-new-chat-people > button {
+  width: 100%;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  background: transparent;
+}
+
+.dm-new-chat-people > button > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+
+.dm-new-chat-people small {
+  color: var(--ink-soft);
+}
+
+.dm-new-chat-people i {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: #fff;
+  font-style: normal;
+  background: var(--surface-muted);
+}
+
+.dm-new-chat-people i.selected {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+@media (max-width: 600px) {
+  .dm-new-chat-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .dm-new-chat-sheet {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 24px 24px 0 0;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
+
 @media (max-width: 560px) {
   .top-nav {
     height: 58px;

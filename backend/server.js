@@ -3015,6 +3015,137 @@ app.post('/api/messages/:messageId/reactions', auth, async (req, res) => {
   res.json(serialized);
 });
 
+function serializeGroup(group, viewerId) {
+  const membership = group.members?.find((member) => member.userId === viewerId);
+  const lastMessage = group.messages?.[0];
+  return {
+    id: group.id,
+    name: group.name,
+    avatarUrl: group.avatarUrl,
+    createdById: group.createdById,
+    createdAt: group.createdAt,
+    updatedAt: lastMessage?.createdAt || group.updatedAt,
+    muted: Boolean(membership?.muted),
+    members: (group.members || []).map((member) => ({ ...member, user: publicUser(member.user) })),
+    lastMessage: lastMessage ? (lastMessage.deletedAt ? 'This message was unsent' : lastMessage.content) : 'Group created',
+    lastMessageAt: lastMessage?.createdAt || group.createdAt,
+    unread: membership
+      ? (group.messages || []).filter((message) => message.senderId !== viewerId && (!membership.lastReadAt || message.createdAt > membership.lastReadAt)).length
+      : 0
+  };
+}
+
+app.get('/api/groups', auth, async (req, res) => {
+  const groups = await prisma.groupChat.findMany({
+    where: { members: { some: { userId: req.user.id, hidden: false } } },
+    include: {
+      members: { include: { user: true }, orderBy: { joinedAt: 'asc' } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 100 }
+    },
+    orderBy: { updatedAt: 'desc' }
+  });
+  res.json({ groups: groups.map((group) => serializeGroup(group, req.user.id)) });
+});
+
+app.post('/api/groups', auth, async (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 80);
+  const memberIds = [...new Set((Array.isArray(req.body.memberIds) ? req.body.memberIds : []).map(String))]
+    .filter((id) => id && id !== req.user.id);
+  if (!name) return res.status(400).json({ error: 'Group name is required' });
+  if (!memberIds.length) return res.status(400).json({ error: 'Select at least one other person' });
+  if (memberIds.length > 99) return res.status(400).json({ error: 'Groups can have up to 100 members' });
+  const existingUsers = await prisma.user.findMany({ where: { id: { in: memberIds } }, select: { id: true } });
+  if (existingUsers.length !== memberIds.length) return res.status(400).json({ error: 'One or more selected users no longer exist' });
+  const group = await prisma.groupChat.create({
+    data: {
+      name,
+      avatarUrl: req.body.avatarUrl || null,
+      createdById: req.user.id,
+      members: {
+        create: [
+          { userId: req.user.id, role: 'ADMIN', lastReadAt: new Date() },
+          ...memberIds.map((userId) => ({ userId, role: 'MEMBER' }))
+        ]
+      }
+    },
+    include: { members: { include: { user: true }, orderBy: { joinedAt: 'asc' } }, messages: true }
+  });
+  memberIds.forEach((userId) => io.to(userRoom(userId)).emit('group:new', { groupId: group.id }));
+  res.status(201).json(serializeGroup(group, req.user.id));
+});
+
+app.get('/api/groups/:groupId/messages', auth, async (req, res) => {
+  const membership = await prisma.groupChatMember.findUnique({
+    where: { groupId_userId: { groupId: req.params.groupId, userId: req.user.id } }
+  });
+  if (!membership) return res.status(404).json({ error: 'Group not found' });
+  const limit = normalizeLimit(req.query.limit, 40, 80);
+  const before = req.query.before ? new Date(String(req.query.before)) : null;
+  const where = { groupId: req.params.groupId };
+  if (before && Number.isFinite(before.getTime())) where.createdAt = { lt: before };
+  const found = await prisma.groupMessage.findMany({
+    where,
+    include: { sender: true },
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1
+  });
+  const hasMore = found.length > limit;
+  const page = found.slice(0, limit).reverse();
+  await prisma.groupChatMember.update({
+    where: { id: membership.id },
+    data: { lastReadAt: new Date(), hidden: false }
+  });
+  res.json({
+    messages: page.map((message) => ({
+      ...message,
+      content: message.deletedAt ? 'This message was unsent' : message.content,
+      isDeleted: Boolean(message.deletedAt),
+      sender: publicUser(message.sender),
+      groupId: message.groupId
+    })),
+    nextCursor: hasMore ? page[0]?.createdAt : null,
+    hasMore
+  });
+});
+
+app.post('/api/groups/:groupId/messages', auth, messageLimiter, async (req, res) => {
+  const membership = await prisma.groupChatMember.findUnique({
+    where: { groupId_userId: { groupId: req.params.groupId, userId: req.user.id } }
+  });
+  if (!membership) return res.status(404).json({ error: 'Group not found' });
+  const content = String(req.body.content || '').trim();
+  if (!content) return res.status(400).json({ error: 'Message is required' });
+  if (content.length > 2000) return res.status(400).json({ error: 'Message must be 2000 characters or less' });
+  const message = await prisma.$transaction(async (tx) => {
+    const created = await tx.groupMessage.create({
+      data: { groupId: req.params.groupId, senderId: req.user.id, content },
+      include: { sender: true }
+    });
+    await tx.groupChat.update({ where: { id: req.params.groupId }, data: { updatedAt: new Date() } });
+    await tx.groupChatMember.update({ where: { id: membership.id }, data: { lastReadAt: new Date(), hidden: false } });
+    return created;
+  });
+  const serialized = { ...message, sender: publicUser(message.sender), groupId: message.groupId, isDeleted: false };
+  const members = await prisma.groupChatMember.findMany({ where: { groupId: req.params.groupId }, select: { userId: true } });
+  members.forEach(({ userId }) => io.to(userRoom(userId)).emit('group:message', serialized));
+  res.status(201).json(serialized);
+});
+
+app.put('/api/groups/:groupId', auth, async (req, res) => {
+  const membership = await prisma.groupChatMember.findUnique({
+    where: { groupId_userId: { groupId: req.params.groupId, userId: req.user.id } }
+  });
+  if (!membership) return res.status(404).json({ error: 'Group not found' });
+  const updatedMembership = await prisma.groupChatMember.update({
+    where: { id: membership.id },
+    data: {
+      muted: req.body.muted === undefined ? membership.muted : Boolean(req.body.muted),
+      hidden: req.body.hidden === undefined ? membership.hidden : Boolean(req.body.hidden)
+    }
+  });
+  res.json({ muted: updatedMembership.muted, hidden: updatedMembership.hidden });
+});
+
 app.get('/api/location/masjids', async (req, res) => {
   const latitude = Number(req.query.lat);
   const longitude = Number(req.query.lng);

@@ -70,6 +70,9 @@ model User {
   postComments             PostComment[]
   pushSubscriptions        PushSubscription[]
   notifications            Notification[]
+  groupChatsCreated        GroupChat[]             @relation("GroupChatCreator")
+  groupMemberships         GroupChatMember[]
+  groupMessages            GroupMessage[]
 }
 
 model UserWarning {
@@ -444,4 +447,51 @@ model MessageReaction {
 
   @@unique([messageId, userId, emoji])
   @@index([messageId])
+}
+
+model GroupChat {
+  id          String            @id @default(cuid())
+  name        String
+  avatarUrl   String?
+  createdById String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  createdBy User              @relation("GroupChatCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members   GroupChatMember[]
+  messages  GroupMessage[]
+
+  @@index([updatedAt])
+}
+
+model GroupChatMember {
+  id         String    @id @default(cuid())
+  groupId    String
+  userId     String
+  role       String    @default("MEMBER")
+  muted      Boolean   @default(false)
+  hidden     Boolean   @default(false)
+  lastReadAt DateTime?
+  joinedAt   DateTime  @default(now())
+
+  group GroupChat @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId, hidden, joinedAt])
+}
+
+model GroupMessage {
+  id        String    @id @default(cuid())
+  groupId   String
+  senderId  String
+  content   String
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  group  GroupChat @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, createdAt])
+  @@index([senderId, createdAt])
 }
