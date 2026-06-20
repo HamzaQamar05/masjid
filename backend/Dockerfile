@@ -9,6 +9,7 @@ COPY prisma ./prisma
 RUN node node_modules/prisma/build/index.js generate
 
 COPY server.js ./
+COPY lib ./lib
 
 ENV NODE_ENV=production
 EXPOSE 5000
