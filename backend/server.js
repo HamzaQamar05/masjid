@@ -7,7 +7,11 @@ import nodemailer from 'nodemailer';
 import rateLimit from 'express-rate-limit';
 import Redis from 'ioredis';
 import { createServer } from 'http';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { lookup } from 'dns/promises';
+import { isIP } from 'net';
 import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
 import webPush from 'web-push';
@@ -16,8 +20,11 @@ dotenv.config();
 dotenv.config({ path: '.env.local', override: true });
 
 const app = express();
+app.set('trust proxy', 1);
 const server = createServer(app);
 const prisma = new PrismaClient();
+const uploadsDirectory = process.env.UPLOADS_DIR || path.resolve('uploads');
+const maxRemoteImageBytes = 8 * 1024 * 1024;
 
 const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
   .split(',')
@@ -209,6 +216,71 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
+app.use('/uploads', express.static(uploadsDirectory, {
+  fallthrough: false,
+  immutable: true,
+  maxAge: '30d'
+}));
+
+function isPrivateAddress(address) {
+  if (isIP(address) === 4) {
+    const [a, b] = address.split('.').map(Number);
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  const normalized = String(address || '').toLowerCase();
+  return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
+}
+
+async function archiveRemoteImage(value, req) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  let source;
+  try {
+    source = new URL(raw);
+  } catch {
+    throw new Error('Image URL must be a valid HTTPS address');
+  }
+  if (source.protocol !== 'https:') throw new Error('Image URL must use HTTPS');
+  if (source.pathname.startsWith('/uploads/') && source.host === req.get('host')) return source.toString();
+  const addresses = await lookup(source.hostname, { all: true });
+  if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) throw new Error('Image URL host is not allowed');
+
+  const response = await fetch(source, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(15_000),
+    headers: { 'User-Agent': 'Mujtama image importer/1.0' }
+  });
+  if (!response.ok) throw new Error(`Image source could not be downloaded (${response.status})`);
+  const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+  const extensions = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+  const extension = extensions[contentType];
+  if (!extension) throw new Error('Image source must return JPEG, PNG, WebP, or GIF content');
+  const declaredLength = Number(response.headers.get('content-length') || 0);
+  if (declaredLength > maxRemoteImageBytes) throw new Error('Image must be smaller than 8 MB');
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Image source did not return downloadable content');
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value: chunk } = await reader.read();
+    if (done) break;
+    total += chunk.byteLength;
+    if (total > maxRemoteImageBytes) {
+      await reader.cancel();
+      throw new Error('Image must be smaller than 8 MB');
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  const buffer = Buffer.concat(chunks);
+  const fileName = `${createHash('sha256').update(buffer).digest('hex').slice(0, 32)}.${extension}`;
+  await fs.mkdir(uploadsDirectory, { recursive: true });
+  await fs.writeFile(path.join(uploadsDirectory, fileName), buffer, { flag: 'wx' }).catch((error) => {
+    if (error.code !== 'EEXIST') throw error;
+  });
+  const origin = process.env.PUBLIC_API_URL || `${req.protocol}://${req.get('host')}`;
+  return `${origin.replace(/\/$/, '')}/uploads/${fileName}`;
+}
 
 io.use((socket, next) => {
   try {
@@ -2119,6 +2191,12 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
   const type = ['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].includes(String(req.body.type || '').toUpperCase()) ? String(req.body.type).toUpperCase() : 'ANNOUNCEMENT';
   const eventTime = req.body.eventTime ? normalizeRequiredDate(req.body.eventTime) : null;
   if (req.body.eventTime && !eventTime) return res.status(400).json({ error: 'Event time must be a valid date' });
+  let imageUrl = null;
+  try {
+    imageUrl = await archiveRemoteImage(req.body.imageUrl, req);
+  } catch (error) {
+    return res.status(400).json({ error: `Post image could not be saved: ${error.message}` });
+  }
   const post = await prisma.post.create({
     data: {
       organizationId: req.params.id,
@@ -2126,7 +2204,7 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
       title: req.body.title.trim(),
       content: req.body.content.trim(),
       type,
-      imageUrl: req.body.imageUrl || null,
+      imageUrl,
       location: req.body.location || null,
       eventTime
     },
@@ -2159,7 +2237,13 @@ app.put('/api/posts/:id', auth, async (req, res) => {
     data.content = String(req.body.content).trim();
   }
   if (req.body.type !== undefined) data.type = ['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].includes(String(req.body.type).toUpperCase()) ? String(req.body.type).toUpperCase() : post.type;
-  if (req.body.imageUrl !== undefined) data.imageUrl = req.body.imageUrl || null;
+  if (req.body.imageUrl !== undefined) {
+    try {
+      data.imageUrl = await archiveRemoteImage(req.body.imageUrl, req);
+    } catch (error) {
+      return res.status(400).json({ error: `Post image could not be saved: ${error.message}` });
+    }
+  }
   if (req.body.location !== undefined) data.location = req.body.location || null;
   if (req.body.eventTime !== undefined) {
     data.eventTime = req.body.eventTime ? normalizeRequiredDate(req.body.eventTime) : null;
@@ -2344,12 +2428,18 @@ app.post('/api/events', auth, async (req, res) => {
   if (endTime && !normalizedEndTime) return res.status(400).json({ error: 'End time must be a valid date' });
   const normalizedCapacity = normalizeOptionalNumber(capacity);
   if (normalizedCapacity === undefined) return res.status(400).json({ error: 'Capacity must be a valid number' });
+  let archivedImageUrl = null;
+  try {
+    archivedImageUrl = await archiveRemoteImage(imageUrl, req);
+  } catch (error) {
+    return res.status(400).json({ error: `Event image could not be saved: ${error.message}` });
+  }
   const event = await prisma.event.create({
     data: {
       title,
       description,
       location,
-      imageUrl: imageUrl || null,
+      imageUrl: archivedImageUrl,
       startTime: normalizedStartTime,
       endTime: normalizedEndTime,
       capacity: normalizedCapacity,
@@ -2386,7 +2476,13 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
   }
   if (req.body.description !== undefined) data.description = req.body.description || null;
   if (req.body.location !== undefined) data.location = req.body.location || null;
-  if (req.body.imageUrl !== undefined) data.imageUrl = req.body.imageUrl || null;
+  if (req.body.imageUrl !== undefined) {
+    try {
+      data.imageUrl = await archiveRemoteImage(req.body.imageUrl, req);
+    } catch (error) {
+      return res.status(400).json({ error: `Event image could not be saved: ${error.message}` });
+    }
+  }
   if (req.body.startTime !== undefined) {
     if (!req.body.startTime) return res.status(400).json({ error: 'Start time is required' });
     data.startTime = normalizeRequiredDate(req.body.startTime);

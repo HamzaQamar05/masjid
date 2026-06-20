@@ -12,6 +12,7 @@ import {
   ChevronRight,
   HeartHandshake,
   Home,
+  ImageIcon,
   Library,
   LogOut,
   Mail,
@@ -802,7 +803,12 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
                 <p>{post.type} - {new Date(post.createdAt).toLocaleString()}</p>
               </div>
             </div>
-            <ResilientImage className="post-image" src={post.imageUrl} alt="" />
+            <ResilientImage
+              className="post-image"
+              src={post.imageUrl}
+              alt={post.title ? `${post.title} post image` : 'Post image'}
+              fallback={post.imageUrl ? <div className="post-image-fallback"><ImageIcon size={30} /><span>Image unavailable</span><small>The original source expired. Ask the masjid to re-upload it.</small></div> : null}
+            />
             <strong>{post.title}</strong>
             <p>{post.content}</p>
             {post.location && <div className="meta-line"><MapPin size={16} />{post.location}</div>}

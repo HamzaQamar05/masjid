@@ -4141,6 +4141,51 @@ button.mini-org-avatar {
   background: rgba(255, 255, 255, 0.09);
 }
 
+.post-image-fallback {
+  width: 100%;
+  min-height: 210px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 24px;
+  color: var(--ink-soft);
+  text-align: center;
+  background:
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--brand) 18%, transparent), transparent 48%),
+    var(--surface-muted);
+}
+
+.post-image-fallback span {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.post-image-fallback small {
+  max-width: 270px;
+  line-height: 1.35;
+}
+
+@media (max-width: 880px) {
+  html.standalone-pwa .top-nav {
+    display: none;
+  }
+
+  html.standalone-pwa .app,
+  html.standalone-pwa .app.detail-mode {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  html.standalone-pwa .page-header {
+    padding-top: max(14px, env(safe-area-inset-top));
+  }
+
+  html.standalone-pwa .feed-post .post-image,
+  html.standalone-pwa .feed-post .post-image-fallback {
+    min-height: min(72vw, 340px);
+  }
+}
+
 @media (max-width: 560px) {
   .top-nav {
     height: 58px;
