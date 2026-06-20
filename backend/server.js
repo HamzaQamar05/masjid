@@ -1951,7 +1951,9 @@ app.get('/api/display/:masjidId', async (req, res) => {
   const announcementText = announcementPost
     ? [announcementPost.title, announcementPost.content].filter(Boolean).join(' — ')
     : organization.prayerNotes || `Welcome to ${organization.name}.`;
-  const frontendUrl = (process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const requestOrigin = req.get('origin');
+  const trustedRequestOrigin = configuredOrigins.includes(requestOrigin) ? requestOrigin : '';
+  const frontendUrl = (process.env.APP_URL || trustedRequestOrigin || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
   const postEvents = organization.posts
     .filter((post) => post.eventTime && new Date(post.eventTime) >= new Date())
     .map((post) => ({
