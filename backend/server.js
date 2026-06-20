@@ -234,6 +234,7 @@ function isPrivateAddress(address) {
 async function archiveRemoteImage(value, req) {
   const raw = String(value || '').trim();
   if (!raw) return null;
+  if (/^\/(?:uploads|post-images)\//.test(raw)) return raw;
   let source;
   try {
     source = new URL(raw);
@@ -1003,7 +1004,22 @@ async function unreadCount(userId) {
   const key = `unread:${userId}`;
   const cached = await cacheGet(key);
   if (cached != null) return cached;
-  const count = await prisma.message.count({ where: { receiverId: userId, readAt: null, deletedAt: null } });
+  const [directCount, memberships] = await Promise.all([
+    prisma.message.count({ where: { receiverId: userId, readAt: null, deletedAt: null } }),
+    prisma.groupChatMember.findMany({
+      where: { userId, hidden: false },
+      select: { groupId: true, lastReadAt: true }
+    })
+  ]);
+  const groupCounts = await Promise.all(memberships.map((membership) => prisma.groupMessage.count({
+    where: {
+      groupId: membership.groupId,
+      senderId: { not: userId },
+      deletedAt: null,
+      ...(membership.lastReadAt ? { createdAt: { gt: membership.lastReadAt } } : {})
+    }
+  })));
+  const count = directCount + groupCounts.reduce((sum, value) => sum + value, 0);
   await cacheSet(key, count, 20);
   return count;
 }
@@ -1250,18 +1266,69 @@ function parsePrayerClock(value) {
   return { hour, minute };
 }
 
-async function fetchPrayerTimings({ latitude, longitude, method, dateKey }) {
-  const cacheKey = `${Number(latitude).toFixed(4)}:${Number(longitude).toFixed(4)}:${method || 2}:${dateKey}`;
+async function fetchPrayerTimings({ latitude, longitude, method, dateKey, city }) {
+  const cacheKey = `${Number(latitude).toFixed(4)}:${Number(longitude).toFixed(4)}:${method || 2}:${dateKey}:${city || ''}`;
   const cached = prayerTimeCache.get(cacheKey);
   if (cached && Date.now() - cached.cachedAt < 6 * 60 * 60 * 1000) return cached.timings;
   const date = Math.floor(new Date(`${dateKey}T12:00:00Z`).getTime() / 1000);
   const url = `https://api.aladhan.com/v1/timings/${date}?latitude=${latitude}&longitude=${longitude}&method=${method || 2}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Prayer time API failed with ${response.status}`);
-  const data = await response.json();
-  const timings = data.data?.timings || {};
+  let timings = {};
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+    if (!response.ok) throw new Error(`Aladhan failed with ${response.status}`);
+    const data = await response.json();
+    timings = data.data?.timings || {};
+  } catch (primaryError) {
+    const backupCity = String(city || '').trim() || await nearestPrayerCity(latitude, longitude);
+    if (!backupCity) throw primaryError;
+    timings = await fetchMuslimSalatTimings(backupCity);
+  }
   prayerTimeCache.set(cacheKey, { cachedAt: Date.now(), timings });
   return timings;
+}
+
+async function nearestPrayerCity(latitude, longitude) {
+  const origin = { latitude: Number(latitude), longitude: Number(longitude) };
+  const databaseLocations = await prisma.organization.findMany({
+    where: { city: { not: null }, latitude: { not: null }, longitude: { not: null } },
+    select: { city: true, latitude: true, longitude: true }
+  }).catch(() => []);
+  const candidates = [...databaseLocations, ...fallbackMasjids]
+    .filter((item) => item.city && Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)))
+    .map((item) => ({ ...item, distance: distanceKm(origin, { latitude: Number(item.latitude), longitude: Number(item.longitude) }) }))
+    .sort((left, right) => left.distance - right.distance);
+  return candidates[0]?.distance <= 100 ? candidates[0].city : '';
+}
+
+async function fetchMuslimSalatTimings(city) {
+  const apiKey = process.env.MUSLIM_SALAT_API_KEY || 'API_KEY';
+  const response = await fetch(`https://muslimsalat.com/${encodeURIComponent(city)}/daily.json?key=${encodeURIComponent(apiKey)}`, {
+    signal: AbortSignal.timeout(8_000),
+    headers: { Accept: 'application/json', 'User-Agent': 'Mujtama prayer service/1.0' }
+  });
+  if (!response.ok) throw new Error(`Backup prayer API failed with ${response.status}`);
+  const data = await response.json();
+  const item = data.items?.[0];
+  if (!data.status_valid || !item) throw new Error(data.status_description || 'Backup prayer API returned no timings');
+  return {
+    Fajr: toTwentyFourHour(item.fajr),
+    Sunrise: toTwentyFourHour(item.shurooq),
+    Dhuhr: toTwentyFourHour(item.dhuhr),
+    Asr: toTwentyFourHour(item.asr),
+    Maghrib: toTwentyFourHour(item.maghrib),
+    Isha: toTwentyFourHour(item.isha)
+  };
+}
+
+function toTwentyFourHour(value) {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+  if (!match) return String(value || '').trim();
+  let hour = Number(match[1]);
+  const minute = match[2];
+  const period = match[3]?.toLowerCase();
+  if (period === 'pm' && hour !== 12) hour += 12;
+  if (period === 'am' && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, '0')}:${minute}`;
 }
 
 async function runPrayerNotificationJob() {
@@ -1280,6 +1347,7 @@ async function runPrayerNotificationJob() {
       latitude: true,
       longitude: true,
       timezone: true,
+      city: true,
       prayerMethod: true,
       prayerNotificationPreferences: true,
       notificationPreference: true
@@ -1300,7 +1368,8 @@ async function runPrayerNotificationJob() {
         latitude: user.latitude,
         longitude: user.longitude,
         method: user.prayerMethod,
-        dateKey
+        dateKey,
+        city: user.city
       });
     } catch (error) {
       console.error('Prayer notification timing lookup failed', { userId: user.id, message: error.message });
@@ -3095,6 +3164,8 @@ app.get('/api/groups/:groupId/messages', auth, async (req, res) => {
     where: { id: membership.id },
     data: { lastReadAt: new Date(), hidden: false }
   });
+  await invalidateUnread(req.user.id);
+  await emitUnread(req.user.id);
   res.json({
     messages: page.map((message) => ({
       ...message,
@@ -3127,7 +3198,9 @@ app.post('/api/groups/:groupId/messages', auth, messageLimiter, async (req, res)
   });
   const serialized = { ...message, sender: publicUser(message.sender), groupId: message.groupId, isDeleted: false };
   const members = await prisma.groupChatMember.findMany({ where: { groupId: req.params.groupId }, select: { userId: true } });
+  await Promise.all(members.map(({ userId }) => invalidateUnread(userId)));
   members.forEach(({ userId }) => io.to(userRoom(userId)).emit('group:message', serialized));
+  await Promise.all(members.filter(({ userId }) => userId !== req.user.id).map(({ userId }) => emitUnread(userId)));
   res.status(201).json(serialized);
 });
 
@@ -3238,15 +3311,13 @@ app.get('/api/prayer-times', async (req, res) => {
   const longitude = Number(req.query.lng);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ error: 'lat and lng query parameters are required' });
   const method = req.query.method || 2;
-  const date = req.query.date || Math.floor(Date.now() / 1000);
+  const requestedDate = new Date(Number(req.query.date || Math.floor(Date.now() / 1000)) * 1000);
+  const dateKey = Number.isFinite(requestedDate.getTime()) ? requestedDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
   try {
-    const url = `https://api.aladhan.com/v1/timings/${date}?latitude=${latitude}&longitude=${longitude}&method=${method}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Prayer time API failed');
-    const data = await response.json();
-    res.json(data.data);
+    const timings = await fetchPrayerTimings({ latitude, longitude, method, dateKey, city: req.query.city });
+    res.json({ timings, meta: { latitude, longitude, method, date: dateKey } });
   } catch (err) {
-    console.error(err);
+    console.error('Prayer time providers failed', { latitude, longitude, message: err.message });
     res.status(502).json({ error: 'Could not fetch prayer times right now' });
   }
 });

@@ -854,15 +854,47 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
 }
 
 function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization, notificationState, enablePushNotifications }) {
-  const favorite = favoriteMasjids[0];
+  const [favoriteId, setFavoriteId] = useState('');
+  const [favoriteAdhan, setFavoriteAdhan] = useState({});
+  const favorite = favoriteMasjids.find((item) => item.id === favoriteId) || favoriteMasjids[0];
   const iqamah = favorite?.prayerTimes || {};
+  const savedAdhan = favorite?.iqamahTimes || {};
+
+  useEffect(() => {
+    if (!favorite?.id) {
+      setFavoriteAdhan({});
+      return undefined;
+    }
+    setFavoriteId(favorite.id);
+    let active = true;
+    if (!Number.isFinite(Number(favorite.latitude)) || !Number.isFinite(Number(favorite.longitude))) {
+      setFavoriteAdhan({});
+      return undefined;
+    }
+    api(`/api/prayer-times?lat=${encodeURIComponent(favorite.latitude)}&lng=${encodeURIComponent(favorite.longitude)}&city=${encodeURIComponent(favorite.city || '')}`)
+      .then((data) => {
+        if (active) setFavoriteAdhan(data.timings || {});
+      })
+      .catch(() => {
+        if (active) setFavoriteAdhan({});
+      });
+    return () => {
+      active = false;
+    };
+  }, [favorite?.id, favorite?.latitude, favorite?.longitude]);
+
   return (
     <section className="panel prayer-panel">
       <div className="section-title"><div><p className="eyebrow">{favorite ? 'Favorite masjid' : 'Live API'}</p><h2>{favorite ? favorite.name : 'Prayer times today'}</h2></div><ShieldCheck size={22} /></div>
-      {favorite && <p className="helper-text">Showing this masjid first because prayer notifications are enabled.</p>}
+      {favoriteMasjids.length > 1 && (
+        <div className="favorite-prayer-switcher">
+          {favoriteMasjids.map((masjid) => <button className={favorite?.id === masjid.id ? 'active' : ''} key={masjid.id} onClick={() => setFavoriteId(masjid.id)}>{masjid.name}</button>)}
+        </div>
+      )}
+      {favorite && <p className="helper-text">Adhan is calculated for this masjid. Iqamah comes from its dashboard.</p>}
       <div className="prayer-grid detailed">
         {prayerTimes.map((item) => (
-          <div key={item.name}><span>{item.name}</span><strong>{item.adhan}</strong><em>Iqamah {iqamah[item.name] || item.iqamah || 'Set by masjid'}</em></div>
+          <div key={item.name}><span>{item.name}</span><strong>{favorite ? favoriteAdhan[item.name] || savedAdhan[item.name] || item.adhan : item.adhan}</strong><em>Iqamah {iqamah[item.name] || item.iqamah || 'Set by masjid'}</em></div>
         ))}
       </div>
       {favorite?.prayerNotes && <p className="helper-text">{favorite.prayerNotes}</p>}
@@ -1498,6 +1530,8 @@ function MessagesScreen({
 
   useEffect(() => {
     loadGroups();
+    const timer = setInterval(loadGroups, 10_000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -1837,7 +1871,7 @@ function MasjidPrayerSchedule({ organization }) {
       return undefined;
     }
     setLoading(true);
-    api(`/api/prayer-times?lat=${encodeURIComponent(organization.latitude)}&lng=${encodeURIComponent(organization.longitude)}`)
+    api(`/api/prayer-times?lat=${encodeURIComponent(organization.latitude)}&lng=${encodeURIComponent(organization.longitude)}&city=${encodeURIComponent(organization.city || '')}`)
       .then((data) => {
         if (active) setAdhanTimes(data.timings || {});
       })
@@ -4873,11 +4907,12 @@ function AuthenticatedApp() {
   }
 
   async function loadLocationData(nextLocation) {
-    try {
-      const [masjidData, prayerData] = await Promise.all([
-        api(`/api/location/masjids?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}`),
-        api(`/api/prayer-times?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}&date=${Math.floor(Date.now() / 1000)}`)
-      ]);
+    const [masjidResult, prayerResult] = await Promise.allSettled([
+      api(`/api/location/masjids?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}`),
+      api(`/api/prayer-times?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}&city=${encodeURIComponent(nextLocation.label || '')}&date=${Math.floor(Date.now() / 1000)}`)
+    ]);
+    if (masjidResult.status === 'fulfilled') {
+      const masjidData = masjidResult.value;
       setMasjids((current) => {
         const stateById = new Map(current.map((item) => [String(item.id), {
           isFollowing: item.isFollowing,
@@ -4890,10 +4925,13 @@ function AuthenticatedApp() {
           return previous ? { ...item, ...Object.fromEntries(Object.entries(previous).filter(([, value]) => value !== undefined)) } : item;
         });
       });
-      const timings = prayerData.timings || {};
-      setPrayerTimes(prayers.map((item) => ({ ...item, adhan: (timings[item.name] || item.adhan).slice(0, 5) })));
-    } catch {
+    } else {
       setMasjids(withLocalDistance(seedOrganizationsWithoutPrograms, nextLocation));
+    }
+    if (prayerResult.status === 'fulfilled') {
+      const timings = prayerResult.value.timings || {};
+      setPrayerTimes(prayers.map((item) => ({ ...item, adhan: (timings[item.name] || item.adhan).slice(0, 5) })));
+    } else {
       setPrayerTimes(prayers);
     }
   }

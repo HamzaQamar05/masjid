@@ -54,7 +54,7 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
       onLogin(data.user);
     } catch (err) {
       console.error(err);
-      alert('Cannot reach backend. Check VITE_API_URL and Render CORS.');
+      alert('Cannot reach Mujtama right now. Check your connection and try again.');
     }
   }
 
@@ -70,7 +70,7 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
       setMessage(data.devResetLink ? `${data.message} Dev link: ${data.devResetLink}` : data.message);
     } catch (err) {
       console.error(err);
-      alert('Cannot reach backend. Check VITE_API_URL and Render CORS.');
+      alert('Cannot reach Mujtama right now. Check your connection and try again.');
     }
   }
 

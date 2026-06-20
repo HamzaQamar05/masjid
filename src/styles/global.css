@@ -4644,6 +4644,35 @@ button.mini-org-avatar {
 }
 
 /* Masjid prayer profile schedule */
+.favorite-prayer-switcher {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  scrollbar-width: none;
+}
+
+.favorite-prayer-switcher::-webkit-scrollbar {
+  display: none;
+}
+
+.favorite-prayer-switcher button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: var(--surface-muted);
+  font-weight: 850;
+}
+
+.favorite-prayer-switcher button.active {
+  border-color: var(--brand);
+  color: #fff;
+  background: var(--brand);
+}
+
 .masjid-prayer-schedule,
 .masjid-temporary-prayers {
   display: grid;
