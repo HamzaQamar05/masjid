@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: production-backend
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -22,7 +26,9 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             docker compose build
-            docker compose run --rm --no-deps backend npm run migrate:deploy
+            docker compose run --rm --no-deps \
+              -e PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 \
+              backend npm run migrate:deploy
             docker compose up -d --remove-orphans
             docker compose ps
             for attempt in $(seq 1 30); do
