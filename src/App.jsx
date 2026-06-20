@@ -277,6 +277,32 @@ function initials(name = 'Mujtama') {
   return name.split(' ').filter(Boolean).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
 }
 
+function safeList(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function ResilientImage({ src, fallback = null, onError, ...props }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) return fallback;
+  return (
+    <img
+      {...props}
+      src={src}
+      onError={(event) => {
+        setFailed(true);
+        onError?.(event);
+      }}
+    />
+  );
+}
+
 function profileBannerStyle(item = {}) {
   const image = item.bannerUrl || item.heroImageUrl || item.cover || item.coverImageUrl;
   return image ? { backgroundImage: `url(${image})` } : undefined;
@@ -764,13 +790,15 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
         {posts.map((post) => (
           <article className="mini-row feed-post" key={post.id}>
             <div className="thread-head">
-              <div className="org-logo">{post.organization?.imageUrl ? <img src={post.organization.imageUrl} alt="" /> : initials(post.organization?.name || 'UC')}</div>
+              <div className="org-logo">
+                <ResilientImage src={post.organization?.imageUrl} alt="" fallback={initials(post.organization?.name || 'UC')} />
+              </div>
               <div>
                 <button className="text-action" onClick={() => post.organization?.id && openOrganization(post.organization.id)}>{post.organization?.name || 'Community'}</button>
                 <p>{post.type} - {new Date(post.createdAt).toLocaleString()}</p>
               </div>
             </div>
-            {post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}
+            <ResilientImage className="post-image" src={post.imageUrl} alt="" />
             <strong>{post.title}</strong>
             <p>{post.content}</p>
             {post.location && <div className="meta-line"><MapPin size={16} />{post.location}</div>}
@@ -786,7 +814,9 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
             <div className="post-comments">
               {(post.comments || []).map((comment) => (
                 <div className="comment-row" key={comment.id}>
-                  <div className="tiny-avatar">{comment.author?.avatarUrl ? <img src={comment.author.avatarUrl} alt="" /> : initials(comment.author?.name || 'U')}</div>
+                  <div className="tiny-avatar">
+                    <ResilientImage src={comment.author?.avatarUrl} alt="" fallback={initials(comment.author?.name || 'U')} />
+                  </div>
                   <div className="comment-bubble">
                     <p><strong>{comment.author?.name || 'Community member'}</strong>{comment.content}</p>
                     {canDeleteComment(comment) && <button aria-label="Delete comment" onClick={() => deletePostComment(post, comment)}><X size={13} /></button>}
@@ -861,7 +891,7 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
         {masjids.map((masjid) => (
           <article className="nearby-card" key={masjid.id} role={openOrganization ? 'button' : undefined} tabIndex={openOrganization ? 0 : undefined} onClick={() => openMasjid(masjid)} onKeyDown={(event) => handleCardKey(event, masjid)}>
             <div className="nearby-image">
-              {masjid.imageUrl || masjid.heroImageUrl || masjid.cover ? <img src={masjid.imageUrl || masjid.heroImageUrl || masjid.cover} alt="" /> : <span>{initials(masjid.name)}</span>}
+              <ResilientImage src={masjid.imageUrl || masjid.heroImageUrl || masjid.cover} alt="" fallback={<span>{initials(masjid.name)}</span>} />
             </div>
             <div className="nearby-copy">
               <div className="nearby-title-row">
@@ -2366,7 +2396,7 @@ function ImamDashboard({ user, social, setTab }) {
   );
 }
 
-function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrganizations, myOrganizations = [], createOrganization, onboardOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
+function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrganizations, myOrganizations = [], dashboardOrganizationsState = {}, createOrganization, onboardOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
   const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
@@ -2403,11 +2433,11 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   const peopleSearch = peopleQuery.trim().toLowerCase();
   const teamCandidates = users
     .filter((person) => person.id !== user.id)
-    .filter((person) => !peopleSearch || `${person.name} ${person.email} ${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`.toLowerCase().includes(peopleSearch))
+    .filter((person) => !peopleSearch || `${person.name} ${person.email} ${person.accountType} ${person.city || ''} ${safeList(person.skills).join(' ')}`.toLowerCase().includes(peopleSearch))
     .slice(0, 40);
   const platformUsers = users
     .filter((person) => person.id !== user.id)
-    .filter((person) => !accountQuery || `${person.name} ${person.email} ${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`.toLowerCase().includes(accountQuery));
+    .filter((person) => !accountQuery || `${person.name} ${person.email} ${person.accountType} ${person.city || ''} ${safeList(person.skills).join(' ')}`.toLowerCase().includes(accountQuery));
   const selectedAdminUser = users.find((person) => person.id === selectedAdminUserId) || platformUsers[0];
   const showSection = (section) => activeSection === section
     || (activeSection === 'eventApprovals' && section === 'events')
@@ -3122,7 +3152,9 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
         <section className="feed-column masjid-dashboard-main">
           <section className="panel masjid-hub">
             <div className="masjid-operator-head">
-              <div className="org-logo hub-logo">{selectedOrg?.imageUrl ? <img src={selectedOrg.imageUrl} alt="" /> : initials(selectedOrg?.name || user.name)}</div>
+              <div className="org-logo hub-logo">
+                <ResilientImage src={selectedOrg?.imageUrl} alt="" fallback={initials(selectedOrg?.name || user.name)} />
+              </div>
               <div>
                 <span>Assalamu Alaikum</span>
                 <h2>{selectedOrg?.name || user.name}</h2>
@@ -3136,6 +3168,25 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
               </select>
               <input placeholder="Search posts, volunteers, jobs, imams, followers, events" value={dashboardQuery} onChange={(event) => setDashboardQuery(event.target.value)} />
             </div>
+            {dashboardOrganizationsState.loading && !myOrganizations.length && (
+              <div className="dashboard-status-card" role="status">
+                <strong>Loading your masjid dashboard…</strong>
+                <span>Fetching the profiles and management data connected to this account.</span>
+              </div>
+            )}
+            {dashboardOrganizationsState.error && (
+              <div className="dashboard-status-card error" role="alert">
+                <strong>Dashboard data could not be loaded</strong>
+                <span>{dashboardOrganizationsState.error}</span>
+                <button type="button" className="secondary-button" onClick={() => loadMyOrganizations(user)}>Try again</button>
+              </div>
+            )}
+            {!dashboardOrganizationsState.loading && !dashboardOrganizationsState.error && !myOrganizations.length && (
+              <div className="dashboard-status-card" role="status">
+                <strong>No masjid profile is connected yet</strong>
+                <span>Ask a platform admin to assign this account as the owner or an approved manager.</span>
+              </div>
+            )}
             <div className="operator-snapshot">
               {snapshotItems.map((item) => (
                 <article key={item.label} className={item.tone === 'urgent' ? 'urgent' : ''}>
@@ -4030,6 +4081,7 @@ export default function App() {
   const [prayerPreferences, setPrayerPreferences] = useState({ enabled: false, offsetMinutes: 0, prayers: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true } });
   const [notificationPreferences, setNotificationPreferences] = useState(defaultNotificationPreferences);
   const [whatsappSettings, setWhatsappSettings] = useState({ phone: '', enabled: false, integrationEnabled: false, serviceConfigured: false });
+  const [dashboardOrganizationsState, setDashboardOrganizationsState] = useState({ loading: false, error: '' });
   const eventsLoadedRef = useRef(false);
   const organizationsLoadedRef = useRef(false);
   const myOrganizationsLoadedRef = useRef(false);
@@ -4143,18 +4195,24 @@ export default function App() {
   async function loadMyOrganizations(currentUser = user, options = {}) {
     if (!canManageOrgs(currentUser)) {
       setMyOrganizations([]);
+      setDashboardOrganizationsState({ loading: false, error: '' });
       return;
     }
+    setDashboardOrganizationsState((current) => ({ ...current, loading: true, error: '' }));
     try {
       const loaded = await api('/api/me/organizations');
+      if (!Array.isArray(loaded)) throw new Error('The server returned an unexpected dashboard response.');
       if (options.preserveCurrent && myOrganizationsLoadedRef.current && myOrganizations.length && !loaded.length) {
         console.warn('Dashboard organization refresh returned no masjids; keeping the current dashboard list.');
+        setDashboardOrganizationsState({ loading: false, error: '' });
         return myOrganizations;
       }
       myOrganizationsLoadedRef.current = true;
       setMyOrganizations(loaded);
+      setDashboardOrganizationsState({ loading: false, error: '' });
       return loaded;
     } catch (error) {
+      setDashboardOrganizationsState({ loading: false, error: error?.message || 'Please check your connection and try again.' });
       if (!myOrganizationsLoadedRef.current) {
         myOrganizationsLoadedRef.current = true;
         setMyOrganizations([]);
@@ -4807,7 +4865,7 @@ export default function App() {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
     const index = [
-      ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.accountType} ${person.city || ''} ${(person.skills || []).join(' ')}`, tab: 'network' })),
+      ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.accountType} ${person.city || ''} ${safeList(person.skills).join(' ')}`, tab: 'network' })),
       ...prioritizedPosts.map((post) => ({ id: post.id, kind: 'Post', title: post.title, subtitle: `${post.organization?.name || ''} ${post.type} ${post.content || ''}`, tab: 'home' })),
       ...prioritizedMasjids.map((masjid) => ({ id: masjid.id, kind: 'Masjid', title: masjid.name, subtitle: `${masjid.address || ''} ${masjid.city || ''}`, tab: 'organizations' })),
       ...prioritizedEvents.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' })),
@@ -4835,7 +4893,7 @@ export default function App() {
     messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} />,
     settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} whatsappSettings={whatsappSettings} updateWhatsAppSettings={updateWhatsAppSettings} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} />,
-    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
+    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };
 
   return (
