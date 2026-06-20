@@ -3,7 +3,7 @@ name: Deploy Backend to VPS
 on:
   push:
     branches:
-      - main
+      - merge-updated-safe
 
 concurrency:
   group: production-backend
@@ -24,7 +24,7 @@ jobs:
             set -e
             cd /opt/masjid
             git fetch origin
-            git reset --hard origin/main
+            git reset --hard origin/merge-updated-safe
             docker compose build
             docker compose run --rm --no-deps \
               -e PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 \
