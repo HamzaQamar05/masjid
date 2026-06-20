@@ -289,6 +289,13 @@ function safeList(value) {
   return [];
 }
 
+function dashboardIqamahTimes(organization = {}) {
+  const standard = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha', 'Jumuah'];
+  const current = organization.prayerTimes || {};
+  if (standard.some((name) => current[name] || current[name.toLowerCase()])) return current;
+  return organization.iqamahTimes || organization.iqamah || {};
+}
+
 function ResilientImage({ src, fallback = null, onError, ...props }) {
   const [failed, setFailed] = useState(false);
 
@@ -857,7 +864,7 @@ function PrayerWidget({ prayerTimes, favoriteMasjids = [], openOrganization, not
   const [favoriteId, setFavoriteId] = useState('');
   const [favoriteAdhan, setFavoriteAdhan] = useState({});
   const favorite = favoriteMasjids.find((item) => item.id === favoriteId) || favoriteMasjids[0];
-  const iqamah = favorite?.prayerTimes || {};
+  const iqamah = dashboardIqamahTimes(favorite);
   const savedAdhan = favorite?.iqamahTimes || {};
 
   useEffect(() => {
@@ -1853,7 +1860,7 @@ function BusinessDirectoryScreen() {
 function MasjidPrayerSchedule({ organization }) {
   const [adhanTimes, setAdhanTimes] = useState({});
   const [loading, setLoading] = useState(false);
-  const iqamahTimes = organization.prayerTimes || {};
+  const iqamahTimes = dashboardIqamahTimes(organization);
   const savedApiAdhanTimes = organization.iqamahTimes || {};
   const additionalPrayers = Array.isArray(organization.iqamahTimes?.additionalPrayers) ? organization.iqamahTimes.additionalPrayers : [];
   const jumuahTime = iqamahTimes.Jumuah || iqamahTimes.jumuah;
@@ -4938,7 +4945,7 @@ function AuthenticatedApp() {
 
   function schedulePrayerNotification(org) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    const iqamah = org.prayerTimes || {};
+    const iqamah = dashboardIqamahTimes(org);
     const now = new Date();
     const candidates = prayers.map((prayer) => {
       const time = iqamah[prayer.name] || prayer.iqamah;

@@ -8,7 +8,7 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379
-      FRONTEND_URL: https://masjid-nine-chi.vercel.app
+      FRONTEND_URL: https://ummah-connect-psi.vercel.app
       WHATSAPP_SERVICE_URL: http://whatsapp:8080
     depends_on:
       - redis
