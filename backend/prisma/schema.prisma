@@ -52,6 +52,8 @@ model User {
   messagesSent             Message[]              @relation("SentMessages")
   messagesReceived         Message[]              @relation("ReceivedMessages")
   messageReactions         MessageReaction[]
+  conversationPreferences  ConversationPreference[] @relation("ConversationPreferenceOwner")
+  conversationPeers        ConversationPreference[] @relation("ConversationPreferencePeer")
   connectionsSent          Connection[]           @relation("ConnectionRequester")
   connectionsGot           Connection[]           @relation("ConnectionReceiver")
   organizationFollows      OrganizationFollow[]
@@ -324,6 +326,21 @@ model Message {
 
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, readAt])
+}
+
+model ConversationPreference {
+  id          String   @id @default(cuid())
+  ownerId     String
+  otherUserId String
+  muted       Boolean  @default(false)
+  hidden      Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+
+  owner     User @relation("ConversationPreferenceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  otherUser User @relation("ConversationPreferencePeer", fields: [otherUserId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, otherUserId])
+  @@index([ownerId, hidden, updatedAt])
 }
 
 model OrganizationFollow {

@@ -2658,20 +2658,27 @@ app.put('/api/opportunities/:id/applications/:applicationId', auth, async (req, 
 });
 
 app.get('/api/messages/threads', auth, async (req, res) => {
-  const messages = await prisma.message.findMany({
-    where: { OR: [{ senderId: req.user.id }, { receiverId: req.user.id }] },
-    include: { sender: true, receiver: true },
-    orderBy: { createdAt: 'desc' }
-  });
+  const [messages, preferences] = await Promise.all([
+    prisma.message.findMany({
+      where: { OR: [{ senderId: req.user.id }, { receiverId: req.user.id }] },
+      include: { sender: true, receiver: true },
+      orderBy: { createdAt: 'desc' }
+    }),
+    prisma.conversationPreference.findMany({ where: { ownerId: req.user.id } })
+  ]);
+  const preferenceMap = new Map(preferences.map((preference) => [preference.otherUserId, preference]));
   const threads = new Map();
   messages.forEach((message) => {
     const other = message.senderId === req.user.id ? message.receiver : message.sender;
+    const preference = preferenceMap.get(other.id);
+    if (preference?.hidden) return;
     if (!threads.has(other.id)) {
       threads.set(other.id, {
         user: publicUser(other),
         lastMessage: message.deletedAt ? 'This message was unsent' : message.content,
         lastMessageAt: message.createdAt,
-        unread: message.receiverId === req.user.id && !message.readAt ? 1 : 0
+        unread: message.receiverId === req.user.id && !message.readAt ? 1 : 0,
+        muted: Boolean(preference?.muted)
       });
     } else if (message.receiverId === req.user.id && !message.readAt) {
       const thread = threads.get(other.id);
@@ -2688,6 +2695,11 @@ app.get('/api/messages/:userId', auth, async (req, res) => {
   const filters = [{ OR: [{ senderId: req.user.id, receiverId: otherUserId }, { senderId: otherUserId, receiverId: req.user.id }] }];
   if (before && Number.isFinite(before.getTime())) filters.push({ createdAt: { lt: before } });
   await prisma.message.updateMany({ where: { senderId: otherUserId, receiverId: req.user.id, readAt: null }, data: { readAt: new Date() } });
+  await prisma.conversationPreference.upsert({
+    where: { ownerId_otherUserId: { ownerId: req.user.id, otherUserId } },
+    create: { ownerId: req.user.id, otherUserId, hidden: false },
+    update: { hidden: false }
+  });
   await invalidateUnread(req.user.id);
   const messages = await prisma.message.findMany({
     where: { AND: filters },
@@ -2714,12 +2726,25 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
     data: { senderId: req.user.id, receiverId, content: normalizedContent },
     include: { sender: true, receiver: true, reactions: { include: { user: true } } }
   });
+  await prisma.conversationPreference.updateMany({
+    where: {
+      OR: [
+        { ownerId: req.user.id, otherUserId: receiverId },
+        { ownerId: receiverId, otherUserId: req.user.id }
+      ]
+    },
+    data: { hidden: false }
+  });
   await invalidateUnread(receiverId);
   const serialized = serializeMessage(message);
   io.to(threadRoom(req.user.id, receiverId)).emit('message:new', serialized);
   io.to(userRoom(receiverId)).emit('message:new', serialized);
-  const receiverPreference = await prisma.userNotificationPreference.findUnique({ where: { userId: receiverId } });
-  const messagePush = publicNotificationPreferences(receiverPreference).messages
+  const [receiverPreference, conversationPreference] = await Promise.all([
+    prisma.userNotificationPreference.findUnique({ where: { userId: receiverId } }),
+    prisma.conversationPreference.findUnique({ where: { ownerId_otherUserId: { ownerId: receiverId, otherUserId: req.user.id } } })
+  ]);
+  const messageNotificationsEnabled = publicNotificationPreferences(receiverPreference).messages && !conversationPreference?.muted;
+  const messagePush = messageNotificationsEnabled
     ? await sendPushToUser(receiverId, {
         type: 'MESSAGE',
         title: `New message from ${message.sender.name}`,
@@ -2729,8 +2754,8 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
         messageId: message.id,
         senderId: req.user.id
       })
-    : { sent: 0, skipped: true, reason: 'messages preference disabled' };
-  const messageWhatsapp = publicNotificationPreferences(receiverPreference).messages
+    : { sent: 0, skipped: true, reason: conversationPreference?.muted ? 'conversation muted' : 'messages preference disabled' };
+  const messageWhatsapp = messageNotificationsEnabled
     ? await sendWhatsappToUser(receiverId, {
         type: 'MESSAGE',
         title: `New message from ${message.sender.name}`,
@@ -2739,9 +2764,40 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
         messageId: message.id,
         senderId: req.user.id
       })
-    : { sent: 0, skipped: true, reason: 'messages preference disabled' };
+    : { sent: 0, skipped: true, reason: conversationPreference?.muted ? 'conversation muted' : 'messages preference disabled' };
   await emitUnread(receiverId);
   res.json({ ...serialized, push: messagePush, whatsapp: messageWhatsapp });
+});
+
+app.put('/api/messages/threads/:userId', auth, async (req, res) => {
+  const otherUserId = req.params.userId;
+  if (otherUserId === req.user.id) return res.status(400).json({ error: 'Cannot update a conversation with yourself' });
+  const otherUser = await prisma.user.findUnique({ where: { id: otherUserId }, select: { id: true } });
+  if (!otherUser) return res.status(404).json({ error: 'User not found' });
+  const preference = await prisma.conversationPreference.upsert({
+    where: { ownerId_otherUserId: { ownerId: req.user.id, otherUserId } },
+    create: { ownerId: req.user.id, otherUserId, muted: Boolean(req.body.muted), hidden: false },
+    update: { muted: Boolean(req.body.muted), hidden: false }
+  });
+  res.json({ muted: preference.muted, hidden: preference.hidden });
+});
+
+app.delete('/api/messages/threads/:userId', auth, async (req, res) => {
+  const otherUserId = req.params.userId;
+  await Promise.all([
+    prisma.conversationPreference.upsert({
+      where: { ownerId_otherUserId: { ownerId: req.user.id, otherUserId } },
+      create: { ownerId: req.user.id, otherUserId, hidden: true },
+      update: { hidden: true }
+    }),
+    prisma.message.updateMany({
+      where: { senderId: otherUserId, receiverId: req.user.id, readAt: null },
+      data: { readAt: new Date() }
+    })
+  ]);
+  await invalidateUnread(req.user.id);
+  await emitUnread(req.user.id);
+  res.json({ hidden: true });
 });
 
 app.delete('/api/messages/:messageId', auth, async (req, res) => {

@@ -18,14 +18,18 @@ import {
   MapPin,
   Menu,
   MessageCircle,
+  MoreHorizontal,
   Navigation,
   Plus,
   Search,
   Send,
   Settings,
   ShieldCheck,
+  Trash2,
   UserCheck,
   Users,
+  Volume2,
+  VolumeX,
   X
 } from 'lucide-react';
 import AuthScreen from './components/AuthScreen.jsx';
@@ -1315,7 +1319,109 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
   );
 }
 
+function formatConversationTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function messageDayLabel(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString([], { month: 'long', day: 'numeric', year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
+
+function SwipeThreadRow({ person, thread, isOnline, active, onOpen, onMute, onDelete }) {
+  const [offset, setOffset] = useState(0);
+  const offsetRef = useRef(0);
+  const start = useRef(null);
+  const actionWidth = 144;
+
+  function touchStart(event) {
+    event.stopPropagation();
+    const touch = event.touches[0];
+    start.current = { x: touch.clientX, y: touch.clientY, offset };
+  }
+
+  function touchMove(event) {
+    event.stopPropagation();
+    if (!start.current) return;
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - start.current.x;
+    const deltaY = touch.clientY - start.current.y;
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
+    const nextOffset = Math.max(-actionWidth, Math.min(0, start.current.offset + deltaX));
+    offsetRef.current = nextOffset;
+    setOffset(nextOffset);
+  }
+
+  function touchEnd(event) {
+    event?.stopPropagation();
+    const nextOffset = offsetRef.current < -54 ? -actionWidth : 0;
+    offsetRef.current = nextOffset;
+    setOffset(nextOffset);
+    start.current = null;
+  }
+
+  return (
+    <div className="dm-swipe-row">
+      <div className="dm-row-actions" aria-hidden={offset === 0}>
+        <button type="button" className="dm-mute-action" onClick={() => { offsetRef.current = 0; setOffset(0); onMute(); }} aria-label={thread?.muted ? `Unmute ${person.name}` : `Mute ${person.name}`}>
+          {thread?.muted ? <Volume2 size={21} /> : <VolumeX size={21} />}
+          <span>{thread?.muted ? 'Unmute' : 'Mute'}</span>
+        </button>
+        <button type="button" className="dm-delete-action" onClick={() => { offsetRef.current = 0; setOffset(0); onDelete(); }} aria-label={`Delete chat with ${person.name}`}>
+          <Trash2 size={21} />
+          <span>Delete</span>
+        </button>
+      </div>
+      <button
+        type="button"
+        className={`dm-thread-row${active ? ' active' : ''}`}
+        style={{ transform: `translate3d(${offset}px, 0, 0)` }}
+        onTouchStart={touchStart}
+        onTouchMove={touchMove}
+        onTouchEnd={touchEnd}
+        onTouchCancel={touchEnd}
+        onClick={() => {
+          if (offsetRef.current) {
+            offsetRef.current = 0;
+            setOffset(0);
+          } else {
+            onOpen();
+          }
+        }}
+      >
+        <span className="org-logo dm-avatar">
+          <ResilientImage src={person.avatarUrl} alt="" fallback={initials(person.name)} />
+          {isOnline && <i className="dm-online-dot" />}
+        </span>
+        <span className="dm-thread-copy">
+          <strong>{person.name}{thread?.muted && <VolumeX size={13} />}</strong>
+          <span>{thread?.lastMessage || person.city || 'Start a conversation'}</span>
+        </span>
+        <span className="dm-thread-meta">
+          <time>{formatConversationTime(thread?.lastMessageAt)}</time>
+          {thread?.unread > 0 && <em>{thread.unread > 99 ? '99+' : thread.unread}</em>}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function MessagesScreen({
+  currentUser,
   users,
   selectedUser,
   setSelectedUser,
@@ -1340,11 +1446,12 @@ function MessagesScreen({
   const messageEndRef = useRef(null);
   const [conversationQuery, setConversationQuery] = useState('');
   const [conversationFilter, setConversationFilter] = useState('all');
+  const conversationTouch = useRef(null);
   const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
-  const unreadThreads = threads.filter((thread) => thread.unread > 0).length;
-  const onlineContacts = users.filter((person) => onlineUserIds.includes(person.id)).length;
-  const quickReplies = ['Assalamu alaikum', 'JazakAllah khair', 'I can help with this', 'Can you share more details?'];
-  const visibleUsers = users
+  const conversationUsers = conversationQuery.trim()
+    ? users
+    : threads.map((thread) => thread.user);
+  const visibleUsers = conversationUsers
     .filter((person) => {
       const thread = threads.find((item) => item.user.id === person.id);
       const matchesQuery = `${person.name} ${person.accountType} ${person.city || ''} ${thread?.lastMessage || ''}`.toLowerCase().includes(conversationQuery.trim().toLowerCase());
@@ -1390,6 +1497,18 @@ function MessagesScreen({
     onThreadOpen?.(person);
     await loadMessages(person.id);
   }
+
+  async function toggleThreadMute(person, thread) {
+    await api(`/api/messages/threads/${person.id}`, { method: 'PUT', body: JSON.stringify({ muted: !thread?.muted }) });
+    await loadThreads();
+  }
+
+  async function deleteThread(person) {
+    if (!confirm(`Remove your conversation with ${person.name} from the inbox? New messages will make it reappear.`)) return;
+    await api(`/api/messages/threads/${person.id}`, { method: 'DELETE' });
+    if (selectedUser?.id === person.id) onBackToInbox?.();
+    await loadThreads();
+  }
   async function sendMessage() {
     if (!selectedUser || !draft.trim()) return;
     const content = draft.trim();
@@ -1425,15 +1544,63 @@ function MessagesScreen({
     }
   }
 
+  function onConversationTouchStart(event) {
+    event.stopPropagation();
+    const touch = event.touches[0];
+    conversationTouch.current = { x: touch.clientX, y: touch.clientY };
+  }
+
+  function onConversationTouchMove(event) {
+    event.stopPropagation();
+  }
+
+  function onConversationTouchEnd(event) {
+    event.stopPropagation();
+    if (!conversationTouch.current) return;
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - conversationTouch.current.x;
+    const deltaY = touch.clientY - conversationTouch.current.y;
+    if (conversationTouch.current.x < 36 && deltaX > 72 && Math.abs(deltaY) < 70) onBackToInbox?.();
+    conversationTouch.current = null;
+  }
+
+  const renderedMessages = messages.map((message, index) => {
+    const previous = messages[index - 1];
+    const showDay = !previous || messageDayLabel(previous.createdAt) !== messageDayLabel(message.createdAt);
+    const incoming = message.senderId === selectedUser?.id;
+    return (
+      <React.Fragment key={message.id}>
+        {showDay && <div className="message-day"><span>{messageDayLabel(message.createdAt)}</span></div>}
+        <div className={incoming ? 'chat-line received' : 'chat-line sent'}>
+          {incoming && (
+            <span className="chat-avatar">
+              <ResilientImage src={selectedUser?.avatarUrl} alt="" fallback={initials(selectedUser?.name || 'U')} />
+            </span>
+          )}
+          <div className={incoming ? 'chat-bubble received' : 'chat-bubble sent'}>
+            <p>{message.content}</p>
+            <small>{message.createdAt ? new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</small>
+            {!!message.reactions?.length && <div className="reaction-row">{message.reactions.map((reaction) => <span key={reaction.id}>{reaction.emoji}</span>)}</div>}
+            {!message.isDeleted && (
+              <div className="message-actions">
+                {['heart', 'smile', 'dua', 'like'].map((emoji) => <button key={emoji} onClick={() => reactToMessage(message.id, emoji)}>{emoji}</button>)}
+                {incoming ? null : <button onClick={() => unsendMessage(message.id)}>Unsend</button>}
+              </div>
+            )}
+          </div>
+        </div>
+      </React.Fragment>
+    );
+  });
+
   return (
-    <Page title={detailMode && selectedUser ? selectedUser.name : 'Messages'} subtitle="Instagram-style inbox for users, masjids, imams, and community organizations.">
-      {detailMode && <BackHeader title={selectedUser?.name || 'Messages'} subtitle={selectedUser ? displayRoleLabel(selectedUser.accountType) : 'Conversation'} onBack={onBackToInbox} />}
+    <Page>
       <div className={detailMode ? 'messaging-layout thread-route' : 'messaging-layout'}>
         <section className="panel inbox-list">
-          <div className="dm-inbox-summary">
-            <strong>{threads.length}</strong><span>Conversations</span>
-            <strong>{unreadThreads}</strong><span>Unread</span>
-            <strong>{onlineContacts}</strong><span>Online</span>
+          <div className="dm-mobile-titlebar">
+            <span className="org-logo dm-self-avatar"><ResilientImage src={currentUser?.avatarUrl} alt="" fallback={initials(currentUser?.name || 'M')} /></span>
+            <strong>Chats</strong>
+            <button type="button" aria-label="Message options"><MoreHorizontal size={22} /></button>
           </div>
           <label className="dm-search"><Search size={16} /><input placeholder="Search conversations" value={conversationQuery} onChange={(event) => setConversationQuery(event.target.value)} /></label>
           <div className="dm-filter-row">
@@ -1446,46 +1613,28 @@ function MessagesScreen({
           {visibleUsers.map((person) => {
             const thread = threads.find((item) => item.user.id === person.id);
             const isOnline = onlineUserIds.includes(person.id);
-            return (
-              <button key={person.id} className={selectedUser?.id === person.id ? 'active' : ''} onClick={() => chooseUser(person)}>
-                <span className="org-logo dm-avatar">{person.avatarUrl ? <img src={person.avatarUrl} alt="" /> : initials(person.name)}</span>
-                <strong>{person.name}</strong>
-                <span>{isOnline ? 'Online' : displayRoleLabel(person.accountType)}</span>
-                <p>{thread?.lastMessage || person.city || 'No messages yet'}</p>
-                <small>{thread?.lastMessageAt ? new Date(thread.lastMessageAt).toLocaleString() : displayRoleLabel(person.accountType)}</small>
-                {thread?.unread > 0 && <em>{thread.unread}</em>}
-              </button>
-            );
+            return <SwipeThreadRow key={person.id} person={person} thread={thread} isOnline={isOnline} active={selectedUser?.id === person.id} onOpen={() => chooseUser(person)} onMute={() => toggleThreadMute(person, thread)} onDelete={() => deleteThread(person)} />;
           })}
-          {!visibleUsers.length && <p className="helper-text">No conversations match this search.</p>}
+          {!visibleUsers.length && <div className="dm-empty-inbox"><MessageCircle size={30} /><strong>No conversations yet</strong><span>Search for someone above to start a private chat.</span></div>}
         </section>
-        <section className="panel message-thread">
+        <section className="panel message-thread" onTouchStart={onConversationTouchStart} onTouchMove={onConversationTouchMove} onTouchEnd={onConversationTouchEnd}>
           {selectedUser ? (
             <>
-              <div className="thread-head"><div className="org-logo">{selectedUser.avatarUrl ? <img src={selectedUser.avatarUrl} alt="" /> : initials(selectedUser.name)}</div><div><h2>{selectedUser.name}</h2><p>{onlineUserIds.includes(selectedUser.id) ? 'Online now' : selectedThread?.lastMessageAt ? `Last message ${new Date(selectedThread.lastMessageAt).toLocaleString()}` : displayRoleLabel(selectedUser.accountType)}</p></div></div>
+              <div className="dm-conversation-header">
+                <button type="button" className="dm-back-button" onClick={onBackToInbox} aria-label="Back to chats"><ChevronLeft size={26} /></button>
+                <span className="org-logo"><ResilientImage src={selectedUser.avatarUrl} alt="" fallback={initials(selectedUser.name)} />{onlineUserIds.includes(selectedUser.id) && <i className="dm-online-dot" />}</span>
+                <div><strong>{selectedUser.name}</strong><span>{onlineUserIds.includes(selectedUser.id) ? 'Active now' : displayRoleLabel(selectedUser.accountType)}</span></div>
+                <button type="button" className="dm-header-action" onClick={() => toggleThreadMute(selectedUser, selectedThread)} aria-label={selectedThread?.muted ? 'Unmute chat' : 'Mute chat'}>{selectedThread?.muted ? <Volume2 size={21} /> : <VolumeX size={21} />}</button>
+              </div>
               <div className="message-list" onScroll={onMessageScroll}>
                 {messagePage.hasMore && <button className="load-more" onClick={() => loadOlderMessages(selectedUser.id)}>{messagePage.loadingOlder ? 'Loading...' : 'Load older messages'}</button>}
-                {messages.map((message) => (
-                  <div className={message.senderId === selectedUser.id ? 'chat-bubble received' : 'chat-bubble sent'} key={message.id}>
-                    <p>{message.content}</p>
-                    <small>{message.createdAt ? new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</small>
-                    {!!message.reactions?.length && <div className="reaction-row">{message.reactions.map((reaction) => <span key={reaction.id}>{reaction.emoji}</span>)}</div>}
-                    {!message.isDeleted && (
-                      <div className="message-actions">
-                        {['heart', 'smile', 'dua', 'like'].map((emoji) => <button key={emoji} onClick={() => reactToMessage(message.id, emoji)}>{emoji}</button>)}
-                        {message.senderId !== selectedUser.id ? null : <button onClick={() => unsendMessage(message.id)}>Unsend</button>}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {renderedMessages}
                 {typingUserIds.includes(selectedUser.id) && <div className="typing-indicator">{selectedUser.name} is typing...</div>}
                 <div ref={messageEndRef} />
               </div>
-              <div className="quick-reply-row">
-                {quickReplies.map((reply) => <button key={reply} onClick={() => setDraft((current) => current ? `${current} ${reply}` : reply)}>{reply}</button>)}
-              </div>
               <div className="message-composer">
-                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKeyDown} placeholder={`Message ${selectedUser.name}`} />
+                <button type="button" className="dm-add-button" aria-label="Add attachment"><Plus size={24} /></button>
+                <textarea rows="1" value={draft} onChange={(event) => setDraft(event.target.value)} onInput={(event) => { event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onComposerKeyDown} placeholder={`Message ${selectedUser.name}`} />
                 <button className="primary-button" onClick={sendMessage} disabled={sendingMessage || !draft.trim()} aria-label="Send message"><Send size={18} /></button>
               </div>
               {messageError && <p className="message-error">{messageError}</p>}
@@ -4890,7 +5039,7 @@ export default function App() {
     jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
-    messages: <MessagesScreen users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
+    messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} />,
     settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} whatsappSettings={whatsappSettings} updateWhatsAppSettings={updateWhatsAppSettings} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
