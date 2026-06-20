@@ -8,9 +8,9 @@ self.addEventListener('message', (event) => {
   const { title, body, url } = event.data;
   event.waitUntil(self.registration.showNotification(title, {
     body,
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
-    tag: event.data.tag || 'ummah-connect',
+    icon: '/icons/mujtama-icon-192.png',
+    badge: '/icons/mujtama-icon-192.png',
+    tag: event.data.tag || 'mujtama',
     data: { url: url || '/' }
   }));
 });
@@ -20,14 +20,14 @@ self.addEventListener('push', (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch {
-    payload = { title: 'Ummah Connect', body: event.data?.text?.() || '' };
+    payload = { title: 'Mujtama', body: event.data?.text?.() || '' };
   }
-  const title = payload.title || 'Ummah Connect';
+  const title = payload.title || 'Mujtama';
   event.waitUntil(self.registration.showNotification(title, {
     body: payload.body || '',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
-    tag: payload.tag || payload.messageId || payload.type || 'ummah-connect',
+    icon: '/icons/mujtama-icon-192.png',
+    badge: '/icons/mujtama-icon-192.png',
+    tag: payload.tag || payload.messageId || payload.type || 'mujtama',
     data: {
       url: payload.url || '/'
     }

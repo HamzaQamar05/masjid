@@ -76,8 +76,8 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
 
   return (
     <main className="screen auth-screen">
-      <div className="brand-mark">UC</div>
-      <h1>{mode === 'login' ? 'Welcome back' : mode === 'register' ? 'Join Ummah Connect' : mode === 'forgot' ? 'Reset password' : 'Choose new password'}</h1>
+      <div className="brand-mark"><img src="/icons/mujtama-icon-192.png" alt="" /></div>
+      <h1>{mode === 'login' ? 'Welcome back' : mode === 'register' ? 'Join Mujtama' : mode === 'forgot' ? 'Reset password' : 'Choose new password'}</h1>
       <p className="muted">A community app for masjids, MSAs, imams, students, volunteers, and Muslim professionals.</p>
 
       <form onSubmit={submit} className="auth-form">

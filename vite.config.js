@@ -11,8 +11,8 @@ export default defineConfig({
       filename: 'sw.js',
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Ummah Connect',
-        short_name: 'Ummah',
+        name: 'Mujtama',
+        short_name: 'Mujtama',
         description: 'A mobile-first community app for masjids, MSAs, imams, students, volunteers, and Muslim professionals.',
         display: 'standalone',
         start_url: '/',
@@ -21,13 +21,13 @@ export default defineConfig({
         theme_color: '#0f766e',
         icons: [
           {
-            src: '/icons/icon-192.png',
+            src: '/icons/mujtama-icon-192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable'
           },
           {
-            src: '/icons/icon-512.png',
+            src: '/icons/mujtama-icon-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'

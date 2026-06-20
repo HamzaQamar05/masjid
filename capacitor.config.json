@@ -1,6 +1,6 @@
 {
-  "appId": "com.ummahconnect.app",
-  "appName": "Ummah Connect",
+  "appId": "com.mujtama.app",
+  "appName": "Mujtama",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

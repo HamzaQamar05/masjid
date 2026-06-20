@@ -273,7 +273,7 @@ function canUseJobs(user) {
   return calculateAge(user?.dateOfBirth) >= 18;
 }
 
-function initials(name = 'UC') {
+function initials(name = 'Mujtama') {
   return name.split(' ').filter(Boolean).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
 }
 
@@ -547,7 +547,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
     <div className={detailMode ? 'app detail-mode' : 'app'} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       <header className="top-nav">
         <button className="icon-button mobile-menu" onClick={() => setNavOpen(true)} aria-label="Open menu"><Menu size={22} /></button>
-        <button className="brand" onClick={() => navigate('home')} aria-label="Ummah Connect home"><span>UC</span><strong>Ummah Connect</strong></button>
+        <button className="brand" onClick={() => navigate('home')} aria-label="Mujtama home"><span className="brand-logo"><img src="/icons/mujtama-icon-192.png" alt="" /></span><strong>Mujtama</strong></button>
         <div className="search-wrap">
           <label className="global-search">
             <Search size={18} />
@@ -689,7 +689,7 @@ function FirstRunSetupCard({ favoriteMasjids = [], locationStatus, notificationS
   return (
     <section className="panel first-run-card">
       <div className="section-title">
-        <div><p className="eyebrow">First-run setup</p><h2>Get Ummah Connect ready</h2></div>
+        <div><p className="eyebrow">First-run setup</p><h2>Get Mujtama ready</h2></div>
         <CheckCircle2 size={22} />
       </div>
       <div className="setup-step-list">
@@ -734,7 +734,7 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
   const [commentForms, setCommentForms] = useState({});
   const [commentingPostId, setCommentingPostId] = useState('');
   function sharePost(post) {
-    const text = `${post.title} - ${post.organization?.name || 'Ummah Connect'}`;
+    const text = `${post.title} - ${post.organization?.name || 'Mujtama'}`;
     if (navigator.share) {
       navigator.share({ title: post.title, text }).catch(() => {});
     } else {
@@ -4708,8 +4708,8 @@ export default function App() {
       if (isIncoming && !viewingThread && !notifiedMessageIds.has(message.id)) {
         notifiedMessageIds.add(message.id);
         showAppNotification({
-          title: `New message from ${message.sender?.name || 'Ummah Connect'}`,
-          body: message.content?.slice(0, 120) || 'Open Ummah Connect to view this message.',
+          title: `New message from ${message.sender?.name || 'Mujtama'}`,
+          body: message.content?.slice(0, 120) || 'Open Mujtama to view this message.',
           tag: `message:${message.id}`,
           url: `/messages/${message.senderId}`
         }).catch(console.error);
