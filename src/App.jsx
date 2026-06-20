@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import MasjidTvDisplay from './components/MasjidTvDisplay.jsx';
 import {
   BarChart3,
   Bell,
