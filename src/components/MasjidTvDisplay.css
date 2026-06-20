@@ -1,1 +1,271 @@
+/* frontend/src/pages/MasjidTvDisplay.css */
 
+.tv-display {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(20, 184, 166, 0.22), transparent 32%),
+    linear-gradient(135deg, #061917, #07110f 48%, #0b201d);
+  color: white;
+  padding: 28px;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
+}
+
+.loading {
+  display: grid;
+  place-items: center;
+}
+
+.tv-header {
+  height: 110px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.brand img {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.1);
+  padding: 10px;
+}
+
+.brand h1 {
+  font-size: 48px;
+  line-height: 1;
+  margin: 0;
+}
+
+.brand p {
+  margin: 8px 0 0;
+  font-size: 22px;
+  color: rgba(255,255,255,0.68);
+}
+
+.clock {
+  text-align: right;
+}
+
+.clock strong {
+  display: block;
+  font-size: 58px;
+  line-height: 1;
+}
+
+.clock span {
+  display: block;
+  margin-top: 8px;
+  font-size: 22px;
+  color: rgba(255,255,255,0.72);
+}
+
+.tv-grid {
+  height: calc(100vh - 190px);
+  display: grid;
+  grid-template-columns: 1.1fr 2.4fr 0.9fr;
+  gap: 24px;
+}
+
+.prayer-panel,
+.event-stage,
+.qr-panel {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.075);
+  backdrop-filter: blur(18px);
+  border-radius: 34px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.25);
+}
+
+.prayer-panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.next-prayer {
+  padding: 22px;
+  border-radius: 26px;
+  background: rgba(20, 184, 166, 0.20);
+}
+
+.next-prayer span,
+.jummah-card span,
+.qr-panel span,
+.event-footer span,
+.ticker span {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 15px;
+  color: rgba(255,255,255,0.62);
+}
+
+.next-prayer strong {
+  display: block;
+  font-size: 48px;
+  margin-top: 6px;
+}
+
+.prayer-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.table-head,
+.prayer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  align-items: center;
+}
+
+.table-head {
+  color: rgba(255,255,255,0.5);
+  font-size: 16px;
+  padding: 0 12px;
+}
+
+.prayer-row {
+  padding: 15px 16px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.08);
+  font-size: 26px;
+}
+
+.prayer-row.active {
+  background: white;
+  color: #06201c;
+}
+
+.jummah-card {
+  margin-top: auto;
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(255,255,255,0.1);
+}
+
+.jummah-card strong {
+  display: block;
+  font-size: 32px;
+  margin-top: 8px;
+}
+
+.event-stage {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.event-image-wrap {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+}
+
+.event-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 26px;
+  background: rgba(0,0,0,0.24);
+}
+
+.event-footer {
+  min-height: 118px;
+  padding: 18px 26px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  background: linear-gradient(180deg, transparent, rgba(0,0,0,0.32));
+}
+
+.event-footer h2 {
+  margin: 6px 0 4px;
+  font-size: 38px;
+}
+
+.event-footer p {
+  margin: 0;
+  font-size: 22px;
+  color: rgba(255,255,255,0.68);
+}
+
+.event-count {
+  font-size: 24px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+}
+
+.no-events {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.no-events h2 {
+  font-size: 52px;
+}
+
+.no-events p {
+  font-size: 24px;
+  color: rgba(255,255,255,0.7);
+}
+
+.qr-panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-content: space-between;
+}
+
+.qr-panel h2 {
+  font-size: 28px;
+  margin: 8px 0;
+}
+
+.qr {
+  width: 230px;
+  height: 230px;
+  padding: 14px;
+  border-radius: 26px;
+  background: white;
+}
+
+.qr-panel p {
+  font-size: 20px;
+  color: rgba(255,255,255,0.72);
+}
+
+.ticker {
+  height: 56px;
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 24px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.09);
+  font-size: 22px;
+}
+
+.ticker p {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
