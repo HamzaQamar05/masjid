@@ -1,0 +1,497 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  USER
+  MASJID
+  MSA
+  IMAM
+  STUDENT_OF_KNOWLEDGE
+  BUSINESS
+  ADMIN
+}
+
+model User {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  dateOfBirth  DateTime?
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
+  accountType  AccountType @default(USER)
+  bio          String?
+  city         String?
+  location     String?
+  education    String?
+  experience   String?
+  skills       String[]    @default([])
+  interests    String[]    @default([])
+  languages    String[]    @default([])
+  hobbies      String[]    @default([])
+  availability String?
+  avatarUrl    String?
+  bannerUrl    String?
+  latitude     Float?
+  longitude    Float?
+  timezone     String?
+  prayerMethod String?
+  prayerNotificationPreferences Json?
+  whatsappPhone String?
+  createdAt    DateTime    @default(now())
+
+  eventsCreated            Event[]                @relation("EventCreator")
+  postsCreated             Post[]                 @relation("PostCreator")
+  registrations            EventRegistration[]
+  messagesSent             Message[]              @relation("SentMessages")
+  messagesReceived         Message[]              @relation("ReceivedMessages")
+  messageReactions         MessageReaction[]
+  conversationPreferences  ConversationPreference[] @relation("ConversationPreferenceOwner")
+  conversationPeers        ConversationPreference[] @relation("ConversationPreferencePeer")
+  connectionsSent          Connection[]           @relation("ConnectionRequester")
+  connectionsGot           Connection[]           @relation("ConnectionReceiver")
+  organizationFollows      OrganizationFollow[]
+  favoriteMasjids          FavoriteMasjid[]
+  organizationAffiliations OrganizationPerson[]
+  volunteerApplications    VolunteerApplication[] @relation("VolunteerApplicant")
+  volunteerApprovals       VolunteerApplication[] @relation("VolunteerApprover")
+  savedPosts               SavedPost[]
+  eventSubscriptions       EventSubscription[]
+  notificationPreference   UserNotificationPreference?
+  warningsReceived         UserWarning[]          @relation("WarningRecipient")
+  warningsIssued           UserWarning[]          @relation("WarningIssuer")
+  likedPosts               PostLike[]
+  postComments             PostComment[]
+  pushSubscriptions        PushSubscription[]
+  notifications            Notification[]
+  groupChatsCreated        GroupChat[]             @relation("GroupChatCreator")
+  groupMemberships         GroupChatMember[]
+  groupMessages            GroupMessage[]
+}
+
+model UserWarning {
+  id        String   @id @default(cuid())
+  userId    String
+  issuerId  String
+  reason    String
+  note      String?
+  createdAt DateTime @default(now())
+
+  user   User @relation("WarningRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  issuer User @relation("WarningIssuer", fields: [issuerId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([issuerId, createdAt])
+}
+
+model UserNotificationPreference {
+  id                              String   @id @default(cuid())
+  userId                          String   @unique
+  masjidAnnouncements             Boolean  @default(true)
+  eventsFromFollowedMasjids       Boolean  @default(true)
+  programsFromFollowedMasjids     Boolean  @default(true)
+  jobOpportunities                Boolean  @default(true)
+  volunteerOpportunities          Boolean  @default(true)
+  prayerTimeReminders             Boolean  @default(false)
+  jamaatTimeUpdates               Boolean  @default(true)
+  eventReminders                  Boolean  @default(true)
+  applicationStatusUpdates        Boolean  @default(true)
+  messages                        Boolean  @default(true)
+  whatsappNotifications           Boolean  @default(false)
+  nearbyMasjids                   Boolean  @default(false)
+  nearbyEvents                    Boolean  @default(false)
+  nearbyVolunteerOpportunities    Boolean  @default(false)
+  jobOpportunitySource            String   @default("followed")
+  volunteerOpportunitySource      String   @default("followed")
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  keys      Json
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Notification {
+  id             String    @id @default(cuid())
+  userId         String
+  type           String
+  title          String
+  body           String?
+  url            String?
+  organizationId String?
+  postId         String?
+  eventId        String?
+  messageId      String?
+  metadata       Json?
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Organization {
+  id            String               @id @default(cuid())
+  name          String
+  type          String
+  city          String?
+  address       String?
+  website       String?
+  email         String?
+  phone         String?
+  description   String?
+  facilities    String?
+  imageUrl      String?
+  heroImageUrl  String?
+  latitude      Float?
+  longitude     Float?
+  donationUrl   String?
+  instagramUrl  String?
+  facebookUrl   String?
+  prayerTimes   Json?
+  iqamahTimes   Json?
+  prayerNotes   String?
+  classes       Json?
+  claimed       Boolean              @default(false)
+  verified      Boolean              @default(false)
+  ownerId       String?
+  createdAt     DateTime             @default(now())
+  events        Event[]
+  posts         Post[]
+  opportunities Opportunity[]
+  followers     OrganizationFollow[]
+  favoritedBy    FavoriteMasjid[]
+  people        OrganizationPerson[]
+
+  @@index([type, city])
+}
+
+model Post {
+  id             String    @id @default(cuid())
+  organizationId String
+  authorId       String
+  title          String
+  content        String
+  type           String    @default("ANNOUNCEMENT")
+  imageUrl       String?
+  location       String?
+  eventTime      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User         @relation("PostCreator", fields: [authorId], references: [id], onDelete: Cascade)
+  savedBy      SavedPost[]
+  likedBy      PostLike[]
+  comments     PostComment[]
+
+  @@index([organizationId, createdAt])
+  @@index([type, createdAt])
+}
+
+model SavedPost {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@index([authorId, createdAt])
+}
+
+model Event {
+  id               String    @id @default(cuid())
+  title            String
+  description      String?
+  location         String?
+  imageUrl         String?
+  startTime        DateTime
+  endTime          DateTime?
+  capacity         Int?
+  requiresApproval Boolean   @default(false)
+  createdById      String
+  organizationId   String?
+  createdAt        DateTime  @default(now())
+
+  createdBy     User                @relation("EventCreator", fields: [createdById], references: [id])
+  organization  Organization?       @relation(fields: [organizationId], references: [id])
+  registrations EventRegistration[]
+  subscriptions EventSubscription[]
+}
+
+model EventSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  eventId   String
+  notify    Boolean  @default(true)
+  saved     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([userId, saved])
+  @@index([eventId, notify])
+}
+
+model Connection {
+  id          String   @id @default(cuid())
+  requesterId String
+  receiverId  String
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requester User @relation("ConnectionRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("ConnectionReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId])
+}
+
+model EventRegistration {
+  id        String   @id @default(cuid())
+  userId    String
+  eventId   String
+  status    String   @default("APPROVED")
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@unique([userId, eventId])
+}
+
+model Message {
+  id         String    @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String
+  readAt     DateTime?
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  sender    User              @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver  User              @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  reactions MessageReaction[]
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, readAt])
+}
+
+model ConversationPreference {
+  id          String   @id @default(cuid())
+  ownerId     String
+  otherUserId String
+  muted       Boolean  @default(false)
+  hidden      Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+
+  owner     User @relation("ConversationPreferenceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  otherUser User @relation("ConversationPreferencePeer", fields: [otherUserId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, otherUserId])
+  @@index([ownerId, hidden, updatedAt])
+}
+
+model OrganizationFollow {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  notifyPrayers  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId, notifyPrayers])
+}
+
+model FavoriteMasjid {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId, createdAt])
+}
+
+model OrganizationPerson {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  roleLabel      String   @default("Team member")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model Opportunity {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  description    String?
+  type           String
+  location       String?
+  skills         String[] @default([])
+  hours          Float?
+  requirements   String?
+  workType       String?
+  deadline       DateTime?
+  applicationQuestions Json?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  applications VolunteerApplication[]
+
+  @@index([organizationId, type, isActive])
+}
+
+model VolunteerApplication {
+  id            String    @id @default(cuid())
+  opportunityId String
+  applicantId   String
+  status        String    @default("PENDING")
+  applicantName String?
+  applicantEmail String?
+  note          String?
+  contactPhone  String?
+  resumeUrl     String?
+  answers       Json?
+  approvedHours Float     @default(0)
+  checkedInAt   DateTime?
+  checkedOutAt  DateTime?
+  approvedById  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  applicant   User        @relation("VolunteerApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  approvedBy  User?       @relation("VolunteerApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([opportunityId, applicantId])
+  @@index([applicantId, status])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}
+
+model GroupChat {
+  id          String            @id @default(cuid())
+  name        String
+  avatarUrl   String?
+  createdById String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  createdBy User              @relation("GroupChatCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members   GroupChatMember[]
+  messages  GroupMessage[]
+
+  @@index([updatedAt])
+}
+
+model GroupChatMember {
+  id         String    @id @default(cuid())
+  groupId    String
+  userId     String
+  role       String    @default("MEMBER")
+  muted      Boolean   @default(false)
+  hidden     Boolean   @default(false)
+  lastReadAt DateTime?
+  joinedAt   DateTime  @default(now())
+
+  group GroupChat @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId, hidden, joinedAt])
+}
+
+model GroupMessage {
+  id        String    @id @default(cuid())
+  groupId   String
+  senderId  String
+  content   String
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  group  GroupChat @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, createdAt])
+  @@index([senderId, createdAt])
+}

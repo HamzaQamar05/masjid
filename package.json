@@ -1,0 +1,32 @@
+{
+  "name": "mujtama",
+  "type": "module",
+  "version": "1.0.0",
+  "dependencies": {
+    "@capacitor/core": "^8.4.0",
+    "@vercel/speed-insights": "^2.0.0",
+    "esbuild": "^0.28.1",
+    "lucide-react": "^0.263.1",
+    "qrcode.react": "^4.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.17.0",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "vite": "7.3.5",
+    "vite-plugin-pwa": "^1.3.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "mobile:build": "vite build && cap sync",
+    "mobile:open:ios": "cap open ios",
+    "mobile:open:android": "cap open android",
+    "check:frontend": "vite build",
+    "prepare:mobile": "vite build && cap sync"
+  }
+}

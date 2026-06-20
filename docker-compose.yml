@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      FRONTEND_URL: https://ummah-connect-psi.vercel.app
+      WHATSAPP_SERVICE_URL: http://whatsapp:8080
+    depends_on:
+      - redis
+      - whatsapp
+    ports:
+      - "5000:5000"
+    volumes:
+      - media-uploads:/app/uploads
+
+  whatsapp:
+    build:
+      context: ./whatsapp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    ports:
+      - "127.0.0.1:8088:8080"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:
+  media-uploads:
