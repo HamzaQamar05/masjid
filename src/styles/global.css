@@ -4239,6 +4239,7 @@ button.mini-org-avatar {
   min-height: 100vh;
   overflow: hidden;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: clamp(16px, 2vh, 28px);
   padding: clamp(22px, 3vw, 52px);
@@ -4275,6 +4276,13 @@ button.mini-org-avatar {
 .tv-display-header {
   justify-content: space-between;
   gap: 30px;
+}
+
+.tv-display-header,
+.tv-display-grid,
+.tv-display-footer {
+  width: 100%;
+  min-width: 0;
 }
 
 .tv-display-masjid {
