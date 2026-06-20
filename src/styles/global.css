@@ -4186,6 +4186,455 @@ button.mini-org-avatar {
   }
 }
 
+/* Installed mobile PWA menu affordance */
+.standalone-menu-trigger {
+  display: none;
+}
+
+@media (max-width: 880px) {
+  html.standalone-pwa .standalone-menu-trigger {
+    position: fixed;
+    z-index: 48;
+    top: max(10px, env(safe-area-inset-top));
+    left: max(10px, env(safe-area-inset-left));
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 52px;
+    height: 46px;
+    padding: 5px 10px 5px 5px;
+    border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+    border-radius: 999px;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    box-shadow: 0 10px 30px rgba(8, 20, 18, 0.18);
+    backdrop-filter: blur(16px);
+  }
+
+  html.standalone-pwa .standalone-menu-trigger span {
+    width: 35px;
+    height: 35px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    background: var(--brand);
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  html.standalone-pwa .app,
+  html.standalone-pwa .app.detail-mode {
+    padding-top: calc(max(10px, env(safe-area-inset-top)) + 55px);
+  }
+}
+
+/* Public masjid television display */
+.tv-display {
+  --tv-display-ink: #f7fbfa;
+  --tv-display-muted: #b8cbc6;
+  --tv-display-accent: #40d7bd;
+  --tv-display-gold: #e8bd68;
+  width: 100vw;
+  min-height: 100vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(16px, 2vh, 28px);
+  padding: clamp(22px, 3vw, 52px);
+  color: var(--tv-display-ink);
+  background:
+    radial-gradient(circle at 82% 8%, rgba(64, 215, 189, 0.18), transparent 30%),
+    radial-gradient(circle at 12% 90%, rgba(232, 189, 104, 0.12), transparent 32%),
+    linear-gradient(145deg, #071713, #0b2420 48%, #06110f);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.tv-display,
+.tv-display * {
+  box-sizing: border-box;
+}
+
+.tv-display-header,
+.tv-display-footer,
+.tv-display-grid,
+.tv-display-masjid,
+.tv-display-clock,
+.tv-display-section-title,
+.tv-display-prayer-head,
+.tv-display-prayer-row,
+.tv-display-jummah,
+.tv-display-jummah > div,
+.tv-display-event-copy > div,
+.tv-display-announcement,
+.tv-display-qr {
+  display: flex;
+  align-items: center;
+}
+
+.tv-display-header {
+  justify-content: space-between;
+  gap: 30px;
+}
+
+.tv-display-masjid {
+  gap: clamp(16px, 2vw, 28px);
+  min-width: 0;
+}
+
+.tv-display-logo {
+  width: clamp(68px, 6vw, 108px);
+  height: clamp(68px, 6vw, 108px);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 24%;
+  color: var(--tv-display-accent);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.2);
+}
+
+.tv-display-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tv-display-masjid p,
+.tv-display-event-copy p {
+  margin: 0 0 5px;
+  color: var(--tv-display-accent);
+  font-size: clamp(13px, 1.1vw, 20px);
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.tv-display-masjid h1 {
+  max-width: 58vw;
+  margin: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: clamp(30px, 4vw, 70px);
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tv-display-clock {
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+
+.tv-display-clock strong {
+  font-size: clamp(38px, 5.3vw, 88px);
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+
+.tv-display-clock span {
+  margin-top: 9px;
+  color: var(--tv-display-muted);
+  font-size: clamp(14px, 1.25vw, 22px);
+  font-weight: 700;
+}
+
+.tv-display-grid {
+  min-height: 0;
+  align-items: stretch;
+  gap: clamp(18px, 2vw, 32px);
+}
+
+.tv-display-prayer-panel,
+.tv-display-event-panel {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: clamp(20px, 2vw, 34px);
+  background: rgba(255, 255, 255, 0.065);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+}
+
+.tv-display-prayer-panel {
+  width: 43%;
+  padding: clamp(20px, 2vw, 36px);
+}
+
+.tv-display-section-title {
+  gap: 11px;
+  margin-bottom: clamp(14px, 2vh, 26px);
+  color: var(--tv-display-accent);
+  font-size: clamp(17px, 1.5vw, 27px);
+  font-weight: 900;
+}
+
+.tv-display-prayer-head,
+.tv-display-prayer-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  align-items: center;
+}
+
+.tv-display-prayer-head {
+  padding: 0 12px 10px;
+  color: var(--tv-display-muted);
+  font-size: clamp(11px, 0.85vw, 15px);
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.tv-display-prayer-head span:not(:first-child),
+.tv-display-prayer-row span,
+.tv-display-prayer-row em {
+  text-align: center;
+}
+
+.tv-display-prayer-list {
+  display: grid;
+  gap: clamp(7px, 1vh, 13px);
+}
+
+.tv-display-prayer-row {
+  min-height: clamp(50px, 6vh, 78px);
+  padding: 7px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.tv-display-prayer-row strong {
+  font-size: clamp(18px, 1.65vw, 30px);
+}
+
+.tv-display-prayer-row span,
+.tv-display-prayer-row em {
+  font-size: clamp(17px, 1.55vw, 28px);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.tv-display-prayer-row em {
+  color: var(--tv-display-gold);
+}
+
+.tv-display-jummah {
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: clamp(12px, 1.7vh, 24px);
+  padding: clamp(14px, 1.4vw, 22px);
+  border: 1px solid rgba(232, 189, 104, 0.28);
+  border-radius: 16px;
+  background: rgba(232, 189, 104, 0.1);
+}
+
+.tv-display-jummah > div {
+  gap: 9px;
+}
+
+.tv-display-jummah > div:last-child {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.tv-display-jummah strong,
+.tv-display-jummah span {
+  font-size: clamp(17px, 1.55vw, 27px);
+}
+
+.tv-display-jummah span {
+  color: var(--tv-display-gold);
+  font-weight: 900;
+}
+
+.tv-display-event-panel {
+  position: relative;
+  flex: 1;
+  background: #102b27;
+}
+
+.tv-display-event-image,
+.tv-display-event-placeholder,
+.tv-display-event-shade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tv-display-event-image {
+  object-fit: cover;
+}
+
+.tv-display-event-placeholder {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 16px;
+  color: var(--tv-display-muted);
+  background: radial-gradient(circle, rgba(64, 215, 189, 0.14), transparent 62%);
+  font-size: clamp(20px, 2vw, 36px);
+  font-weight: 900;
+}
+
+.tv-display-event-shade {
+  background: linear-gradient(180deg, rgba(2, 10, 8, 0.02) 20%, rgba(2, 10, 8, 0.9) 88%);
+}
+
+.tv-display-event-copy {
+  position: absolute;
+  z-index: 2;
+  right: clamp(22px, 3vw, 48px);
+  bottom: clamp(24px, 4vh, 56px);
+  left: clamp(22px, 3vw, 48px);
+}
+
+.tv-display-event-copy h2 {
+  max-width: 92%;
+  margin: 0 0 14px;
+  font-size: clamp(30px, 4vw, 70px);
+  line-height: 1.02;
+}
+
+.tv-display-event-copy > div {
+  gap: 9px;
+  margin-top: 7px;
+  color: #e4efec;
+  font-size: clamp(15px, 1.35vw, 24px);
+  font-weight: 750;
+}
+
+.tv-display-slide-dots {
+  position: absolute;
+  z-index: 3;
+  top: 25px;
+  right: 28px;
+  display: flex;
+  gap: 8px;
+}
+
+.tv-display-slide-dots span {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.tv-display-slide-dots span.active {
+  width: 32px;
+  border-radius: 999px;
+  background: var(--tv-display-accent);
+}
+
+.tv-display-footer {
+  gap: clamp(18px, 2vw, 32px);
+}
+
+.tv-display-announcement {
+  min-width: 0;
+  flex: 1;
+  gap: 13px;
+  padding: clamp(14px, 1.3vw, 22px) clamp(18px, 1.8vw, 30px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.tv-display-announcement > svg {
+  flex: 0 0 auto;
+  color: var(--tv-display-gold);
+}
+
+.tv-display-announcement > strong {
+  flex: 0 0 auto;
+  color: var(--tv-display-gold);
+  font-size: clamp(15px, 1.2vw, 21px);
+  text-transform: uppercase;
+}
+
+.tv-display-ticker {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tv-display-ticker span {
+  display: inline-block;
+  padding-left: 100%;
+  font-size: clamp(17px, 1.45vw, 26px);
+  font-weight: 750;
+  animation: tv-display-ticker-scroll 28s linear infinite;
+}
+
+.tv-display-qr {
+  flex: 0 0 auto;
+  gap: 14px;
+}
+
+.tv-display-qr svg {
+  padding: 5px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.tv-display-qr strong,
+.tv-display-qr span {
+  display: block;
+}
+
+.tv-display-qr strong {
+  font-size: clamp(17px, 1.4vw, 25px);
+}
+
+.tv-display-qr span {
+  margin-top: 3px;
+  color: var(--tv-display-muted);
+  font-size: clamp(13px, 1vw, 18px);
+}
+
+.tv-display-sync-status {
+  position: fixed;
+  right: 14px;
+  bottom: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+}
+
+@keyframes tv-display-ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@media (max-aspect-ratio: 4 / 3) {
+  .tv-display {
+    min-height: 100dvh;
+    overflow: auto;
+  }
+
+  .tv-display-grid {
+    flex-direction: column;
+  }
+
+  .tv-display-prayer-panel {
+    width: 100%;
+  }
+
+  .tv-display-event-panel {
+    min-height: 52vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-display-ticker span {
+    padding-left: 0;
+    animation: none;
+  }
+}
+
 @media (max-width: 560px) {
   .top-nav {
     height: 58px;

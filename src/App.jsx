@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import MasjidTvDisplay from './components/MasjidTvDisplay.jsx';
 import {
   BarChart3,
   Bell,
@@ -35,6 +34,7 @@ import {
   X
 } from 'lucide-react';
 import AuthScreen from './components/AuthScreen.jsx';
+import MasjidTvDisplay from './components/MasjidTvDisplay.jsx';
 import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganizations } from './data/seedData.js';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -609,6 +609,10 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         </div>
         
       </header>
+      <button className="standalone-menu-trigger" onClick={() => setNavOpen(true)} aria-label="Open profile and menu">
+        <span>{initials(user.name)}</span>
+        <Menu size={20} />
+      </button>
       {navOpen && <button className="drawer-scrim" aria-label="Close menu" onClick={() => setNavOpen(false)} />}
       <div className={navOpen ? 'mobile-drawer open' : 'mobile-drawer'}>
         <div className="drawer-head"><strong>Menu</strong><button className="icon-button" onClick={() => setNavOpen(false)}><X size={20} /></button></div>
@@ -4198,7 +4202,7 @@ function TagRow({ tags = [] }) {
   return <div className="tag-row">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div>;
 }
 
-export default function App() {
+function AuthenticatedApp() {
   const locationRoute = useLocation();
   const navigate = useNavigate();
   const tab = tabForPath(locationRoute.pathname);
@@ -5113,4 +5117,12 @@ export default function App() {
       <div className="app-glow" />
     </>
   );
+}
+
+export default function App() {
+  const displayMatch = window.location.pathname.match(/^\/display\/([^/]+)\/?$/);
+  if (displayMatch) {
+    return <MasjidTvDisplay masjidId={decodeURIComponent(displayMatch[1])} apiBase={API} />;
+  }
+  return <AuthenticatedApp />;
 }

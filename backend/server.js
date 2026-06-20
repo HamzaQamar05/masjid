@@ -1915,6 +1915,80 @@ app.get('/api/organizations', async (req, res) => {
   res.json(organizations.map((org) => publicOrganization(org, viewerId)));
 });
 
+app.get('/api/display/:masjidId', async (req, res) => {
+  const organization = await prisma.organization.findUnique({
+    where: { id: req.params.masjidId },
+    include: {
+      events: {
+        where: { startTime: { gte: new Date() } },
+        orderBy: { startTime: 'asc' },
+        take: 8
+      },
+      posts: {
+        orderBy: { createdAt: 'desc' },
+        take: 12
+      }
+    }
+  });
+  if (!organization) return res.status(404).json({ error: 'Masjid display not found' });
+
+  const prayerNames = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+  const prayerTime = (source, name) => source?.[name] || source?.[name.toLowerCase()] || '';
+  const prayerSchedule = organization.iqamahTimes || {};
+  const congregationSchedule = organization.prayerTimes || {};
+  const additionalPrayers = [
+    ...(Array.isArray(prayerSchedule.additionalPrayers) ? prayerSchedule.additionalPrayers : []),
+    ...(Array.isArray(congregationSchedule.additionalPrayers) ? congregationSchedule.additionalPrayers : [])
+  ];
+  const jummahTimes = [
+    prayerTime(congregationSchedule, 'Jumuah'),
+    prayerTime(prayerSchedule, 'Jumuah'),
+    ...additionalPrayers
+      .filter((item) => /jum|friday/i.test(item?.name || ''))
+      .flatMap((item) => [item.jamatTime, item.iqamahTime, item.time])
+  ].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
+  const announcementPost = organization.posts.find((post) => ['ANNOUNCEMENT', 'REMINDER'].includes(post.type)) || organization.posts[0];
+  const announcementText = announcementPost
+    ? [announcementPost.title, announcementPost.content].filter(Boolean).join(' — ')
+    : organization.prayerNotes || `Welcome to ${organization.name}.`;
+  const frontendUrl = (process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const postEvents = organization.posts
+    .filter((post) => post.eventTime && new Date(post.eventTime) >= new Date())
+    .map((post) => ({
+      id: `post-${post.id}`,
+      imageUrl: post.imageUrl,
+      title: post.title,
+      description: post.content,
+      location: post.location,
+      startTime: post.eventTime
+    }));
+  const events = [
+    ...organization.events.map((event) => ({
+      id: event.id,
+      imageUrl: event.imageUrl,
+      title: event.title,
+      description: event.description,
+      location: event.location,
+      startTime: event.startTime
+    })),
+    ...postEvents
+  ].sort((a, b) => new Date(a.startTime) - new Date(b.startTime)).slice(0, 8);
+
+  res.json({
+    masjidName: organization.name,
+    logoUrl: organization.imageUrl || organization.heroImageUrl || null,
+    appUrl: `${frontendUrl}/masjids/${encodeURIComponent(organization.id)}`,
+    announcement: announcementText.length > 360 ? `${announcementText.slice(0, 357).trim()}…` : announcementText,
+    prayers: prayerNames.map((name) => ({
+      name,
+      adhan: prayerTime(prayerSchedule, name) || '--:--',
+      iqamah: prayerTime(congregationSchedule, name) || prayerTime(prayerSchedule, name) || '--:--'
+    })),
+    jummahTimes: jummahTimes.length ? jummahTimes : ['Time to be announced'],
+    events
+  });
+});
+
 app.post('/api/organizations', auth, async (req, res) => {
   if (req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Only platform admins can create masjid or MSA profiles' });
   const { name, type, city, address, website, email, phone, description, facilities, latitude, longitude, imageUrl, heroImageUrl, donationUrl, instagramUrl, facebookUrl, prayerTimes, iqamahTimes, prayerNotes, classes, ownerEmail } = req.body;
