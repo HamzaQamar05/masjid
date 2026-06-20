@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { KeyRound, Mail } from 'lucide-react';
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_BASE as API, persistAuth } from '../lib/authStorage.js';
 const requiredInterests = ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile'];
 const optionalInterests = ['Events', 'Library', 'Volunteer', 'Jobs', 'Business'];
 
@@ -47,10 +46,7 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
       });
       const data = await res.json();
       if (!res.ok) return alert(data.error || 'Something went wrong');
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      sessionStorage.removeItem('token');
-      sessionStorage.removeItem('user');
+      persistAuth(data.user, data.token);
       onLogin(data.user);
     } catch (err) {
       console.error(err);

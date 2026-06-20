@@ -8315,3 +8315,57 @@ select:focus {
     border-color: rgba(255, 255, 255, 0.075);
   }
 }
+
+.readiness-panel {
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--border));
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, transparent), transparent 55%),
+    var(--surface);
+}
+
+.readiness-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.readiness-list button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-bg);
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+}
+
+.readiness-list button span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 15%, transparent);
+  font-weight: 900;
+}
+
+.readiness-list button.done {
+  border-color: color-mix(in srgb, var(--brand) 34%, var(--border));
+}
+
+.readiness-list button.done span {
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  color: var(--brand);
+}
+
+.readiness-list button small {
+  color: var(--muted);
+  font-weight: 800;
+}

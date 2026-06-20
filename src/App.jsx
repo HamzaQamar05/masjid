@@ -36,15 +36,19 @@ import {
 import AuthScreen from './components/AuthScreen.jsx';
 import MasjidTvDisplay from './components/MasjidTvDisplay.jsx';
 import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganizations } from './data/seedData.js';
+import { API_BASE as API, clearAuth, persistAuth, storedUser, token } from './lib/authStorage.js';
+import { api } from './lib/apiClient.js';
+import { coreInterestLabels, optionalInterestLabels, canPost, canManageOrgs, isOrganizationAccount, isImamAccount, isUserAccount, userPreferenceLabels, hasPreference, canUseJobs, displayRoleLabel } from './lib/account.js';
+import { initials, safeList, listToText, textToList, normalizeList, escapeHtml } from './lib/text.js';
+import { toDateInput } from './lib/date.js';
+import { distanceText, withLocalDistance } from './lib/geo.js';
+import { buildPrayerEditForm, cleanPrayerRows, dashboardIqamahTimes, directionsUrl, emptyAdditionalPrayer, emptyTemporaryPrayer, masjidAnnouncementTypes, standardPrayerKeys } from './lib/masjid.js';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const EVENT_AUTO_REFRESH_MS = 15000;
 const notificationTimers = new Map();
 const notifiedMessageIds = new Set();
 const seedOrganizationsWithoutPrograms = seedOrganizations.map((org) => ({ ...org, classes: [], programs: [] }));
 
-const coreInterestLabels = ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile'];
-const optionalInterestLabels = ['Events', 'Library', 'Volunteer', 'Jobs', 'Business'];
 const defaultNotificationPreferences = {
   masjidAnnouncements: true,
   eventsFromFollowedMasjids: true,
@@ -103,20 +107,6 @@ const notificationToggleGroups = [
     ]
   }
 ];
-const interestByNavKey = {
-  home: 'Home',
-  prayer: 'Prayer',
-  messages: 'Messages',
-  organizations: 'Masjids',
-  network: 'Network',
-  profile: 'Profile',
-  events: 'Events',
-  library: 'Library',
-  volunteers: 'Volunteer',
-  jobs: 'Jobs',
-  businesses: 'Business'
-};
-
 const navItems = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'prayer', label: 'Prayer', icon: ShieldCheck },
@@ -185,43 +175,6 @@ function routeId(pathname, prefix) {
   if (!pathname.startsWith(prefix)) return '';
   return decodeURIComponent(pathname.slice(prefix.length).split('/')[0] || '');
 }
-function token() {
-  const sessionToken = sessionStorage.getItem('token');
-  if (sessionToken) return sessionToken;
-  const legacyToken = localStorage.getItem('token');
-  if (legacyToken) {
-    sessionStorage.setItem('token', legacyToken);
-    localStorage.removeItem('token');
-  }
-  return legacyToken;
-}
-
-function storedUser() {
-  const sessionUser = sessionStorage.getItem('user');
-  const legacyUser = !sessionUser ? localStorage.getItem('user') : null;
-  const saved = sessionUser || legacyUser;
-  if (!saved) return null;
-  try {
-    const parsed = JSON.parse(saved);
-    if (legacyUser) {
-      sessionStorage.setItem('user', legacyUser);
-      localStorage.removeItem('user');
-    }
-    return parsed;
-  } catch {
-    localStorage.removeItem('user');
-    sessionStorage.removeItem('user');
-    return null;
-  }
-}
-
-function persistAuth(nextUser, nextToken = token()) {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
-  if (nextToken) sessionStorage.setItem('token', nextToken);
-  if (nextUser) sessionStorage.setItem('user', JSON.stringify(nextUser));
-}
-
 function isStandalonePwa() {
   return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
@@ -231,69 +184,6 @@ function urlBase64ToUint8Array(base64String) {
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
-}
-
-function canPost(user) {
-  return ['MASJID', 'MSA', 'ADMIN'].includes(user?.accountType);
-}
-
-function canManageOrgs(user) {
-  return ['MASJID', 'MSA', 'ADMIN'].includes(user?.accountType);
-}
-
-function isOrganizationAccount(user) {
-  return ['MASJID', 'MSA'].includes(user?.accountType);
-}
-
-function isImamAccount(user) {
-  return ['IMAM', 'STUDENT_OF_KNOWLEDGE'].includes(user?.accountType);
-}
-
-function isUserAccount(user) {
-  return user?.accountType === 'USER';
-}
-
-function userPreferenceLabels(user) {
-  const saved = Array.isArray(user?.interests) ? user.interests : [];
-  const known = saved.filter((item) => [...coreInterestLabels, ...optionalInterestLabels].includes(item));
-  return new Set([...coreInterestLabels, ...(known.length ? known : optionalInterestLabels)]);
-}
-
-function hasPreference(user, navKey) {
-  const label = interestByNavKey[navKey];
-  return !label || userPreferenceLabels(user).has(label);
-}
-
-function calculateAge(dateOfBirth) {
-  if (!dateOfBirth) return null;
-  const birthDate = new Date(dateOfBirth);
-  if (!Number.isFinite(birthDate.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDelta = today.getMonth() - birthDate.getMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age -= 1;
-  return age;
-}
-
-function canUseJobs(user) {
-  return calculateAge(user?.dateOfBirth) >= 18;
-}
-
-function initials(name = 'Mujtama') {
-  return name.split(' ').filter(Boolean).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
-}
-
-function safeList(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
-  return [];
-}
-
-function dashboardIqamahTimes(organization = {}) {
-  const standard = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha', 'Jumuah'];
-  const current = organization.prayerTimes || {};
-  if (standard.some((name) => current[name] || current[name.toLowerCase()])) return current;
-  return organization.iqamahTimes || organization.iqamah || {};
 }
 
 function ResilientImage({ src, fallback = null, onError, ...props }) {
@@ -319,143 +209,6 @@ function ResilientImage({ src, fallback = null, onError, ...props }) {
 function profileBannerStyle(item = {}) {
   const image = item.bannerUrl || item.heroImageUrl || item.cover || item.coverImageUrl;
   return image ? { backgroundImage: `url(${image})` } : undefined;
-}
-
-function displayRoleLabel(accountType = 'USER') {
-  const labels = {
-    USER: 'Community member',
-    MASJID: 'Masjid organization',
-    MSA: 'Student organization',
-    IMAM: 'Imam / scholar',
-    STUDENT_OF_KNOWLEDGE: 'Student of knowledge',
-    BUSINESS: 'Business',
-    ADMIN: 'Platform admin'
-  };
-  return labels[accountType] || accountType;
-}
-
-function listToText(value) {
-  return Array.isArray(value) ? value.join(', ') : value || '';
-}
-
-function toDateInput(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : '';
-}
-
-function textToList(value) {
-  return value.split(',').map((item) => item.trim()).filter(Boolean);
-}
-
-const standardPrayerKeys = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha', 'Jumuah'];
-const masjidAnnouncementTypes = [
-  { value: 'GENERAL', label: 'General announcement', postType: 'ANNOUNCEMENT' },
-  { value: 'EVENT_UPDATE', label: 'Event update', postType: 'EVENT' },
-  { value: 'CLASS_REMINDER', label: 'Class reminder', postType: 'CLASS' },
-  { value: 'JUMUAH_UPDATE', label: 'Jumuah update', postType: 'REMINDER' },
-  { value: 'FUNDRAISER_NOTICE', label: 'Fundraiser notice', postType: 'FUNDRAISER' },
-  { value: 'RAMADAN_EID_NOTICE', label: 'Ramadan/Eid notice', postType: 'ANNOUNCEMENT' },
-  { value: 'CANCELLATION_NOTICE', label: 'Cancellation notice', postType: 'REMINDER' },
-  { value: 'VOLUNTEER_REQUEST', label: 'Volunteer request', postType: 'VOLUNTEER' }
-];
-const emptyAdditionalPrayer = { name: '', time: '', jamatTime: '', notes: '' };
-const emptyTemporaryPrayer = { name: '', time: '', jamatTime: '', startsAt: '', endsAt: '', notes: '' };
-
-function cleanPrayerRows(rows = [], temporary = false) {
-  if (!Array.isArray(rows)) return [];
-  return rows
-    .map((row) => ({
-      id: row.id || `${temporary ? 'temp' : 'custom'}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      name: (row.name || '').trim(),
-      time: (row.time || '').trim(),
-      jamatTime: (row.jamatTime || row.iqamahTime || '').trim(),
-      notes: (row.notes || '').trim(),
-      ...(temporary ? { startsAt: row.startsAt || '', endsAt: row.endsAt || '' } : {})
-    }))
-    .filter((row) => row.name || row.time || row.jamatTime || row.notes || row.startsAt || row.endsAt);
-}
-
-function buildPrayerEditForm(org = {}) {
-  const apiPrayer = org.iqamahTimes || {};
-  const jamat = org.prayerTimes || {};
-  return {
-    Fajr: apiPrayer.Fajr || apiPrayer.fajr || '',
-    FajrJamat: jamat.Fajr || jamat.fajr || '',
-    Dhuhr: apiPrayer.Dhuhr || apiPrayer.dhuhr || '',
-    DhuhrJamat: jamat.Dhuhr || jamat.dhuhr || '',
-    Asr: apiPrayer.Asr || apiPrayer.asr || '',
-    AsrJamat: jamat.Asr || jamat.asr || '',
-    Maghrib: apiPrayer.Maghrib || apiPrayer.maghrib || '',
-    MaghribJamat: jamat.Maghrib || jamat.maghrib || '',
-    Isha: apiPrayer.Isha || apiPrayer.isha || '',
-    IshaJamat: jamat.Isha || jamat.isha || '',
-    Jumuah: apiPrayer.Jumuah || apiPrayer.jumuah || '',
-    JumuahJamat: jamat.Jumuah || jamat.jumuah || '',
-    prayerNotes: org.prayerNotes || apiPrayer.notes || '',
-    additionalPrayers: cleanPrayerRows(apiPrayer.additionalPrayers || []),
-    temporaryPrayers: cleanPrayerRows(apiPrayer.temporaryPrayers || [], true)
-  };
-}
-
-function normalizeList(value) {
-  if (Array.isArray(value)) return value;
-  if (!value) return [];
-  return String(value).split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
-}
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
-}
-
-function directionsUrl(item) {
-  const query = item.latitude && item.longitude ? `${item.latitude},${item.longitude}` : encodeURIComponent(item.address || item.location || item.name);
-  return `https://www.google.com/maps/search/?api=1&query=${query}`;
-}
-
-async function api(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-  const savedToken = token();
-  if (savedToken) headers.Authorization = `Bearer ${savedToken}`;
-  const res = await fetch(`${API}${path}`, { ...options, headers });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const error = new Error(data.error || 'Request failed');
-    error.status = res.status;
-    throw error;
-  }
-  return data;
-}
-
-function distanceText(item) {
-  if (item.distanceKm == null) return 'Distance unavailable';
-  return `${item.distanceKm.toFixed ? item.distanceKm.toFixed(1) : item.distanceKm} km away`;
-}
-
-function distanceKmBetween(origin, item) {
-  if (!origin?.latitude || !origin?.longitude || !item?.latitude || !item?.longitude) return null;
-  const toRad = (degrees) => (degrees * Math.PI) / 180;
-  const earthRadiusKm = 6371;
-  const dLat = toRad(Number(item.latitude) - Number(origin.latitude));
-  const dLng = toRad(Number(item.longitude) - Number(origin.longitude));
-  const lat1 = toRad(Number(origin.latitude));
-  const lat2 = toRad(Number(item.latitude));
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  const distanceKm = earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(2)) : null;
-}
-
-function withLocalDistance(items = [], origin) {
-  return [...items].map((item) => {
-    const distanceKm = item.distanceKm ?? distanceKmBetween(origin, item);
-    if (distanceKm == null) return item;
-    return {
-      ...item,
-      distanceKm,
-      walkingMinutes: item.walkingMinutes ?? Math.max(3, Math.round((distanceKm / 5) * 60)),
-      drivingMinutes: item.drivingMinutes ?? Math.max(2, Math.round((distanceKm / 35) * 60))
-    };
-  }).sort((a, b) => (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY));
 }
 
 async function showPrayerNotification(title, body, tag) {
@@ -2547,7 +2300,7 @@ function InfoBlock({ title, value }) {
   return <div className="info-block"><strong>{title}</strong><p>{value || 'Not added yet.'}</p></div>;
 }
 
-function SettingsScreen({ user, social = {}, notificationPreferences, updateNotificationPreferences, whatsappSettings, updateWhatsAppSettings, onSave, onFavorite, onUnfollow, openOrganization, openEvent, logout }) {
+function SettingsScreen({ user, social = {}, notificationPreferences, updateNotificationPreferences, whatsappSettings, updateWhatsAppSettings, onSave, onFavorite, onUnfollow, openOrganization, openEvent, logout, theme = 'dark', setTheme }) {
   const selected = userPreferenceLabels(user);
   const [form, setForm] = useState(() => ({
     dateOfBirth: toDateInput(user.dateOfBirth),
@@ -2689,6 +2442,15 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
         </div>
       </section>
 
+      <section className="panel settings-panel mobile-settings">
+        <div className="section-title"><div><p className="eyebrow">Every account</p><h2>Appearance</h2></div><Settings size={20} /></div>
+        <p className="helper-text">Choose the interface theme for this browser.</p>
+        <div className="segmented-control settings-theme-toggle">
+          <button type="button" className={theme === 'light' ? 'active' : ''} onClick={() => setTheme?.('light')}>Light</button>
+          <button type="button" className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme?.('dark')}>Dark</button>
+        </div>
+      </section>
+
       <form className="panel settings-panel mobile-settings" onSubmit={saveWhatsAppSettings}>
         <div className="section-title"><div><p className="eyebrow">Every account</p><h2>WhatsApp notifications</h2></div><MessageCircle size={20} /></div>
         <p className="helper-text">Users, masjids, imams, MSAs, businesses, and admins can save their own number here. Your number is private and is used only for notification types you enable.</p>
@@ -2795,6 +2557,37 @@ function ImamDashboard({ user, social, setTab }) {
         </aside>
       </div>
     </Page>
+  );
+}
+
+
+function MasjidReadinessPanel({ organization, metrics = {}, openSection, openUserView }) {
+  const checks = [
+    { key: 'profile', label: 'Logo and public profile', done: Boolean(organization?.imageUrl && organization?.description), action: () => openSection?.('prayerTimes'), actionLabel: 'Edit profile' },
+    { key: 'contact', label: 'Address and contact links', done: Boolean(organization?.address && (organization?.phone || organization?.email || organization?.website)), action: () => openSection?.('prayerTimes'), actionLabel: 'Update info' },
+    { key: 'prayer', label: 'Iqamah / Jumuah times', done: Boolean(organization?.prayerTimes || organization?.iqamahTimes), action: () => openSection?.('prayerTimes'), actionLabel: 'Set times' },
+    { key: 'posts', label: 'At least one announcement', done: Number(metrics.posts || 0) > 0, action: () => openSection?.('posts'), actionLabel: 'Create post' },
+    { key: 'events', label: 'Upcoming events/classes', done: Number(metrics.events || 0) > 0 || Number(metrics.programs || 0) > 0, action: () => openSection?.('events'), actionLabel: 'Add event' },
+    { key: 'followers', label: 'Preview public profile', done: Boolean(organization?.id), action: openUserView, actionLabel: 'Preview' }
+  ];
+  const completeCount = checks.filter((check) => check.done).length;
+  return (
+    <section className="operator-section readiness-panel">
+      <div className="operator-section-title">
+        <div><p className="eyebrow">Launch readiness</p><h3>Make this masjid pitch-ready</h3></div>
+        <span>{completeCount}/{checks.length}</span>
+      </div>
+      <p className="helper-text">Use this as the onboarding checklist before showing the dashboard to a real masjid. It focuses on what a masjid will immediately understand: profile, prayer times, announcements, events/classes, and followers.</p>
+      <div className="readiness-list">
+        {checks.map((check) => (
+          <button key={check.key} type="button" className={check.done ? 'done' : ''} onClick={check.action}>
+            <span>{check.done ? '✓' : '•'}</span>
+            <strong>{check.label}</strong>
+            <small>{check.done ? 'Ready' : check.actionLabel}</small>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -3603,6 +3396,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                 return <button key={item.label} type="button" className={item.primary ? 'primary-button' : 'secondary-button'} onClick={item.action}><Icon size={18} />{item.label}</button>;
               })}
             </div>
+            <MasjidReadinessPanel organization={selectedOrg} metrics={metrics} openSection={openDashboardSection} openUserView={openUserView} />
             <section className="operator-section community-publishing">
               <div className="operator-section-title">
                 <div><p className="eyebrow">Your masjid account</p><h3>Publish everything your community needs</h3></div>
@@ -5068,9 +4862,10 @@ function AuthenticatedApp() {
     });
   }, []);
   useEffect(() => {
-    if (locationRoute.pathname === '/') navigate(user ? '/home' : '/login', { replace: true });
-    if (user && ['/login', '/register'].includes(locationRoute.pathname)) navigate('/home', { replace: true });
-  }, [locationRoute.pathname, navigate, Boolean(user)]);
+    const landingPath = user && (isOrganizationAccount(user) || isImamAccount(user)) ? pathForTab('dashboard') : pathForTab('home');
+    if (locationRoute.pathname === '/') navigate(user ? landingPath : '/login', { replace: true });
+    if (user && ['/login', '/register'].includes(locationRoute.pathname)) navigate(landingPath, { replace: true });
+  }, [locationRoute.pathname, navigate, Boolean(user), user?.accountType]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('theme', theme);
@@ -5203,10 +4998,7 @@ function AuthenticatedApp() {
   }, [socket, selectedUser?.id]);
 
   function logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    sessionStorage.removeItem('token');
-    sessionStorage.removeItem('user');
+    clearAuth();
     setUser(null);
     setUsers([]);
     setPosts([]);
@@ -5226,7 +5018,8 @@ function AuthenticatedApp() {
   function afterLogin(nextUser) {
     persistAuth(nextUser);
     setUser(nextUser);
-    navigate('/home', { replace: true });
+    const landingTab = isOrganizationAccount(nextUser) || isImamAccount(nextUser) ? 'dashboard' : 'home';
+    navigate(pathForTab(landingTab), { replace: true });
     setTimeout(() => bootstrap().catch(console.error), 0);
   }
 
@@ -5266,7 +5059,8 @@ function AuthenticatedApp() {
   const prioritizedPosts = [...posts].sort((a, b) => Number(b.isFromFavoriteMasjid || favoriteMasjidIds.has(b.organization?.id)) - Number(a.isFromFavoriteMasjid || favoriteMasjidIds.has(a.organization?.id)) || Number(b.isFromFollowedMasjid || followedMasjidIds.has(b.organization?.id)) - Number(a.isFromFollowedMasjid || followedMasjidIds.has(a.organization?.id)) || new Date(b.createdAt) - new Date(a.createdAt));
   const prioritizedEvents = [...events].sort((a, b) => favoriteRank(b.organizationId || b.organization?.id) - favoriteRank(a.organizationId || a.organization?.id) || new Date(a.startTime || 0) - new Date(b.startTime || 0));
   const prioritizedOpportunities = [...opportunities].sort((a, b) => favoriteRank(b.organizationId || b.organization?.id) - favoriteRank(a.organizationId || a.organization?.id) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  const visibleMobileTabs = mobileNavKeys.filter((key) => hasPreference(user, key));
+  const mobileBaseTabs = isOrganizationAccount(user) || isImamAccount(user) ? ['dashboard', 'messages', 'organizations', 'prayer', 'profile'] : mobileNavKeys;
+  const visibleMobileTabs = mobileBaseTabs.filter((key) => hasPreference(user, key));
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
@@ -5298,7 +5092,7 @@ function AuthenticatedApp() {
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} />,
-    settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} whatsappSettings={whatsappSettings} updateWhatsAppSettings={updateWhatsAppSettings} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} />,
+    settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} whatsappSettings={whatsappSettings} updateWhatsAppSettings={updateWhatsAppSettings} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} theme={theme} setTheme={setTheme} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };
 
@@ -5326,7 +5120,7 @@ function AuthenticatedApp() {
       <section className={isDetailRoute ? 'mobile-bottom-nav detail-hidden' : 'mobile-bottom-nav'}>
         {visibleMobileTabs.map((key) => navItems.find((item) => item.key === key)).filter(Boolean).map((item) => {
           const Icon = item.icon;
-          const label = item.key === 'profile' ? 'People' : item.label;
+          const label = item.key === 'profile' && isUserAccount(user) ? 'People' : item.label;
           return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{label}</span>{item.key === 'messages' && unreadTotal > 0 && <em>{unreadTotal > 9 ? '9+' : unreadTotal}</em>}</button>;
         })}
       </section>

@@ -25,6 +25,8 @@
     "preview": "vite preview",
     "mobile:build": "vite build && cap sync",
     "mobile:open:ios": "cap open ios",
-    "mobile:open:android": "cap open android"
+    "mobile:open:android": "cap open android",
+    "check:frontend": "vite build",
+    "prepare:mobile": "vite build && cap sync"
   }
 }

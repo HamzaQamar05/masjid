@@ -15,6 +15,7 @@ import { isIP } from 'net';
 import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
 import webPush from 'web-push';
+import { canOperateOrganizationRole, organizationManagerRoleFilters } from './lib/organizationPermissions.js';
 
 dotenv.config();
 dotenv.config({ path: '.env.local', override: true });
@@ -812,10 +813,6 @@ async function deleteSyncedOpportunityPosts(opportunity) {
   });
 }
 
-function canOperateOrganizationRole(roleLabel = '') {
-  return /(admin|manager|coordinator|imam|khateeb|staff|director|lead|owner)/i.test(roleLabel);
-}
-
 async function canManageOrganization(user, organizationId) {
   if (!user || !organizationId) return false;
   if (user.accountType === 'ADMIN') return true;
@@ -1440,6 +1437,17 @@ function optionalViewerId(req) {
   }
 }
 
+function parsePagination(req, defaultTake = 50, maxTake = 100) {
+  const requested = Number(req.query.limit || req.query.take || defaultTake);
+  const take = Math.min(maxTake, Math.max(1, Number.isFinite(requested) ? requested : defaultTake));
+  const cursor = typeof req.query.cursor === 'string' && req.query.cursor.trim() ? req.query.cursor.trim() : '';
+  return cursor ? { take, cursor: { id: cursor }, skip: 1 } : { take };
+}
+
+function searchTerm(req) {
+  return typeof req.query.q === 'string' ? req.query.q.trim() : '';
+}
+
 async function createOrUpdateOrganizationOwner({ organization, ownerEmail, ownerName }) {
   const email = normalizeEmail(ownerEmail);
   if (!email) throw new Error('Masjid admin login email is required');
@@ -1912,7 +1920,7 @@ app.get('/api/connections', auth, async (req, res) => {
 });
 
 app.get('/api/me/organizations', auth, async (req, res) => {
-  const operationalRoleFilters = ['admin', 'manager', 'coordinator', 'imam', 'khateeb', 'staff', 'director', 'lead', 'owner'].map((keyword) => ({ roleLabel: { contains: keyword, mode: 'insensitive' } }));
+  const operationalRoleFilters = organizationManagerRoleFilters();
   const where = req.user.accountType === 'ADMIN' ? {} : {
     OR: [
       { ownerId: req.user.id },
@@ -1970,7 +1978,18 @@ app.get('/api/organizations', async (req, res) => {
       viewerId = null;
     }
   }
+  const q = searchTerm(req);
+  const organizationWhere = q ? {
+    OR: [
+      { name: { contains: q, mode: 'insensitive' } },
+      { city: { contains: q, mode: 'insensitive' } },
+      { address: { contains: q, mode: 'insensitive' } },
+      { description: { contains: q, mode: 'insensitive' } },
+      { facilities: { contains: q, mode: 'insensitive' } }
+    ]
+  } : {};
   const organizations = await prisma.organization.findMany({
+    where: organizationWhere,
     include: {
       events: { orderBy: { startTime: 'asc' } },
       posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } },
@@ -1979,7 +1998,8 @@ app.get('/api/organizations', async (req, res) => {
       favoritedBy: true,
       people: { include: { user: true }, orderBy: { createdAt: 'desc' } }
     },
-    orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }]
+    orderBy: [{ verified: 'desc' }, { createdAt: 'desc' }],
+    ...parsePagination(req, 50, 100)
   });
   res.json(organizations.map((org) => publicOrganization(org, viewerId)));
 });
@@ -2243,7 +2263,21 @@ app.get('/api/posts', auth, async (req, res) => {
   const savedIds = new Set(saved.map((item) => item.postId));
   const liked = await prisma.postLike.findMany({ where: { userId: req.user.id }, select: { postId: true } });
   const likedIds = new Set(liked.map((item) => item.postId));
+  const q = searchTerm(req);
+  const postWhere = {
+    ...(req.query.type ? { type: String(req.query.type).toUpperCase() } : {}),
+    ...(req.query.organizationId ? { organizationId: String(req.query.organizationId) } : {}),
+    ...(q ? {
+      OR: [
+        { title: { contains: q, mode: 'insensitive' } },
+        { content: { contains: q, mode: 'insensitive' } },
+        { location: { contains: q, mode: 'insensitive' } },
+        { organization: { name: { contains: q, mode: 'insensitive' } } }
+      ]
+    } : {})
+  };
   const posts = await prisma.post.findMany({
+    where: postWhere,
     include: {
       author: true,
       organization: { include: { followers: true, favoritedBy: true } },
@@ -2252,7 +2286,7 @@ app.get('/api/posts', auth, async (req, res) => {
       _count: { select: { comments: true } }
     },
     orderBy: { createdAt: 'desc' },
-    take: 100
+    ...parsePagination(req, 100, 100)
   });
   const eventPosts = posts.filter((post) => String(post.type || '').toUpperCase() === 'EVENT');
   const matchingEvents = eventPosts.length ? await prisma.event.findMany({
@@ -2538,9 +2572,23 @@ app.get('/api/events', async (req, res) => {
       viewerId = null;
     }
   }
+  const q = searchTerm(req);
+  const eventWhere = {
+    ...(req.query.organizationId ? { organizationId: String(req.query.organizationId) } : {}),
+    ...(q ? {
+      OR: [
+        { title: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+        { location: { contains: q, mode: 'insensitive' } },
+        { organization: { name: { contains: q, mode: 'insensitive' } } }
+      ]
+    } : {})
+  };
   const events = await prisma.event.findMany({
+    where: eventWhere,
     include: { organization: { include: { followers: true, favoritedBy: true } }, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } }, subscriptions: viewerId ? { where: { userId: viewerId } } : false },
-    orderBy: { startTime: 'asc' }
+    orderBy: { startTime: 'asc' },
+    ...parsePagination(req, 100, 100)
   });
   res.json(events.map((event) => {
     const viewerFollow = viewerId ? event.organization?.followers?.find((follow) => follow.userId === viewerId) : null;
@@ -2740,13 +2788,26 @@ app.delete('/api/events/:eventId/register', auth, async (req, res) => {
 });
 
 app.get('/api/opportunities', auth, async (req, res) => {
-  const where = { isActive: true };
-  if (req.query.type) where.type = String(req.query.type).toUpperCase();
-  if (req.query.organizationId) where.organizationId = String(req.query.organizationId);
+  const q = searchTerm(req);
+  const where = {
+    isActive: true,
+    ...(req.query.type ? { type: String(req.query.type).toUpperCase() } : {}),
+    ...(req.query.organizationId ? { organizationId: String(req.query.organizationId) } : {}),
+    ...(q ? {
+      OR: [
+        { title: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+        { requirements: { contains: q, mode: 'insensitive' } },
+        { location: { contains: q, mode: 'insensitive' } },
+        { organization: { name: { contains: q, mode: 'insensitive' } } }
+      ]
+    } : {})
+  };
   const opportunities = await prisma.opportunity.findMany({
     where,
     include: { organization: true, applications: { where: { applicantId: req.user.id } } },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: 'desc' },
+    ...parsePagination(req, 100, 100)
   });
   res.json(opportunities);
 });
