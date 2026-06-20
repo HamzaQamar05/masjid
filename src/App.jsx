@@ -1820,6 +1820,7 @@ function MasjidPrayerSchedule({ organization }) {
   const [adhanTimes, setAdhanTimes] = useState({});
   const [loading, setLoading] = useState(false);
   const iqamahTimes = organization.prayerTimes || {};
+  const savedApiAdhanTimes = organization.iqamahTimes || {};
   const additionalPrayers = Array.isArray(organization.iqamahTimes?.additionalPrayers) ? organization.iqamahTimes.additionalPrayers : [];
   const jumuahTime = iqamahTimes.Jumuah || iqamahTimes.jumuah;
   const recurringPrayers = [
@@ -1860,7 +1861,7 @@ function MasjidPrayerSchedule({ organization }) {
           {standardPrayers.map((name) => (
             <div className="masjid-prayer-table-row" key={name}>
               <strong>{name}</strong>
-              <span>{loading ? 'Loading…' : adhanTimes[name] || 'N/A'}</span>
+              <span>{loading ? 'Loading…' : adhanTimes[name] || savedApiAdhanTimes[name] || savedApiAdhanTimes[name.toLowerCase()] || 'N/A'}</span>
               <em>{iqamahTimes[name] || iqamahTimes[name.toLowerCase()] || 'N/A'}</em>
             </div>
           ))}
