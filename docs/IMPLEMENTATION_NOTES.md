@@ -31,3 +31,32 @@ Do not commit or share real `.env` files or `node_modules`. Use `.env.example` a
 - Split `backend/server.js` into route files.
 - Replace image URL fields with first-class file upload UI.
 - Add integration tests for auth, organization permissions, posts, applications, messages, and notifications.
+
+## 2026-06-21 Instagram-style social/messaging pass
+
+- `Connection` is now treated as a directional follow relationship:
+  - requester = follower
+  - receiver = account being followed
+  - `ACCEPTED` = following
+  - `PENDING` = private-account follow request
+- Added user privacy with `User.isPrivate`.
+- Added direct message folders through `ConversationPreference.folder`:
+  - `GENERAL`
+  - `REQUEST`
+  - `ARCHIVE`
+- Added request acceptance/decline behavior on conversations.
+- Message requests are created when the receiver does not follow the sender.
+- Group creation now only allows accounts with an accepted follow relationship or approved organization-like accounts.
+- Masjid dashboard top snapshot now emphasizes new applications, unread messages, and message requests instead of follower count.
+- Events/programs are separated from posts/announcements in dashboard labels and public profile sections.
+
+Run after pulling these changes:
+
+```bash
+cd backend
+npm install
+npm run generate
+npm run migrate:deploy
+```
+
+For local development with a disposable database, `npm run db:push:dev` can also update the schema quickly.

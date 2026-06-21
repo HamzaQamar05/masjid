@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
+  Archive,
   BarChart3,
   Bell,
   Briefcase,
@@ -13,6 +14,7 @@ import {
   HeartHandshake,
   Home,
   ImageIcon,
+  Inbox,
   Library,
   LogOut,
   Mail,
@@ -1028,20 +1030,48 @@ function OrganizationsScreen({ masjids, locationStatus, requestLocation, openOrg
   );
 }
 
+function canMessageUser(person) {
+  if (!person || person.connectionStatus === 'SELF' || person.followStatus === 'SELF') return false;
+  return Boolean(person.canMessage || ['MUTUAL', 'FOLLOWING', 'FOLLOWS_YOU'].includes(person.followStatus || person.connectionStatus));
+}
+
+function FollowActionButton({ person, onFollow, onUnfollow, onAccept, onDecline }) {
+  const status = person.followStatus || person.connectionStatus || 'NONE';
+  if (status === 'SELF') return null;
+  if (status === 'REQUESTED') return <button className="secondary-button" disabled>Requested</button>;
+  if (status === 'REQUESTS_YOU') {
+    return (
+      <>
+        <button className="primary-button" onClick={() => onAccept(person.followRequestId)}>Accept</button>
+        <button className="secondary-button" onClick={() => onDecline(person.followRequestId)}>Decline</button>
+      </>
+    );
+  }
+  if (status === 'FOLLOWING' || status === 'MUTUAL') return <button className="secondary-button" onClick={() => onUnfollow(person.id)}>{status === 'MUTUAL' ? 'Mutual' : 'Following'}</button>;
+  return <button className="primary-button" onClick={() => onFollow(person.id)}>{status === 'FOLLOWS_YOU' ? 'Follow back' : 'Follow'}</button>;
+}
+
 function NetworkScreen({ user, users, connections, loadNetwork, openProfile, startMessage }) {
   const [networkQuery, setNetworkQuery] = useState('');
+  const connectionList = Array.isArray(connections) ? connections : (connections?.connections || []);
 
   function connectionFor(otherId) {
-    return connections.find((connection) => [connection.requesterId, connection.receiverId].includes(otherId));
+    return connectionList.find((connection) => [connection.requesterId, connection.receiverId].includes(otherId));
   }
 
-  async function connect(otherId) {
+  async function follow(otherId) {
     await api(`/api/connections/${otherId}`, { method: 'POST' });
     await loadNetwork();
   }
 
-  async function accept(connectionId) {
-    await api(`/api/connections/${connectionId}`, { method: 'PUT', body: JSON.stringify({ status: 'ACCEPTED' }) });
+  async function unfollow(otherId) {
+    await api(`/api/connections/${otherId}`, { method: 'DELETE' });
+    await loadNetwork();
+  }
+
+  async function updateFollowRequest(connectionId, status) {
+    if (!connectionId) return;
+    await api(`/api/connections/${connectionId}`, { method: 'PUT', body: JSON.stringify({ status }) });
     await loadNetwork();
   }
 
@@ -1057,6 +1087,7 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
       person.city,
       person.location,
       person.bio,
+      person.followStatus,
       ...(person.skills || [])
     ]
       .filter(Boolean)
@@ -1066,7 +1097,7 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
   });
 
   return (
-    <Page title="Network" subtitle="LinkedIn-style community directory for masjids, imams, professionals, businesses, and volunteers.">
+    <Page title="Network" subtitle="Instagram-style following, private requests, and messaging permissions for community accounts.">
       <section className="panel network-search-panel">
         <label className="network-search">
           <Search size={18} />
@@ -1077,14 +1108,14 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
           />
         </label>
         <p className="helper-text">
-          Showing {filteredUsers.length} of {users.length} profiles
+          Showing {filteredUsers.length} of {users.length} profiles. DMs open normally for mutual/follower relationships; others become requests.
         </p>
       </section>
 
       <div className="card-grid two">
         {filteredUsers.map((person) => {
           const connection = connectionFor(person.id);
-          const incoming = connection?.receiverId === user.id && connection.status === 'PENDING';
+          const status = person.followStatus || person.connectionStatus || connection?.status || 'NONE';
 
           return (
             <article className="person-card" key={person.id}>
@@ -1098,17 +1129,24 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
               </div>
               <div className="trust-strip">
                 <span>{displayRoleLabel(person.accountType)}</span>
-                <span>{person.city || person.location || 'Location open'}</span>
-                <span>{(person.skills || []).length} skills</span>
+                <span>{person.isPrivate ? 'Private' : 'Public'}</span>
+                <span>{person.followerCount || 0} followers</span>
+                <span>{person.followingCount || 0} following</span>
               </div>
               <p>{person.bio || 'No bio yet.'}</p>
-              <TagRow tags={person.skills || []} />
+              <TagRow tags={[status !== 'NONE' && status !== 'SELF' ? status.replace('_', ' ') : null, ...(person.skills || [])].filter(Boolean)} />
               <div className="card-footer profile-actions">
                 <button className="secondary-button" onClick={() => openProfile(person)}>View profile</button>
-                {person.id !== user.id && <button className="secondary-button" onClick={() => startMessage(person)}>Message</button>}
-                {person.id !== user.id && !connection && <button className="primary-button" onClick={() => connect(person.id)}>Connect</button>}
-                {incoming && <button className="primary-button" onClick={() => accept(connection.id)}>Accept</button>}
-                {connection && !incoming && <span>{connection.status}</span>}
+                {person.id !== user.id && canMessageUser(person) && <button className="secondary-button" onClick={() => startMessage(person)}>Message</button>}
+                {person.id !== user.id && (
+                  <FollowActionButton
+                    person={person}
+                    onFollow={follow}
+                    onUnfollow={unfollow}
+                    onAccept={(id) => updateFollowRequest(id, 'ACCEPTED')}
+                    onDecline={(id) => updateFollowRequest(id, 'DECLINED')}
+                  />
+                )}
               </div>
             </article>
           );
@@ -1248,7 +1286,8 @@ function MessagesScreen({
   const [messageError, setMessageError] = useState('');
   const messageEndRef = useRef(null);
   const [conversationQuery, setConversationQuery] = useState('');
-  const [conversationFilter, setConversationFilter] = useState('all');
+  const [conversationFilter, setConversationFilter] = useState('GENERAL');
+  const [folderCounts, setFolderCounts] = useState({ GENERAL: 0, REQUEST: 0, ARCHIVE: 0 });
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [groupMessages, setGroupMessages] = useState([]);
@@ -1260,15 +1299,15 @@ function MessagesScreen({
   const [creatingGroup, setCreatingGroup] = useState(false);
   const conversationTouch = useRef(null);
   const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
+  const allowedMessageUsers = users.filter((person) => person.id !== currentUser?.id && canMessageUser(person));
   const conversationUsers = conversationQuery.trim()
-    ? users
+    ? allowedMessageUsers
     : threads.map((thread) => thread.user);
   const visibleUsers = conversationUsers
     .filter((person) => {
       const thread = threads.find((item) => item.user.id === person.id);
       const matchesQuery = `${person.name} ${person.accountType} ${person.city || ''} ${thread?.lastMessage || ''}`.toLowerCase().includes(conversationQuery.trim().toLowerCase());
-      const matchesFilter = conversationFilter === 'unread' ? (thread?.unread || 0) > 0 : conversationFilter === 'online' ? onlineUserIds.includes(person.id) : true;
-      return matchesQuery && matchesFilter;
+      return matchesQuery;
     })
     .sort((a, b) => {
       const aThread = threads.find((item) => item.user.id === a.id);
@@ -1295,13 +1334,18 @@ function MessagesScreen({
   }, []);
 
   useEffect(() => {
+    refreshFolderThreads(conversationFilter).catch(console.error);
+  }, [conversationFilter]);
+
+  useEffect(() => {
     if (!selectedUser?.id) return undefined;
     let active = true;
     async function refreshThread() {
       try {
         if (active) {
           await loadMessages(selectedUser.id);
-          await loadThreads();
+          const loaded = await loadThreads(conversationFilter);
+          if (loaded?.folderCounts) setFolderCounts(loaded.folderCounts);
         }
       } catch (error) {
         console.error(error);
@@ -1390,16 +1434,31 @@ function MessagesScreen({
     }
   }
 
+  async function refreshFolderThreads(nextFolder = conversationFilter) {
+    const loaded = await loadThreads(nextFolder);
+    if (loaded?.folderCounts) setFolderCounts(loaded.folderCounts);
+    return loaded;
+  }
+
   async function toggleThreadMute(person, thread) {
     await api(`/api/messages/threads/${person.id}`, { method: 'PUT', body: JSON.stringify({ muted: !thread?.muted }) });
-    await loadThreads();
+    await refreshFolderThreads();
+  }
+
+  async function updateThreadAction(person, action, nextFolder = conversationFilter) {
+    await api(`/api/messages/threads/${person.id}`, { method: 'PUT', body: JSON.stringify({ action }) });
+    if (['DECLINE', 'ARCHIVE'].includes(action)) {
+      setSelectedUser(null);
+      setMessages([]);
+      onBackToInbox?.();
+    }
+    if (action === 'ACCEPT') setConversationFilter('GENERAL');
+    await refreshFolderThreads(action === 'ACCEPT' ? 'GENERAL' : nextFolder);
   }
 
   async function deleteThread(person) {
-    if (!confirm(`Remove your conversation with ${person.name} from the inbox? New messages will make it reappear.`)) return;
-    await api(`/api/messages/threads/${person.id}`, { method: 'DELETE' });
-    if (selectedUser?.id === person.id) onBackToInbox?.();
-    await loadThreads();
+    if (!confirm(`Archive your conversation with ${person.name}?`)) return;
+    await updateThreadAction(person, 'ARCHIVE', 'ARCHIVE');
   }
   async function sendMessage() {
     if ((!selectedUser && !selectedGroup) || !draft.trim()) return;
@@ -1415,7 +1474,8 @@ function MessagesScreen({
       } else {
         await api('/api/messages', { method: 'POST', body: JSON.stringify({ receiverId: selectedUser.id, content }) });
         await loadMessages(selectedUser.id);
-        await loadThreads();
+        const loadedThreads = await loadThreads(conversationFilter);
+      if (loadedThreads?.folderCounts) setFolderCounts(loadedThreads.folderCounts);
       }
     } catch (error) {
       setDraft(content);
@@ -1506,10 +1566,14 @@ function MessagesScreen({
           <label className="dm-search"><Search size={16} /><input placeholder="Search conversations" value={conversationQuery} onChange={(event) => setConversationQuery(event.target.value)} /></label>
           <div className="dm-filter-row">
             {[
-              ['all', 'All'],
-              ['unread', 'Unread'],
-              ['online', 'Online']
-            ].map(([key, label]) => <button key={key} className={conversationFilter === key ? 'active' : ''} onClick={() => setConversationFilter(key)}>{label}</button>)}
+              ['GENERAL', 'General'],
+              ['REQUEST', 'Requests'],
+              ['ARCHIVE', 'Archive']
+            ].map(([key, label]) => (
+              <button key={key} className={conversationFilter === key ? 'active' : ''} onClick={() => setConversationFilter(key)}>
+                {label}{folderCounts[key] ? <em>{folderCounts[key]}</em> : null}
+              </button>
+            ))}
           </div>
           {groups.map((group) => (
             <button type="button" className={`dm-thread-row dm-group-row${selectedGroup?.id === group.id ? ' active' : ''}`} key={group.id} onClick={() => chooseGroup(group)}>
@@ -1523,7 +1587,7 @@ function MessagesScreen({
             const isOnline = onlineUserIds.includes(person.id);
             return <SwipeThreadRow key={person.id} person={person} thread={thread} isOnline={isOnline} active={selectedUser?.id === person.id} onOpen={() => chooseUser(person)} onMute={() => toggleThreadMute(person, thread)} onDelete={() => deleteThread(person)} />;
           })}
-          {!visibleUsers.length && <div className="dm-empty-inbox"><MessageCircle size={30} /><strong>No conversations yet</strong><span>Search for someone above to start a private chat.</span></div>}
+          {!visibleUsers.length && <div className="dm-empty-inbox"><MessageCircle size={30} /><strong>No conversations yet</strong><span>Search approved followers/following above to start a chat. New non-mutual inbound messages appear in Requests.</span></div>}
         </section>
         <section className="panel message-thread" onTouchStart={onConversationTouchStart} onTouchMove={onConversationTouchMove} onTouchEnd={onConversationTouchEnd}>
           {selectedUser || selectedGroup ? (
@@ -1535,6 +1599,17 @@ function MessagesScreen({
                 {selectedGroup
                   ? <button type="button" className="dm-header-action" onClick={async () => { await api(`/api/groups/${selectedGroup.id}`, { method: 'PUT', body: JSON.stringify({ muted: !selectedGroup.muted }) }); await loadGroups(); }} aria-label={selectedGroup.muted ? 'Unmute group' : 'Mute group'}>{selectedGroup.muted ? <Volume2 size={21} /> : <VolumeX size={21} />}</button>
                   : <button type="button" className="dm-header-action" onClick={() => toggleThreadMute(selectedUser, selectedThread)} aria-label={selectedThread?.muted ? 'Unmute chat' : 'Mute chat'}>{selectedThread?.muted ? <Volume2 size={21} /> : <VolumeX size={21} />}</button>}
+                {!selectedGroup && selectedThread?.folder === 'REQUEST' && (
+                  <div className="dm-request-actions">
+                    <button type="button" className="primary-button" onClick={() => updateThreadAction(selectedUser, 'ACCEPT')}>Accept</button>
+                    <button type="button" className="secondary-button" onClick={() => updateThreadAction(selectedUser, 'DECLINE')}>Decline</button>
+                  </div>
+                )}
+                {!selectedGroup && selectedThread && selectedThread.folder !== 'REQUEST' && (
+                  <button type="button" className="dm-header-action" onClick={() => updateThreadAction(selectedUser, selectedThread?.folder === 'ARCHIVE' ? 'UNARCHIVE' : 'ARCHIVE')} aria-label={selectedThread?.folder === 'ARCHIVE' ? 'Move to General' : 'Archive chat'}>
+                    {selectedThread?.folder === 'ARCHIVE' ? <Inbox size={20} /> : <Archive size={20} />}
+                  </button>
+                )}
               </div>
               <div className="message-list" onScroll={onMessageScroll}>
                 {!selectedGroup && messagePage.hasMore && <button className="load-more" onClick={() => loadOlderMessages(selectedUser.id)}>{messagePage.loadingOlder ? 'Loading...' : 'Load older messages'}</button>}
@@ -1560,8 +1635,16 @@ function MessagesScreen({
             {newChatMode === 'group' && <input className="dm-group-name" value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Group name" maxLength={80} />}
             <label className="dm-search"><Search size={16} /><input value={newChatQuery} onChange={(event) => setNewChatQuery(event.target.value)} placeholder="Search people" /></label>
             {messageError && <p className="message-error dm-new-chat-error">{messageError}</p>}
+            {newChatMode === 'group' && groupMemberIds.length > 0 && (
+              <div className="dm-selected-members">
+                {groupMemberIds.map((id) => {
+                  const member = allowedMessageUsers.find((person) => person.id === id);
+                  return member ? <span key={id}>{member.name}<button type="button" onClick={() => setGroupMemberIds((ids) => ids.filter((memberId) => memberId !== id))}>×</button></span> : null;
+                })}
+              </div>
+            )}
             <div className="dm-new-chat-people">
-              {users.filter((person) => `${person.name} ${person.city || ''}`.toLowerCase().includes(newChatQuery.toLowerCase())).map((person) => {
+              {allowedMessageUsers.filter((person) => `${person.name} ${person.city || ''}`.toLowerCase().includes(newChatQuery.toLowerCase())).map((person) => {
                 const selected = groupMemberIds.includes(person.id);
                 return (
                   <button type="button" key={person.id} onClick={() => {
@@ -2018,9 +2101,9 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
   );
 }
 
-function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavorite, openOrganization, openEvent }) {
+function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavorite, openOrganization, openEvent, onRefreshSocial, onMessage }) {
   const editingSelf = !viewedUser || viewedUser.id === user.id;
-  const profile = viewedUser || user;
+  const profile = viewedUser ? { ...viewedUser, ...(social.user?.id === viewedUser.id ? social.user : {}) } : user;
   const [editMode, setEditMode] = useState(false);
   const [activeList, setActiveList] = useState(null);
 
@@ -2029,6 +2112,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
   const favoriteMasjids = social.favoriteMasjids || [];
   const followedMasjids = social.followingMasjids || [];
   const savedEvents = social.savedEvents || [];
+  const followRequests = social.followRequests || [];
   const [form, setForm] = useState(() => ({
     name: profile.name || '',
     dateOfBirth: toDateInput(profile.dateOfBirth),
@@ -2038,6 +2122,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
     education: profile.education || '',
     experience: profile.experience || '',
     availability: profile.availability || '',
+    isPrivate: Boolean(profile.isPrivate),
     avatarUrl: profile.avatarUrl || '',
     bannerUrl: profile.bannerUrl || profile.heroImageUrl || '',
     skills: listToText(profile.skills),
@@ -2056,6 +2141,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
       education: profile.education || '',
       experience: profile.experience || '',
       availability: profile.availability || '',
+      isPrivate: Boolean(profile.isPrivate),
       avatarUrl: profile.avatarUrl || '',
       bannerUrl: profile.bannerUrl || profile.heroImageUrl || '',
       skills: listToText(profile.skills),
@@ -2086,6 +2172,23 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
     setActiveList({ title, people });
   }
 
+  async function handleFollowRequest(connectionId, status) {
+    await api(`/api/connections/${connectionId}`, { method: 'PUT', body: JSON.stringify({ status }) });
+    await onRefreshSocial?.();
+  }
+
+  async function followProfile(targetId) {
+    await api(`/api/connections/${targetId}`, { method: 'POST' });
+    await onRefreshSocial?.();
+  }
+
+  async function unfollowProfile(targetId) {
+    await api(`/api/connections/${targetId}`, { method: 'DELETE' });
+    await onRefreshSocial?.();
+  }
+
+
+
   return (
     <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="Community profile, network, favorite masjids, and personal details.">
       {!editingSelf && <button className="secondary-button" onClick={onCloseViewed}>Back to your profile</button>}
@@ -2100,7 +2203,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
 
           <div className="profile-main-info">
             <h2>{profile.name}</h2>
-            <p>{displayRoleLabel(profile.accountType)} · {profile.city || profile.location || 'Location open'}</p>
+            <p>{displayRoleLabel(profile.accountType)} · {profile.city || profile.location || 'Location open'} · {profile.isPrivate ? 'Private' : 'Public'}</p>
             {profile.bio && <p className="profile-bio">{profile.bio}</p>}
           </div>
 
@@ -2111,8 +2214,8 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
               </button>
             ) : (
               <>
-                <button className="primary-button">Follow</button>
-                <button className="secondary-button">Message</button>
+                <FollowActionButton person={profile} onFollow={followProfile} onUnfollow={unfollowProfile} onAccept={(id) => handleFollowRequest(id, 'ACCEPTED')} onDecline={(id) => handleFollowRequest(id, 'DECLINED')} />
+                {canMessageUser(profile) && <button className="secondary-button" onClick={() => onMessage?.(profile)}>Message</button>}
               </>
             )}
           </div>
@@ -2120,11 +2223,11 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
 
         <div className="profile-stat-row">
           <button type="button" onClick={() => openList('Followers', followers)}>
-            <strong>{followers.length}</strong>
+            <strong>{profile.followerCount ?? followers.length}</strong>
             <span>Followers</span>
           </button>
           <button type="button" onClick={() => openList('Following', following)}>
-            <strong>{following.length}</strong>
+            <strong>{profile.followingCount ?? following.length}</strong>
             <span>Following</span>
           </button>
           <button type="button">
@@ -2144,6 +2247,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
             <textarea placeholder="Bio" value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} />
             <textarea placeholder="Experience" value={form.experience} onChange={(event) => setForm({ ...form, experience: event.target.value })} />
             <textarea placeholder="Education" value={form.education} onChange={(event) => setForm({ ...form, education: event.target.value })} />
+            <label className="check-toggle"><input type="checkbox" checked={Boolean(form.isPrivate)} onChange={(event) => setForm({ ...form, isPrivate: event.target.checked })} />Private account: approve followers before they can follow you</label>
 
             <input placeholder="Skills, comma separated" value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
             <input placeholder="Interests, comma separated" value={form.interests} onChange={(event) => setForm({ ...form, interests: event.target.value })} />
@@ -2158,6 +2262,24 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
       </section>
 
       <section className="panel profile-social">
+        {editingSelf && followRequests.length > 0 && (
+          <>
+            <div className="section-title">
+              <h2>Follow Requests</h2>
+              <span>{followRequests.length}</span>
+            </div>
+            <div className="stack-list">
+              {followRequests.map((request) => (
+                <article className="mini-row action-row" key={request.id}>
+                  <strong>{request.requester?.name || 'User'}</strong>
+                  <span>{displayRoleLabel(request.requester?.accountType)} · {request.requester?.city || 'Location open'}</span>
+                  <button className="primary-button compact-button" onClick={() => handleFollowRequest(request.id, 'ACCEPTED')}>Accept</button>
+                  <button className="secondary-button compact-button" onClick={() => handleFollowRequest(request.id, 'DECLINED')}>Decline</button>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
         <div className="section-title">
           <h2>Favorite Masjids</h2>
           <span>{favoriteMasjids.length}</span>
@@ -2326,6 +2448,7 @@ function SettingsScreen({ user, social = {}, notificationPreferences, updateNoti
   const favoriteMasjids = social.favoriteMasjids || [];
   const followedMasjids = social.followingMasjids || [];
   const savedEvents = social.savedEvents || [];
+  const followRequests = social.followRequests || [];
 
   useEffect(() => {
     const nextSelected = userPreferenceLabels(user);
@@ -2704,6 +2827,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     return Number.isFinite(time) && time >= Date.now();
   }).length;
   const unreadMessages = (threads || []).reduce((sum, thread) => sum + (thread.unread || 0), 0);
+  const messageRequests = (threads || []).filter((thread) => thread.folder === 'REQUEST').length;
   function openDashboardSection(section) {
     setEditingOrgId('');
     setEditOrgForm({});
@@ -2725,11 +2849,9 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     setActiveSection('');
   }
   const hubItems = [
-    { key: 'followers', label: 'Followers', count: metrics.followers, detail: 'Community reach', icon: Users },
-    { key: 'following', label: 'Following', count: 'Soon', detail: 'Not connected', icon: UserCheck },
     { key: 'team', label: 'Team', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Imams and staff', icon: UserCheck },
-    { key: 'announcements', label: 'Masjid Announcements', count: metrics.posts, detail: 'Social feed posts', icon: MessageCircle },
-    { key: 'posts', label: 'Posts', count: metrics.posts, detail: 'All post tools', icon: MessageCircle },
+    { key: 'announcements', label: 'Announcements', count: metrics.posts, detail: 'Posts and public updates', icon: MessageCircle },
+    { key: 'posts', label: 'Posts / Announcements', count: metrics.posts, detail: 'Social feed updates only', icon: MessageCircle },
     { key: 'events', label: 'Events', count: metrics.events, detail: `${upcomingEvents} upcoming`, icon: CalendarDays },
     { key: 'eventApprovals', label: 'Event Approvals', count: metrics.pendingRegistrations, detail: 'Pending entries', icon: CheckCircle2 },
     { key: 'programs', label: 'Programs / Classes', count: metrics.programs, detail: 'Classes and halaqas', icon: Library },
@@ -2737,16 +2859,16 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     { key: 'jobApplications', label: 'Job Applications', count: allApplications.filter(({ opportunity }) => opportunity.type === 'JOB').length, detail: 'Hiring pipeline', icon: Mail },
     { key: 'volunteers', label: 'Volunteers', count: metrics.volunteers, detail: 'Service posts', icon: HeartHandshake },
     { key: 'volunteerApplications', label: 'Volunteer Applications', count: allApplications.filter(({ opportunity }) => opportunity.type !== 'JOB').length, detail: 'Service requests', icon: Users },
-    { key: 'attention', label: 'Notifications', count: pendingApplications.length + pendingRegistrations.length + unreadMessages, detail: `${unreadMessages} unread DMs`, icon: Bell },
+    { key: 'attention', label: 'Notifications', count: pendingApplications.length + pendingRegistrations.length + unreadMessages + messageRequests, detail: `${unreadMessages} unread DMs · ${messageRequests} requests`, icon: Bell },
     { key: 'prayerTimes', label: 'Prayer Times', count: 'Jamaat', detail: selectedOrg?.prayerNotes || 'Iqamah schedule', icon: ShieldCheck },
     { key: 'applications', label: 'Application Portal', count: metrics.applications, detail: 'All applicants', icon: Building2 },
     { key: 'committee', label: 'Jamaat / Committee', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Leadership', icon: Users },
     { key: 'userView', label: 'Preview User View', count: selectedOrg ? 'Open' : 'Add profile', detail: 'Public profile', icon: Home }
   ];
   const snapshotItems = [
-    { label: 'Followers', value: selectedOrg?.followerCount || metrics.followers, tone: 'calm' },
     { label: 'New applications', value: selectedOrgPendingApplications || metrics.pendingApplications, tone: metrics.pendingApplications ? 'urgent' : 'calm' },
-    { label: 'Unread messages', value: unreadMessages, tone: unreadMessages ? 'urgent' : 'calm' }
+    { label: 'Unread messages', value: unreadMessages, tone: unreadMessages ? 'urgent' : 'calm' },
+    { label: 'Message requests', value: messageRequests, tone: messageRequests ? 'urgent' : 'calm' }
   ];
   const quickActions = [
     { label: 'New Event', icon: CalendarDays, action: () => openDashboardSection('events'), primary: true },
@@ -2757,9 +2879,9 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   ];
   const communityPublishingItems = [
     { key: 'prayerTimes', label: 'Prayer times', detail: 'Public profile + jamaat update notification', icon: ShieldCheck },
-    { key: 'events', label: 'Events', detail: 'Events discovery + follower notification', icon: CalendarDays },
-    { key: 'programs', label: 'Programs', detail: 'Masjid profile + program notification', icon: Library },
-    { key: 'posts', label: 'Posts', detail: 'Home feed + announcement notification', icon: MessageCircle },
+    { key: 'posts', label: 'Posts / Announcements', detail: 'Home feed updates only', icon: MessageCircle },
+    { key: 'events', label: 'Events', detail: 'Scheduled events and registration', icon: CalendarDays },
+    { key: 'programs', label: 'Events / Programs', detail: 'Classes, halaqas, and recurring programs', icon: Library },
     { key: 'jobs', label: 'Opportunities', detail: 'Jobs/volunteer pages + user alerts', icon: Briefcase }
   ];
   const attentionItems = [
@@ -3400,12 +3522,6 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                   <span>{item.label}</span>
                 </article>
               ))}
-            </div>
-            <div className="operator-quick-actions">
-              {quickActions.map((item) => {
-                const Icon = item.icon;
-                return <button key={item.label} type="button" className={item.primary ? 'primary-button' : 'secondary-button'} onClick={item.action}><Icon size={18} />{item.label}</button>;
-              })}
             </div>
             <MasjidReadinessPanel organization={selectedOrg} metrics={metrics} openSection={openDashboardSection} openUserView={openUserView} />
             <section className="operator-section community-publishing">
@@ -4274,7 +4390,7 @@ function AuthenticatedApp() {
   const selectedUserIdRef = useRef(null);
   const [viewedUser, setViewedUser] = useState(null);
   const [selectedOrganization, setSelectedOrganization] = useState(null);
-  const [profileSocial, setProfileSocial] = useState({ connections: [], followingMasjids: [], favoriteMasjids: [], savedEvents: [], affiliatedMasjids: [] });
+  const [profileSocial, setProfileSocial] = useState({ followers: [], following: [], followRequests: [], connections: [], followingMasjids: [], favoriteMasjids: [], savedEvents: [], affiliatedMasjids: [] });
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState(defaultLocation);
   const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
@@ -4320,7 +4436,7 @@ function AuthenticatedApp() {
     if (!token()) return;
     const [loadedUsers, loadedConnections] = await Promise.all([api('/api/users'), api('/api/connections')]);
     setUsers(loadedUsers);
-    setConnections(loadedConnections);
+    setConnections(Array.isArray(loadedConnections) ? loadedConnections : (loadedConnections.connections || []));
   }
 
   async function loadEvents(options = {}) {
@@ -4431,8 +4547,8 @@ function AuthenticatedApp() {
   }
 
   async function loadProfileSocial(userId) {
-    const loaded = await api(`/api/users/${userId}/social`).catch(() => ({ connections: [], followingMasjids: [], favoriteMasjids: [], savedEvents: [], affiliatedMasjids: [] }));
-    setProfileSocial({ connections: loaded.connections || [], followingMasjids: loaded.followingMasjids || [], favoriteMasjids: loaded.favoriteMasjids || [], savedEvents: loaded.savedEvents || [], affiliatedMasjids: loaded.affiliatedMasjids || [] });
+    const loaded = await api(`/api/users/${userId}/social`).catch(() => ({ followers: [], following: [], followRequests: [], connections: [], followingMasjids: [], favoriteMasjids: [], savedEvents: [], affiliatedMasjids: [] }));
+    setProfileSocial({ user: loaded.user, followers: loaded.followers || [], following: loaded.following || [], followRequests: loaded.followRequests || [], connections: loaded.connections || [], followingMasjids: loaded.followingMasjids || [], favoriteMasjids: loaded.favoriteMasjids || [], savedEvents: loaded.savedEvents || [], affiliatedMasjids: loaded.affiliatedMasjids || [] });
   }
 
   async function loadNotificationMasjids() {
@@ -4538,11 +4654,12 @@ function AuthenticatedApp() {
     setMessages(loaded.messages || loaded);
     setMessagePage({ nextCursor: loaded.nextCursor || null, hasMore: Boolean(loaded.hasMore), loadingOlder: false });
   }
-  async function loadThreads() {
-    const loaded = await api('/api/messages/threads').catch(() => ({ threads: [] }));
+  async function loadThreads(folder = 'GENERAL') {
+    const loaded = await api(`/api/messages/threads?folder=${encodeURIComponent(folder)}`).catch(() => ({ threads: [] }));
     setThreads(Array.isArray(loaded) ? loaded : loaded.threads || []);
     if (!Array.isArray(loaded)) setUnreadTotal(loaded.unreadTotal || 0);
     if (loaded.onlineUserIds) setOnlineUserIds(loaded.onlineUserIds);
+    return loaded;
   }
 
   async function loadOlderMessages(userId) {
@@ -5102,7 +5219,7 @@ function AuthenticatedApp() {
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
-    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} />,
+    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); loadProfileSocial(user.id); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} onRefreshSocial={() => loadProfileSocial(viewedUser?.id || user.id)} onMessage={startMessage} />,
     settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} whatsappSettings={whatsappSettings} updateWhatsAppSettings={updateWhatsAppSettings} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} theme={theme} setTheme={setTheme} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };

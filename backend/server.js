@@ -403,6 +403,7 @@ function publicUser(user, options = {}) {
     id: user.id,
     name: user.name,
     accountType: user.accountType,
+    isPrivate: Boolean(user.isPrivate),
     dateOfBirth: user.dateOfBirth,
     age: calculateAge(user.dateOfBirth),
     bio: user.bio,
@@ -969,6 +970,82 @@ function serializeMessage(message) {
       createdAt: reaction.createdAt
     }))
   };
+}
+
+
+const DIRECT_MESSAGE_FOLDERS = new Set(['GENERAL', 'REQUEST', 'ARCHIVE']);
+
+function normalizeMessageFolder(value, fallback = 'GENERAL') {
+  const folder = String(value || '').toUpperCase();
+  return DIRECT_MESSAGE_FOLDERS.has(folder) ? folder : fallback;
+}
+
+function serializeConnection(connection) {
+  return {
+    ...connection,
+    requester: publicUser(connection.requester),
+    receiver: publicUser(connection.receiver),
+    isPending: connection.status === 'PENDING',
+    isAccepted: connection.status === 'ACCEPTED'
+  };
+}
+
+function summarizeFollowState(targetUser, outgoing, incoming, followerCount = 0, followingCount = 0) {
+  const outgoingStatus = outgoing?.status || 'NONE';
+  const incomingStatus = incoming?.status || 'NONE';
+  const mutual = outgoingStatus === 'ACCEPTED' && incomingStatus === 'ACCEPTED';
+  const followStatus = targetUser?.id ? (mutual ? 'MUTUAL' : outgoingStatus === 'ACCEPTED' ? 'FOLLOWING' : outgoingStatus === 'PENDING' ? 'REQUESTED' : incomingStatus === 'ACCEPTED' ? 'FOLLOWS_YOU' : incomingStatus === 'PENDING' ? 'REQUESTS_YOU' : 'NONE') : 'NONE';
+  return {
+    followerCount,
+    followingCount,
+    followStatus,
+    outgoingFollowStatus: outgoingStatus,
+    incomingFollowStatus: incomingStatus,
+    followRequestId: incomingStatus === 'PENDING' ? incoming.id : null,
+    isFollowing: outgoingStatus === 'ACCEPTED',
+    followsYou: incomingStatus === 'ACCEPTED',
+    isMutual: mutual,
+    canMessage: mutual || outgoingStatus === 'ACCEPTED' || incomingStatus === 'ACCEPTED' || ['MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'ADMIN'].includes(String(targetUser?.accountType || ''))
+  };
+}
+
+async function getFollowPair(viewerId, otherUserId) {
+  if (!viewerId || !otherUserId || viewerId === otherUserId) return { outgoing: null, incoming: null };
+  const rows = await prisma.connection.findMany({
+    where: {
+      OR: [
+        { requesterId: viewerId, receiverId: otherUserId },
+        { requesterId: otherUserId, receiverId: viewerId }
+      ]
+    }
+  });
+  return {
+    outgoing: rows.find((row) => row.requesterId === viewerId && row.receiverId === otherUserId) || null,
+    incoming: rows.find((row) => row.requesterId === otherUserId && row.receiverId === viewerId) || null
+  };
+}
+
+async function getFollowCounts(userIds = []) {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+  const [followers, following] = await Promise.all([
+    prisma.connection.groupBy({ by: ['receiverId'], where: { receiverId: { in: ids }, status: 'ACCEPTED' }, _count: { id: true } }),
+    prisma.connection.groupBy({ by: ['requesterId'], where: { requesterId: { in: ids }, status: 'ACCEPTED' }, _count: { id: true } })
+  ]);
+  const map = new Map(ids.map((id) => [id, { followerCount: 0, followingCount: 0 }]));
+  followers.forEach((item) => { map.get(item.receiverId).followerCount = item._count.id; });
+  following.forEach((item) => { map.get(item.requesterId).followingCount = item._count.id; });
+  return map;
+}
+
+function isOrganizationLikeUser(user) {
+  return ['MASJID', 'MSA', 'IMAM', 'STUDENT_OF_KNOWLEDGE', 'ADMIN'].includes(String(user?.accountType || ''));
+}
+
+async function getInstagramConversationFolder(ownerId, otherUserId, existingPreference = null) {
+  if (existingPreference?.folder) return existingPreference.folder;
+  const { incoming } = await getFollowPair(ownerId, otherUserId);
+  return incoming?.status === 'ACCEPTED' ? 'GENERAL' : 'REQUEST';
 }
 
 async function cacheGet(key) {
@@ -1542,6 +1619,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         passwordHash,
         dateOfBirth,
         accountType: 'USER',
+        isPrivate: Boolean(req.body.isPrivate),
         city,
         bio,
         skills: normalizeList(req.body.skills),
@@ -1614,6 +1692,7 @@ app.put('/api/me', auth, async (req, res) => {
     education: req.body.education,
     experience: req.body.experience,
     availability: req.body.availability,
+    isPrivate: req.body.isPrivate === undefined ? undefined : Boolean(req.body.isPrivate),
     latitude: req.body.latitude === undefined ? undefined : Number(req.body.latitude),
     longitude: req.body.longitude === undefined ? undefined : Number(req.body.longitude),
     timezone: req.body.timezone,
@@ -1762,38 +1841,60 @@ app.get('/api/users', auth, async (req, res) => {
   const users = await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
   const warningCounts = req.user.accountType === 'ADMIN' ? await prisma.userWarning.groupBy({ by: ['userId'], _count: { id: true } }) : [];
   const warningCountMap = new Map(warningCounts.map((item) => [item.userId, item._count.id]));
-  const connections = await prisma.connection.findMany({
-    where: { OR: [{ requesterId: req.user.id }, { receiverId: req.user.id }] }
-  });
-  const connectionMap = new Map();
+  const userIds = users.map((user) => user.id);
+  const [connections, counts] = await Promise.all([
+    prisma.connection.findMany({
+      where: { OR: [{ requesterId: req.user.id, receiverId: { in: userIds } }, { requesterId: { in: userIds }, receiverId: req.user.id }] }
+    }),
+    getFollowCounts(userIds)
+  ]);
+  const outgoingMap = new Map();
+  const incomingMap = new Map();
   connections.forEach((connection) => {
-    const otherId = connection.requesterId === req.user.id ? connection.receiverId : connection.requesterId;
-    connectionMap.set(otherId, connection.status);
+    if (connection.requesterId === req.user.id) outgoingMap.set(connection.receiverId, connection);
+    if (connection.receiverId === req.user.id) incomingMap.set(connection.requesterId, connection);
   });
-  res.json(users.map((user) => ({
-    ...publicUser(user, { includeEmail: req.user.accountType === 'ADMIN' || user.id === req.user.id }),
-    warningCount: warningCountMap.get(user.id) || 0,
-    connectionStatus: user.id === req.user.id ? 'SELF' : connectionMap.get(user.id) || 'NONE'
-  })));
+  res.json(users.map((user) => {
+    const count = counts.get(user.id) || { followerCount: 0, followingCount: 0 };
+    const state = user.id === req.user.id
+      ? { followerCount: count.followerCount, followingCount: count.followingCount, followStatus: 'SELF', outgoingFollowStatus: 'SELF', incomingFollowStatus: 'SELF', isFollowing: false, followsYou: false, isMutual: false, canMessage: false }
+      : summarizeFollowState(user, outgoingMap.get(user.id), incomingMap.get(user.id), count.followerCount, count.followingCount);
+    return {
+      ...publicUser(user, { includeEmail: req.user.accountType === 'ADMIN' || user.id === req.user.id }),
+      ...state,
+      warningCount: warningCountMap.get(user.id) || 0,
+      connectionStatus: state.followStatus
+    };
+  }));
 });
 
 app.get('/api/users/:id/social', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const [connections, follows, favorites, eventSubscriptions, affiliations] = await Promise.all([
+  const [followers, following, pendingRequests, follows, favorites, eventSubscriptions, affiliations, counts] = await Promise.all([
     prisma.connection.findMany({
-      where: { status: 'ACCEPTED', OR: [{ requesterId: req.params.id }, { receiverId: req.params.id }] },
+      where: { receiverId: req.params.id, status: 'ACCEPTED' },
       include: { requester: true, receiver: true },
       orderBy: { updatedAt: 'desc' }
     }),
+    prisma.connection.findMany({
+      where: { requesterId: req.params.id, status: 'ACCEPTED' },
+      include: { requester: true, receiver: true },
+      orderBy: { updatedAt: 'desc' }
+    }),
+    req.params.id === req.user.id ? prisma.connection.findMany({
+      where: { receiverId: req.user.id, status: 'PENDING' },
+      include: { requester: true, receiver: true },
+      orderBy: { updatedAt: 'desc' }
+    }) : Promise.resolve([]),
     prisma.organizationFollow.findMany({
       where: { userId: req.params.id },
-      include: { organization: { include: { followers: true, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
+      include: { organization: { include: { followers: { include: { user: true } }, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
       orderBy: { createdAt: 'desc' }
     }),
     prisma.favoriteMasjid.findMany({
       where: { userId: req.params.id },
-      include: { organization: { include: { followers: true, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
+      include: { organization: { include: { followers: { include: { user: true } }, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
       orderBy: { createdAt: 'desc' }
     }),
     prisma.eventSubscription.findMany({
@@ -1803,13 +1904,22 @@ app.get('/api/users/:id/social', auth, async (req, res) => {
     }),
     prisma.organizationPerson.findMany({
       where: { userId: req.params.id },
-      include: { organization: { include: { followers: true, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
+      include: { organization: { include: { followers: { include: { user: true } }, favoritedBy: true, people: { include: { user: true } }, posts: { include: { author: true, organization: true }, orderBy: { createdAt: 'desc' } }, events: true, opportunities: true } } },
       orderBy: { createdAt: 'desc' }
-    })
+    }),
+    getFollowCounts([req.params.id])
   ]);
+  const count = counts.get(req.params.id) || { followerCount: followers.length, followingCount: following.length };
+  const { outgoing, incoming } = await getFollowPair(req.user.id, req.params.id);
+  const state = req.user.id === req.params.id
+    ? { followerCount: count.followerCount, followingCount: count.followingCount, followStatus: 'SELF', outgoingFollowStatus: 'SELF', incomingFollowStatus: 'SELF', isFollowing: false, followsYou: false, isMutual: false, canMessage: false }
+    : summarizeFollowState(user, outgoing, incoming, count.followerCount, count.followingCount);
   res.json({
-    user: publicUser(user),
-    connections: connections.map((connection) => publicUser(connection.requesterId === req.params.id ? connection.receiver : connection.requester)),
+    user: { ...publicUser(user), ...state },
+    followers: followers.map((connection) => publicUser(connection.requester)),
+    following: following.map((connection) => publicUser(connection.receiver)),
+    followRequests: pendingRequests.map(serializeConnection),
+    connections: followers.map((connection) => publicUser(connection.requester)),
     followingMasjids: follows.map((follow) => publicOrganization(follow.organization, req.user.id)),
     favoriteMasjids: favorites.map((favorite) => publicOrganization(favorite.organization, req.user.id)),
     savedEvents: eventSubscriptions.map((subscription) => ({
@@ -1885,25 +1995,42 @@ app.post('/api/users/:id/warnings', auth, requireAdmin, async (req, res) => {
 });
 
 app.post('/api/connections/:userId', auth, async (req, res) => {
-  if (req.params.userId === req.user.id) return res.status(400).json({ error: 'Cannot connect with yourself' });
-  const existing = await prisma.connection.findFirst({
-    where: {
-      OR: [
-        { requesterId: req.user.id, receiverId: req.params.userId },
-        { requesterId: req.params.userId, receiverId: req.user.id }
-      ]
-    }
+  const targetId = req.params.userId;
+  if (targetId === req.user.id) return res.status(400).json({ error: 'Cannot follow yourself' });
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  const status = target.isPrivate && req.user.accountType !== 'ADMIN' ? 'PENDING' : 'ACCEPTED';
+  const existing = await prisma.connection.findUnique({ where: { requesterId_receiverId: { requesterId: req.user.id, receiverId: targetId } } });
+  const connection = existing
+    ? await prisma.connection.update({ where: { id: existing.id }, data: { status: existing.status === 'DECLINED' ? status : existing.status } })
+    : await prisma.connection.create({ data: { requesterId: req.user.id, receiverId: targetId, status } });
+  const [counts, { incoming }] = await Promise.all([getFollowCounts([targetId]), getFollowPair(req.user.id, targetId)]);
+  const count = counts.get(targetId) || { followerCount: 0, followingCount: 0 };
+  res.json({
+    ...connection,
+    followStatus: connection.status === 'PENDING' ? 'REQUESTED' : incoming?.status === 'ACCEPTED' ? 'MUTUAL' : 'FOLLOWING',
+    followerCount: count.followerCount,
+    followingCount: count.followingCount
   });
-  if (existing) return res.json(existing);
-  const connection = await prisma.connection.create({ data: { requesterId: req.user.id, receiverId: req.params.userId } });
-  res.json(connection);
+});
+
+app.delete('/api/connections/:userId', auth, async (req, res) => {
+  const targetId = req.params.userId;
+  await prisma.connection.deleteMany({ where: { requesterId: req.user.id, receiverId: targetId } });
+  const counts = await getFollowCounts([targetId, req.user.id]);
+  res.json({ ok: true, followStatus: 'NONE', followerCount: counts.get(targetId)?.followerCount || 0, followingCount: counts.get(req.user.id)?.followingCount || 0 });
 });
 
 app.put('/api/connections/:connectionId', auth, async (req, res) => {
-  const connection = await prisma.connection.findUnique({ where: { id: req.params.connectionId } });
-  if (!connection || connection.receiverId !== req.user.id) return res.status(404).json({ error: 'Connection request not found' });
-  const updated = await prisma.connection.update({ where: { id: connection.id }, data: { status: req.body.status === 'DECLINED' ? 'DECLINED' : 'ACCEPTED' } });
-  res.json(updated);
+  const connection = await prisma.connection.findUnique({ where: { id: req.params.connectionId }, include: { requester: true, receiver: true } });
+  if (!connection || connection.receiverId !== req.user.id) return res.status(404).json({ error: 'Follow request not found' });
+  const requestedStatus = String(req.body.status || req.body.action || '').toUpperCase();
+  if (['DECLINED', 'DENIED', 'DELETE'].includes(requestedStatus)) {
+    const updated = await prisma.connection.update({ where: { id: connection.id }, data: { status: 'DECLINED' }, include: { requester: true, receiver: true } });
+    return res.json(serializeConnection(updated));
+  }
+  const updated = await prisma.connection.update({ where: { id: connection.id }, data: { status: 'ACCEPTED' }, include: { requester: true, receiver: true } });
+  res.json(serializeConnection(updated));
 });
 
 app.get('/api/connections', auth, async (req, res) => {
@@ -1912,11 +2039,14 @@ app.get('/api/connections', auth, async (req, res) => {
     include: { requester: true, receiver: true },
     orderBy: { updatedAt: 'desc' }
   });
-  res.json(connections.map((connection) => ({
-    ...connection,
-    requester: publicUser(connection.requester),
-    receiver: publicUser(connection.receiver)
-  })));
+  const serialized = connections.map(serializeConnection);
+  res.json({
+    connections: serialized,
+    following: serialized.filter((connection) => connection.requesterId === req.user.id && connection.status === 'ACCEPTED'),
+    followers: serialized.filter((connection) => connection.receiverId === req.user.id && connection.status === 'ACCEPTED'),
+    requests: serialized.filter((connection) => connection.receiverId === req.user.id && connection.status === 'PENDING'),
+    sentRequests: serialized.filter((connection) => connection.requesterId === req.user.id && connection.status === 'PENDING')
+  });
 });
 
 app.get('/api/me/organizations', auth, async (req, res) => {
@@ -2960,6 +3090,7 @@ app.put('/api/opportunities/:id/applications/:applicationId', auth, async (req, 
 });
 
 app.get('/api/messages/threads', auth, async (req, res) => {
+  const requestedFolder = normalizeMessageFolder(req.query.folder, 'GENERAL');
   const [messages, preferences] = await Promise.all([
     prisma.message.findMany({
       where: { OR: [{ senderId: req.user.id }, { receiverId: req.user.id }] },
@@ -2970,13 +3101,17 @@ app.get('/api/messages/threads', auth, async (req, res) => {
   ]);
   const preferenceMap = new Map(preferences.map((preference) => [preference.otherUserId, preference]));
   const threads = new Map();
-  messages.forEach((message) => {
+  for (const message of messages) {
     const other = message.senderId === req.user.id ? message.receiver : message.sender;
     const preference = preferenceMap.get(other.id);
-    if (preference?.hidden) return;
+    const folder = normalizeMessageFolder(preference?.folder, message.receiverId === req.user.id ? await getInstagramConversationFolder(req.user.id, other.id, preference) : 'GENERAL');
+    if (preference?.hidden && folder !== 'ARCHIVE') continue;
+    if (folder !== requestedFolder) continue;
     if (!threads.has(other.id)) {
       threads.set(other.id, {
         user: publicUser(other),
+        folder,
+        requestStatus: preference?.requestStatus || folder,
         lastMessage: message.deletedAt ? 'This message was unsent' : message.content,
         lastMessageAt: message.createdAt,
         unread: message.receiverId === req.user.id && !message.readAt ? 1 : 0,
@@ -2986,8 +3121,18 @@ app.get('/api/messages/threads', auth, async (req, res) => {
       const thread = threads.get(other.id);
       thread.unread += 1;
     }
-  });
-  res.json({ threads: [...threads.values()], unreadTotal: await unreadCount(req.user.id), onlineUserIds: [...onlineUsers.keys()] });
+  }
+  const folderCounts = { GENERAL: 0, REQUEST: 0, ARCHIVE: 0 };
+  const seenCounts = new Set();
+  for (const message of messages) {
+    const other = message.senderId === req.user.id ? message.receiver : message.sender;
+    if (seenCounts.has(other.id)) continue;
+    seenCounts.add(other.id);
+    const preference = preferenceMap.get(other.id);
+    const folder = normalizeMessageFolder(preference?.folder, message.receiverId === req.user.id ? await getInstagramConversationFolder(req.user.id, other.id, preference) : 'GENERAL');
+    folderCounts[folder] = (folderCounts[folder] || 0) + 1;
+  }
+  res.json({ threads: [...threads.values()], folder: requestedFolder, folderCounts, unreadTotal: await unreadCount(req.user.id), onlineUserIds: [...onlineUsers.keys()] });
 });
 
 app.get('/api/messages/:userId', auth, async (req, res) => {
@@ -2999,7 +3144,7 @@ app.get('/api/messages/:userId', auth, async (req, res) => {
   await prisma.message.updateMany({ where: { senderId: otherUserId, receiverId: req.user.id, readAt: null }, data: { readAt: new Date() } });
   await prisma.conversationPreference.upsert({
     where: { ownerId_otherUserId: { ownerId: req.user.id, otherUserId } },
-    create: { ownerId: req.user.id, otherUserId, hidden: false },
+    create: { ownerId: req.user.id, otherUserId, hidden: false, folder: await getInstagramConversationFolder(req.user.id, otherUserId) },
     update: { hidden: false }
   });
   await invalidateUnread(req.user.id);
@@ -3024,18 +3169,33 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
   if (receiverId === req.user.id) return res.status(400).json({ error: 'Cannot message yourself' });
   const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
   if (!receiver) return res.status(404).json({ error: 'Receiver not found' });
-  const message = await prisma.message.create({
-    data: { senderId: req.user.id, receiverId, content: normalizedContent },
-    include: { sender: true, receiver: true, reactions: { include: { user: true } } }
-  });
-  await prisma.conversationPreference.updateMany({
-    where: {
-      OR: [
-        { ownerId: req.user.id, otherUserId: receiverId },
-        { ownerId: receiverId, otherUserId: req.user.id }
-      ]
-    },
-    data: { hidden: false }
+  const { outgoing, incoming } = await getFollowPair(req.user.id, receiverId);
+  const receiverFollowsSender = incoming?.status === 'ACCEPTED';
+  const senderFollowsReceiver = outgoing?.status === 'ACCEPTED';
+  const mutual = receiverFollowsSender && senderFollowsReceiver;
+  const senderFolder = 'GENERAL';
+  const receiverFolder = mutual || receiverFollowsSender || isOrganizationLikeUser(req.user) ? 'GENERAL' : 'REQUEST';
+  const receiverExistingPreference = await prisma.conversationPreference.findUnique({ where: { ownerId_otherUserId: { ownerId: receiverId, otherUserId: req.user.id } } });
+  const finalReceiverFolder = receiverExistingPreference?.requestStatus === 'GENERAL' ? 'GENERAL' : receiverFolder;
+  if (receiverExistingPreference?.requestStatus === 'DECLINED' || receiverExistingPreference?.requestStatus === 'BLOCKED') {
+    return res.status(403).json({ error: 'This conversation cannot receive new messages.' });
+  }
+  const message = await prisma.$transaction(async (tx) => {
+    const created = await tx.message.create({
+      data: { senderId: req.user.id, receiverId, content: normalizedContent },
+      include: { sender: true, receiver: true, reactions: { include: { user: true } } }
+    });
+    await tx.conversationPreference.upsert({
+      where: { ownerId_otherUserId: { ownerId: req.user.id, otherUserId: receiverId } },
+      create: { ownerId: req.user.id, otherUserId: receiverId, hidden: false, folder: senderFolder, requestStatus: 'GENERAL', acceptedAt: new Date() },
+      update: { hidden: false, folder: senderFolder }
+    });
+    await tx.conversationPreference.upsert({
+      where: { ownerId_otherUserId: { ownerId: receiverId, otherUserId: req.user.id } },
+      create: { ownerId: receiverId, otherUserId: req.user.id, hidden: false, folder: finalReceiverFolder, requestStatus: finalReceiverFolder, acceptedAt: finalReceiverFolder === 'GENERAL' ? new Date() : null },
+      update: { hidden: false, folder: finalReceiverFolder, requestStatus: finalReceiverFolder, acceptedAt: finalReceiverFolder === 'GENERAL' ? new Date() : null }
+    });
+    return created;
   });
   await invalidateUnread(receiverId);
   const serialized = serializeMessage(message);
@@ -3048,8 +3208,8 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
   const messageNotificationsEnabled = publicNotificationPreferences(receiverPreference).messages && !conversationPreference?.muted;
   const messagePush = messageNotificationsEnabled
     ? await sendPushToUser(receiverId, {
-        type: 'MESSAGE',
-        title: `New message from ${message.sender.name}`,
+        type: finalReceiverFolder === 'REQUEST' ? 'MESSAGE_REQUEST' : 'MESSAGE',
+        title: finalReceiverFolder === 'REQUEST' ? `Message request from ${message.sender.name}` : `New message from ${message.sender.name}`,
         body: normalizedContent.slice(0, 120),
         url: `/messages/${req.user.id}`,
         tag: `message-${message.id}`,
@@ -3057,7 +3217,7 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
         senderId: req.user.id
       })
     : { sent: 0, skipped: true, reason: conversationPreference?.muted ? 'conversation muted' : 'messages preference disabled' };
-  const messageWhatsapp = messageNotificationsEnabled
+  const messageWhatsapp = messageNotificationsEnabled && finalReceiverFolder !== 'REQUEST'
     ? await sendWhatsappToUser(receiverId, {
         type: 'MESSAGE',
         title: `New message from ${message.sender.name}`,
@@ -3066,9 +3226,9 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
         messageId: message.id,
         senderId: req.user.id
       })
-    : { sent: 0, skipped: true, reason: conversationPreference?.muted ? 'conversation muted' : 'messages preference disabled' };
+    : { sent: 0, skipped: true, reason: finalReceiverFolder === 'REQUEST' ? 'message request' : conversationPreference?.muted ? 'conversation muted' : 'messages preference disabled' };
   await emitUnread(receiverId);
-  res.json({ ...serialized, push: messagePush, whatsapp: messageWhatsapp });
+  res.json({ ...serialized, folder: finalReceiverFolder, push: messagePush, whatsapp: messageWhatsapp });
 });
 
 app.put('/api/messages/threads/:userId', auth, async (req, res) => {
@@ -3076,12 +3236,20 @@ app.put('/api/messages/threads/:userId', auth, async (req, res) => {
   if (otherUserId === req.user.id) return res.status(400).json({ error: 'Cannot update a conversation with yourself' });
   const otherUser = await prisma.user.findUnique({ where: { id: otherUserId }, select: { id: true } });
   if (!otherUser) return res.status(404).json({ error: 'User not found' });
+  const action = String(req.body.action || '').toUpperCase();
+  const data = {};
+  if (req.body.muted !== undefined) data.muted = Boolean(req.body.muted);
+  if (req.body.folder !== undefined) data.folder = normalizeMessageFolder(req.body.folder);
+  if (action === 'ACCEPT') Object.assign(data, { folder: 'GENERAL', requestStatus: 'GENERAL', hidden: false, acceptedAt: new Date() });
+  if (action === 'DECLINE') Object.assign(data, { folder: 'ARCHIVE', requestStatus: 'DECLINED', hidden: true });
+  if (action === 'ARCHIVE') Object.assign(data, { folder: 'ARCHIVE', hidden: false });
+  if (action === 'UNARCHIVE') Object.assign(data, { folder: 'GENERAL', hidden: false });
   const preference = await prisma.conversationPreference.upsert({
     where: { ownerId_otherUserId: { ownerId: req.user.id, otherUserId } },
-    create: { ownerId: req.user.id, otherUserId, muted: Boolean(req.body.muted), hidden: false },
-    update: { muted: Boolean(req.body.muted), hidden: false }
+    create: { ownerId: req.user.id, otherUserId, muted: Boolean(req.body.muted), hidden: false, folder: data.folder || 'GENERAL', requestStatus: data.requestStatus || 'GENERAL', acceptedAt: data.acceptedAt || null },
+    update: Object.keys(data).length ? data : { hidden: false }
   });
-  res.json({ muted: preference.muted, hidden: preference.hidden });
+  res.json({ muted: preference.muted, hidden: preference.hidden, folder: preference.folder, requestStatus: preference.requestStatus, acceptedAt: preference.acceptedAt });
 });
 
 app.delete('/api/messages/threads/:userId', auth, async (req, res) => {
@@ -3089,8 +3257,8 @@ app.delete('/api/messages/threads/:userId', auth, async (req, res) => {
   await Promise.all([
     prisma.conversationPreference.upsert({
       where: { ownerId_otherUserId: { ownerId: req.user.id, otherUserId } },
-      create: { ownerId: req.user.id, otherUserId, hidden: true },
-      update: { hidden: true }
+      create: { ownerId: req.user.id, otherUserId, hidden: false, folder: 'ARCHIVE' },
+      update: { hidden: false, folder: 'ARCHIVE' }
     }),
     prisma.message.updateMany({
       where: { senderId: otherUserId, receiverId: req.user.id, readAt: null },
@@ -3099,7 +3267,7 @@ app.delete('/api/messages/threads/:userId', auth, async (req, res) => {
   ]);
   await invalidateUnread(req.user.id);
   await emitUnread(req.user.id);
-  res.json({ hidden: true });
+  res.json({ hidden: false, folder: 'ARCHIVE' });
 });
 
 app.delete('/api/messages/:messageId', auth, async (req, res) => {
@@ -3184,8 +3352,20 @@ app.post('/api/groups', auth, async (req, res) => {
   if (!name) return res.status(400).json({ error: 'Group name is required' });
   if (!memberIds.length) return res.status(400).json({ error: 'Select at least one other person' });
   if (memberIds.length > 99) return res.status(400).json({ error: 'Groups can have up to 100 members' });
-  const existingUsers = await prisma.user.findMany({ where: { id: { in: memberIds } }, select: { id: true } });
+  const existingUsers = await prisma.user.findMany({ where: { id: { in: memberIds } }, select: { id: true, accountType: true } });
   if (existingUsers.length !== memberIds.length) return res.status(400).json({ error: 'One or more selected users no longer exist' });
+  const eligibleConnections = await prisma.connection.findMany({
+    where: {
+      status: 'ACCEPTED',
+      OR: [
+        { requesterId: req.user.id, receiverId: { in: memberIds } },
+        { requesterId: { in: memberIds }, receiverId: req.user.id }
+      ]
+    }
+  });
+  const eligibleIds = new Set(eligibleConnections.flatMap((connection) => [connection.requesterId, connection.receiverId]).filter((id) => id !== req.user.id));
+  const ineligible = existingUsers.filter((user) => !eligibleIds.has(user.id) && !isOrganizationLikeUser(user));
+  if (ineligible.length) return res.status(403).json({ error: 'Groups can only include accounts you follow, accounts that follow you, or approved organization accounts.' });
   const group = await prisma.groupChat.create({
     data: {
       name,

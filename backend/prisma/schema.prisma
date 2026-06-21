@@ -26,6 +26,7 @@ model User {
   passwordResetTokenHash String?
   passwordResetExpiresAt DateTime?
   accountType  AccountType @default(USER)
+  isPrivate    Boolean     @default(false)
   bio          String?
   city         String?
   location     String?
@@ -337,6 +338,9 @@ model ConversationPreference {
   otherUserId String
   muted       Boolean  @default(false)
   hidden      Boolean  @default(false)
+  folder      String   @default("GENERAL")
+  requestStatus String @default("GENERAL")
+  acceptedAt  DateTime?
   updatedAt   DateTime @updatedAt
 
   owner     User @relation("ConversationPreferenceOwner", fields: [ownerId], references: [id], onDelete: Cascade)

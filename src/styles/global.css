@@ -8390,6 +8390,75 @@ select:focus {
   font-weight: 800;
 }
 
+/* Instagram-style social/messaging refinements */
+.dm-filter-row button em {
+  margin-left: 0.35rem;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: var(--surface-muted, rgba(255,255,255,0.08));
+  color: inherit;
+  font-style: normal;
+}
+
+.dm-request-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+}
+
+.dm-selected-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.55rem 0;
+}
+
+.dm-selected-members span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface-muted, rgba(255,255,255,0.08));
+  font-size: 0.86rem;
+}
+
+.dm-selected-members button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.profile-actions .secondary-button[disabled] {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.profile-stat-row button {
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .dm-request-actions {
+    width: 100%;
+    justify-content: stretch;
+    margin-left: 0;
+  }
+
+  .dm-request-actions button {
+    flex: 1;
+  }
+}
+
 /* Final mobile DM overrides: keep the PWA/iOS chat screen in an Instagram-style full-screen route. */
 .dm-new-chat-error {
   margin: 0 2px;
