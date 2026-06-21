@@ -1360,17 +1360,27 @@ function MessagesScreen({
   }
 
   async function createGroupChat() {
-    if (!groupName.trim() || !groupMemberIds.length) return;
+    const normalizedGroupName = groupName.trim();
+    if (!normalizedGroupName) {
+      setMessageError('Add a group name first.');
+      return;
+    }
+    if (!groupMemberIds.length) {
+      setMessageError('Select at least one person for the group.');
+      return;
+    }
     setCreatingGroup(true);
+    setMessageError('');
     try {
       const group = await api('/api/groups', {
         method: 'POST',
-        body: JSON.stringify({ name: groupName.trim(), memberIds: groupMemberIds })
+        body: JSON.stringify({ name: normalizedGroupName, memberIds: groupMemberIds })
       });
-      setShowNewChat(false);
       setGroupName('');
       setGroupMemberIds([]);
       setNewChatQuery('');
+      setNewChatMode('direct');
+      setShowNewChat(false);
       await loadGroups();
       await chooseGroup(group);
     } catch (error) {
@@ -1486,7 +1496,7 @@ function MessagesScreen({
 
   return (
     <Page>
-      <div className={detailMode || selectedGroup ? 'messaging-layout thread-route' : 'messaging-layout'}>
+      <div className={detailMode || selectedUser || selectedGroup ? 'messaging-layout thread-route' : 'messaging-layout'}>
         <section className="panel inbox-list">
           <div className="dm-mobile-titlebar">
             <span className="org-logo dm-self-avatar"><ResilientImage src={currentUser?.avatarUrl} alt="" fallback={initials(currentUser?.name || 'M')} /></span>
@@ -1545,10 +1555,11 @@ function MessagesScreen({
       {showNewChat && (
         <div className="modal-backdrop dm-new-chat-backdrop" onClick={() => setShowNewChat(false)}>
           <section className="panel dm-new-chat-sheet" onClick={(event) => event.stopPropagation()}>
-            <div className="dm-new-chat-head"><button type="button" onClick={() => setShowNewChat(false)}><X size={22} /></button><strong>New message</strong><button type="button" disabled={newChatMode !== 'group' || !groupName.trim() || !groupMemberIds.length || creatingGroup} onClick={createGroupChat}>Create</button></div>
+            <div className="dm-new-chat-head"><button type="button" onClick={() => setShowNewChat(false)}><X size={22} /></button><strong>New message</strong><button type="button" disabled={newChatMode !== 'group' || creatingGroup} onClick={createGroupChat}>{creatingGroup ? 'Creating...' : 'Create'}</button></div>
             <div className="dm-new-chat-tabs"><button className={newChatMode === 'direct' ? 'active' : ''} onClick={() => setNewChatMode('direct')}>Direct</button><button className={newChatMode === 'group' ? 'active' : ''} onClick={() => setNewChatMode('group')}>Group</button></div>
             {newChatMode === 'group' && <input className="dm-group-name" value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Group name" maxLength={80} />}
             <label className="dm-search"><Search size={16} /><input value={newChatQuery} onChange={(event) => setNewChatQuery(event.target.value)} placeholder="Search people" /></label>
+            {messageError && <p className="message-error dm-new-chat-error">{messageError}</p>}
             <div className="dm-new-chat-people">
               {users.filter((person) => `${person.name} ${person.city || ''}`.toLowerCase().includes(newChatQuery.toLowerCase())).map((person) => {
                 const selected = groupMemberIds.includes(person.id);
