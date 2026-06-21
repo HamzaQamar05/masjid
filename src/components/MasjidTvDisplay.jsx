@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Clock3, MapPin, Megaphone, MoonStar } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
-const REFRESH_INTERVAL_MS = 60_000;
+const REFRESH_INTERVAL_MS = 30_000;
 const SLIDE_INTERVAL_MS = 10_000;
 const prayerNames = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 
@@ -14,9 +14,11 @@ function fallbackDisplay(masjidId) {
     announcement: 'Welcome. Live masjid information will appear here when the display connects.',
     prayers: prayerNames.map((name) => ({ name, adhan: '--:--', iqamah: '--:--' })),
     jummahTimes: ['Time to be announced'],
+    slides: [],
     events: [
       {
         id: `fallback-${masjidId}`,
+        typeLabel: 'Coming up',
         title: 'Upcoming community events',
         description: 'Event posters and details will rotate here.',
         startTime: null,
@@ -47,6 +49,11 @@ function eventDate(value) {
     hour: 'numeric',
     minute: '2-digit'
   }).format(date);
+}
+
+function slideSchedule(slide) {
+  if (slide?.dayTime) return slide.dayTime;
+  return eventDate(slide?.startTime);
 }
 
 export default function MasjidTvDisplay({ masjidId, apiBase }) {
@@ -83,14 +90,14 @@ export default function MasjidTvDisplay({ masjidId, apiBase }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  const events = display.events?.length ? display.events : fallbackDisplay(masjidId).events;
+  const events = display.slides?.length ? display.slides : display.events?.length ? display.events : fallbackDisplay(masjidId).events;
   useEffect(() => {
     setSlideIndex(0);
     const timer = window.setInterval(() => {
       setSlideIndex((current) => (current + 1) % Math.max(events.length, 1));
     }, SLIDE_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [events.length]);
+  }, [events.length, display.updatedAt]);
 
   const activeEvent = events[slideIndex % events.length];
   const appUrl = display.appUrl || window.location.origin;
@@ -146,10 +153,11 @@ export default function MasjidTvDisplay({ masjidId, apiBase }) {
           )}
           <div className="tv-display-event-shade" />
           <div className="tv-display-event-copy">
-            <p>Coming up</p>
+            <p>{activeEvent?.typeLabel || (activeEvent?.kind === 'PROGRAM' ? 'Program' : 'Coming up')}</p>
             <h2>{activeEvent?.title || 'Community event'}</h2>
-            <div><CalendarDays size={21} />{eventDate(activeEvent?.startTime)}</div>
+            <div><CalendarDays size={21} />{slideSchedule(activeEvent)}</div>
             {activeEvent?.location && <div><MapPin size={21} />{activeEvent.location}</div>}
+            {activeEvent?.description && <span className="tv-display-event-description">{activeEvent.description}</span>}
           </div>
           {events.length > 1 && (
             <div className="tv-display-slide-dots">

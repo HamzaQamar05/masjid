@@ -2153,15 +2153,34 @@ app.get('/api/display/:masjidId', async (req, res) => {
 
   const prayerNames = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
   const prayerTime = (source, name) => source?.[name] || source?.[name.toLowerCase()] || '';
-  const prayerSchedule = organization.iqamahTimes || {};
-  const congregationSchedule = organization.prayerTimes || {};
+  const adhanSchedule = organization.iqamahTimes || {};
+  const iqamahSchedule = organization.prayerTimes || {};
+  let locationAdhanTimes = {};
+  if (Number.isFinite(Number(organization.latitude)) && Number.isFinite(Number(organization.longitude))) {
+    try {
+      locationAdhanTimes = await fetchPrayerTimings({
+        latitude: Number(organization.latitude),
+        longitude: Number(organization.longitude),
+        method: organization.prayerMethod || undefined,
+        dateKey: new Date().toISOString().slice(0, 10),
+        city: organization.city
+      });
+    } catch (error) {
+      console.error('Display adhan lookup failed', { organizationId: organization.id, message: error.message });
+    }
+  }
+  const displayPrayerTime = (source, name) => {
+    const raw = prayerTime(source, name);
+    const match = String(raw || '').match(/(\d{1,2}:\d{2})/);
+    return match ? match[1] : raw;
+  };
   const additionalPrayers = [
-    ...(Array.isArray(prayerSchedule.additionalPrayers) ? prayerSchedule.additionalPrayers : []),
-    ...(Array.isArray(congregationSchedule.additionalPrayers) ? congregationSchedule.additionalPrayers : [])
+    ...(Array.isArray(adhanSchedule.additionalPrayers) ? adhanSchedule.additionalPrayers : []),
+    ...(Array.isArray(iqamahSchedule.additionalPrayers) ? iqamahSchedule.additionalPrayers : [])
   ];
   const jummahTimes = [
-    prayerTime(congregationSchedule, 'Jumuah'),
-    prayerTime(prayerSchedule, 'Jumuah'),
+    prayerTime(iqamahSchedule, 'Jumuah'),
+    prayerTime(adhanSchedule, 'Jumuah'),
     ...additionalPrayers
       .filter((item) => /jum|friday/i.test(item?.name || ''))
       .flatMap((item) => [item.jamatTime, item.iqamahTime, item.time])
@@ -2177,15 +2196,32 @@ app.get('/api/display/:masjidId', async (req, res) => {
     .filter((post) => post.eventTime && new Date(post.eventTime) >= new Date())
     .map((post) => ({
       id: `post-${post.id}`,
+      kind: 'POST_EVENT',
+      typeLabel: 'Coming up',
       imageUrl: post.imageUrl,
       title: post.title,
       description: post.content,
       location: post.location,
       startTime: post.eventTime
     }));
+  const programSlides = (Array.isArray(organization.classes) ? organization.classes : [])
+    .filter((program) => program && (program.title || program.description || program.imageUrl))
+    .map((program, index) => ({
+      id: `program-${program.id || index}`,
+      kind: 'PROGRAM',
+      typeLabel: 'Program',
+      imageUrl: program.imageUrl || program.heroImageUrl || organization.heroImageUrl || organization.imageUrl,
+      title: program.title || 'Masjid program',
+      description: program.description || program.notes || program.teacher || '',
+      location: program.location || organization.address || organization.city,
+      dayTime: program.dayTime || program.time || 'Schedule to be announced',
+      startTime: program.startTime || null
+    }));
   const events = [
     ...organization.events.map((event) => ({
       id: event.id,
+      kind: 'EVENT',
+      typeLabel: 'Coming up',
       imageUrl: event.imageUrl,
       title: event.title,
       description: event.description,
@@ -2194,7 +2230,9 @@ app.get('/api/display/:masjidId', async (req, res) => {
     })),
     ...postEvents
   ].sort((a, b) => new Date(a.startTime) - new Date(b.startTime)).slice(0, 8);
+  const slides = [...events, ...programSlides].slice(0, 12);
 
+  res.set('Cache-Control', 'no-store, max-age=0');
   res.json({
     masjidName: organization.name,
     logoUrl: organization.imageUrl || organization.heroImageUrl || null,
@@ -2202,11 +2240,13 @@ app.get('/api/display/:masjidId', async (req, res) => {
     announcement: announcementText.length > 360 ? `${announcementText.slice(0, 357).trim()}…` : announcementText,
     prayers: prayerNames.map((name) => ({
       name,
-      adhan: prayerTime(prayerSchedule, name) || '--:--',
-      iqamah: prayerTime(congregationSchedule, name) || prayerTime(prayerSchedule, name) || '--:--'
+      adhan: displayPrayerTime(locationAdhanTimes, name) || displayPrayerTime(adhanSchedule, name) || '--:--',
+      iqamah: prayerTime(iqamahSchedule, name) || '--:--'
     })),
     jummahTimes: jummahTimes.length ? jummahTimes : ['Time to be announced'],
-    events
+    events: slides,
+    slides,
+    updatedAt: new Date().toISOString()
   });
 });
 

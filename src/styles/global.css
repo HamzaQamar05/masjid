@@ -4256,7 +4256,9 @@ button.mini-org-avatar {
   --tv-display-accent: #40d7bd;
   --tv-display-gold: #e8bd68;
   width: 100vw;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -4550,6 +4552,17 @@ button.mini-org-avatar {
   font-weight: 750;
 }
 
+.tv-display-event-description {
+  display: -webkit-box;
+  margin-top: clamp(10px, 1.3vh, 18px);
+  overflow: hidden;
+  color: var(--tv-display-muted);
+  font-size: clamp(14px, 1.15vw, 21px);
+  line-height: 1.32;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
 .tv-display-slide-dots {
   position: absolute;
   z-index: 3;
@@ -4655,8 +4668,8 @@ button.mini-org-avatar {
 
 @media (max-aspect-ratio: 4 / 3) {
   .tv-display {
-    min-height: 100dvh;
-    overflow: auto;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   .tv-display-grid {
@@ -4669,8 +4682,8 @@ button.mini-org-avatar {
 
   .tv-display-event-panel {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(42vh, 1fr) auto;
-    min-height: 52vh;
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-height: 0;
   }
 
   .tv-display-event-copy {
