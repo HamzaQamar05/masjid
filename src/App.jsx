@@ -28,7 +28,6 @@ import {
   Send,
   Settings,
   ShieldCheck,
-  Trash2,
   UserCheck,
   Users,
   Volume2,
@@ -1222,9 +1221,9 @@ function SwipeThreadRow({ person, thread, isOnline, active, onOpen, onMute, onDe
           {thread?.muted ? <Volume2 size={21} /> : <VolumeX size={21} />}
           <span>{thread?.muted ? 'Unmute' : 'Mute'}</span>
         </button>
-        <button type="button" className="dm-delete-action" onClick={() => { offsetRef.current = 0; setOffset(0); onDelete(); }} aria-label={`Delete chat with ${person.name}`}>
-          <Trash2 size={21} />
-          <span>Delete</span>
+        <button type="button" className="dm-delete-action" onClick={() => { offsetRef.current = 0; setOffset(0); onDelete(); }} aria-label={thread?.folder === 'ARCHIVE' ? `Move ${person.name} to General` : `Archive chat with ${person.name}`}>
+          {thread?.folder === 'ARCHIVE' ? <Inbox size={21} /> : <Archive size={21} />}
+          <span>{thread?.folder === 'ARCHIVE' ? 'General' : 'Archive'}</span>
         </button>
       </div>
       <button
@@ -1279,7 +1278,8 @@ function MessagesScreen({
   unsendMessage,
   detailMode = false,
   onThreadOpen,
-  onBackToInbox
+  onBackToInbox,
+  onThreadActiveChange
 }) {
   const [draft, setDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -1332,6 +1332,11 @@ function MessagesScreen({
     const timer = setInterval(loadGroups, 10_000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    onThreadActiveChange?.(Boolean(selectedUser || selectedGroup));
+    return () => onThreadActiveChange?.(false);
+  }, [onThreadActiveChange, selectedUser?.id, selectedGroup?.id]);
 
   useEffect(() => {
     refreshFolderThreads(conversationFilter).catch(console.error);
@@ -1456,9 +1461,12 @@ function MessagesScreen({
     await refreshFolderThreads(action === 'ACCEPT' ? 'GENERAL' : nextFolder);
   }
 
-  async function deleteThread(person) {
-    if (!confirm(`Archive your conversation with ${person.name}?`)) return;
-    await updateThreadAction(person, 'ARCHIVE', 'ARCHIVE');
+  async function deleteThread(person, thread) {
+    const archived = thread?.folder === 'ARCHIVE';
+    const action = archived ? 'UNARCHIVE' : 'ARCHIVE';
+    const message = archived ? `Move your conversation with ${person.name} back to General?` : `Archive your conversation with ${person.name}?`;
+    if (!confirm(message)) return;
+    await updateThreadAction(person, action);
   }
   async function sendMessage() {
     if ((!selectedUser && !selectedGroup) || !draft.trim()) return;
@@ -1585,7 +1593,7 @@ function MessagesScreen({
           {visibleUsers.map((person) => {
             const thread = threads.find((item) => item.user.id === person.id);
             const isOnline = onlineUserIds.includes(person.id);
-            return <SwipeThreadRow key={person.id} person={person} thread={thread} isOnline={isOnline} active={selectedUser?.id === person.id} onOpen={() => chooseUser(person)} onMute={() => toggleThreadMute(person, thread)} onDelete={() => deleteThread(person)} />;
+            return <SwipeThreadRow key={person.id} person={person} thread={thread} isOnline={isOnline} active={selectedUser?.id === person.id} onOpen={() => chooseUser(person)} onMute={() => toggleThreadMute(person, thread)} onDelete={() => deleteThread(person, thread)} />;
           })}
           {!visibleUsers.length && <div className="dm-empty-inbox"><MessageCircle size={30} /><strong>No conversations yet</strong><span>Search approved followers/following above to start a chat. New non-mutual inbound messages appear in Requests.</span></div>}
         </section>
@@ -4387,6 +4395,7 @@ function AuthenticatedApp() {
   const [onlineUserIds, setOnlineUserIds] = useState([]);
   const [typingUserIds, setTypingUserIds] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [messagesThreadActive, setMessagesThreadActive] = useState(false);
   const selectedUserIdRef = useRef(null);
   const [viewedUser, setViewedUser] = useState(null);
   const [selectedOrganization, setSelectedOrganization] = useState(null);
@@ -5218,7 +5227,7 @@ function AuthenticatedApp() {
     jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
-    messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setTab('messages'); }} />,
+    messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setMessagesThreadActive(false); setTab('messages'); }} onThreadActiveChange={setMessagesThreadActive} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); loadProfileSocial(user.id); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} onRefreshSocial={() => loadProfileSocial(viewedUser?.id || user.id)} onMessage={startMessage} />,
     settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} whatsappSettings={whatsappSettings} updateWhatsAppSettings={updateWhatsAppSettings} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} theme={theme} setTheme={setTheme} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
@@ -5245,7 +5254,7 @@ function AuthenticatedApp() {
         {screens[tab] || screens.home}
       </Shell>
      
-      <section className={isDetailRoute ? 'mobile-bottom-nav detail-hidden' : 'mobile-bottom-nav'}>
+      <section className={isDetailRoute || (tab === 'messages' && messagesThreadActive) ? 'mobile-bottom-nav detail-hidden' : 'mobile-bottom-nav'}>
         {visibleMobileTabs.map((key) => navItems.find((item) => item.key === key)).filter(Boolean).map((item) => {
           const Icon = item.icon;
           const label = item.key === 'profile' && isUserAccount(user) ? 'People' : item.label;

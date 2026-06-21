@@ -8595,3 +8595,42 @@ select:focus {
     margin: 0 2px 2px;
   }
 }
+
+/* Mobile messaging action recovery. Keep this after the repeated mobile nav/chat blocks. */
+.mobile-bottom-nav.detail-hidden {
+  display: none !important;
+}
+
+@media (max-width: 880px) {
+  .thread-route .message-thread {
+    z-index: 140;
+  }
+
+  .thread-route .message-composer {
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .thread-route .message-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 7px;
+    justify-content: flex-end;
+  }
+
+  .thread-route .chat-bubble.received .message-actions {
+    justify-content: flex-start;
+  }
+
+  .thread-route .message-actions button {
+    min-height: 28px;
+    padding: 0 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .dm-swipe-row,
+  .inbox-list .dm-thread-row {
+    touch-action: pan-y;
+  }
+}
