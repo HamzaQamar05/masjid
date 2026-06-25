@@ -1,12 +1,12 @@
 deploy test
 
-Notification launch checklist
+Native launch checklist
 
 1. Backend env:
    - DATABASE_URL points at the intended database.
    - JWT_SECRET is a long production secret.
    - FRONTEND_URL matches the deployed web/app URL.
-   - VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT are set.
+   - VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT are set only when web push is re-enabled.
    - PRAYER_NOTIFICATION_JOB_ENABLED=true unless another scheduler owns prayer reminders.
    - WHATSAPP_ENABLED=false for launch unless a separate WhatsApp sender service is deployed.
    - If WhatsApp is enabled, WHATSAPP_SERVICE_URL points to the isolated sender service and WHATSAPP_SERVICE_TOKEN is set.
@@ -14,14 +14,13 @@ Notification launch checklist
 
 2. Register or log in as a community user.
    - Confirm login persists after refreshing and closing/reopening the app.
-   - Confirm Home shows the first-run setup checklist and uses fallback masjid/prayer data before GPS is enabled.
-   - Click the setup checklist location action and confirm the browser location prompt only appears after this in-app action.
-   - Open Home or Prayer and verify the in-app notification card appears before the browser permission prompt.
+   - Confirm the app asks for location after sign-in and uses fallback masjid/prayer data if permission is denied.
+   - Confirm the app asks for notification permission after sign-in without showing an install prompt or startup checklist.
+   - Open Prayer and verify the notification card reflects device permission status.
 
 3. Enable notifications.
-   - Click Enable notifications.
-   - Confirm browser/device permission is granted.
-   - Confirm Settings or Prayer shows at least one saved device subscription.
+   - Confirm device notification permission is granted.
+   - Confirm Settings or Prayer shows notification preferences.
    - If permission is denied, confirm the UI explains how to re-enable it.
 
 4. Save location and prayer preferences.

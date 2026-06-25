@@ -8,9 +8,6 @@ import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 
 injectSpeedInsights();
 
-const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
-document.documentElement.classList.toggle('standalone-pwa', standalone);
-
 createRoot(document.getElementById('root')).render(
   <AppErrorBoundary>
     <BrowserRouter>

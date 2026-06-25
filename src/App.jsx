@@ -44,6 +44,7 @@ import { initials, safeList, listToText, textToList, normalizeList, escapeHtml }
 import { toDateInput } from './lib/date.js';
 import { distanceText, withLocalDistance } from './lib/geo.js';
 import { buildPrayerEditForm, cleanPrayerRows, dashboardIqamahTimes, directionsUrl, emptyAdditionalPrayer, emptyTemporaryPrayer, masjidAnnouncementTypes, standardPrayerKeys } from './lib/masjid.js';
+import { isNativeApp, requestNativeLocation, requestNativeNotifications, showNativeNotification } from './lib/nativeApp.js';
 
 const EVENT_AUTO_REFRESH_MS = 15000;
 const notificationTimers = new Map();
@@ -124,7 +125,7 @@ const navItems = [
 ];
 
 const leftNavKeys = ['organizations', 'events', 'library', 'volunteers', 'jobs', 'businesses', 'dashboard'];
-const mobileNavKeys = ['home', 'prayer', 'messages', 'network', 'profile'];
+const mobileNavKeys = ['home', 'organizations', 'messages', 'network', 'prayer'];
 const swipeDistance = 64;
 const swipeEdgeWidth = 34;
 const swipeVerticalTolerance = 44;
@@ -176,17 +177,6 @@ function routeId(pathname, prefix) {
   if (!pathname.startsWith(prefix)) return '';
   return decodeURIComponent(pathname.slice(prefix.length).split('/')[0] || '');
 }
-function isStandalonePwa() {
-  return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
-}
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
-}
-
 function ResilientImage({ src, fallback = null, onError, ...props }) {
   const [failed, setFailed] = useState(false);
 
@@ -213,30 +203,20 @@ function profileBannerStyle(item = {}) {
 }
 
 async function showPrayerNotification(title, body, tag) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  if ('serviceWorker' in navigator) {
-    const registration = await navigator.serviceWorker.ready;
-    if (registration.active) {
-      registration.active.postMessage({ type: 'SHOW_PRAYER_NOTIFICATION', title, body, tag });
-      return;
-    }
-    await registration.showNotification(title, { body, tag });
+  if (isNativeApp()) {
+    await showNativeNotification({ title, body, tag });
     return;
   }
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
   new Notification(title, { body, tag });
 }
 
 async function showAppNotification({ title, body, tag, url }) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  if ('serviceWorker' in navigator) {
-    const registration = await navigator.serviceWorker.ready;
-    if (registration.active) {
-      registration.active.postMessage({ type: 'SHOW_APP_NOTIFICATION', title, body, tag, url });
-      return;
-    }
-    await registration.showNotification(title, { body, tag, data: { url } });
+  if (isNativeApp()) {
+    await showNativeNotification({ title, body, tag, url });
     return;
   }
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const notification = new Notification(title, { body, tag });
   notification.onclick = () => {
     if (url) window.location.assign(url);
@@ -370,10 +350,6 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
         </div>
         
       </header>
-      <button className="standalone-menu-trigger" onClick={() => setNavOpen(true)} aria-label="Open profile and menu">
-        <span>{initials(user.name)}</span>
-        <Menu size={20} />
-      </button>
       {navOpen && <button className="drawer-scrim" aria-label="Close menu" onClick={() => setNavOpen(false)} />}
       <div className={navOpen ? 'mobile-drawer open' : 'mobile-drawer'}>
         <div className="drawer-head"><strong>Menu</strong><button className="icon-button" onClick={() => setNavOpen(false)}><X size={20} /></button></div>
@@ -448,16 +424,6 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
         <PostFeed user={user} posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />
       </section>
       <aside className="right-rail">
-        <FirstRunSetupCard
-          favoriteMasjids={favoriteMasjids}
-          locationStatus={locationStatus}
-          notificationState={notificationState}
-          prayerPreferences={prayerPreferences}
-          requestLocation={requestLocation}
-          enablePushNotifications={enablePushNotifications}
-          setTab={setTab}
-        />
-        <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
         {orgAccount ? <MasjidPrayerManagerNotice setTab={setTab} /> : <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />}
         <FavoritePrograms programs={favoritePrograms} openOrganization={openOrganization} />
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
@@ -467,41 +433,6 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
         </section>
       </aside>
     </div>
-  );
-}
-
-function FirstRunSetupCard({ favoriteMasjids = [], locationStatus, notificationState, prayerPreferences, requestLocation, enablePushNotifications, setTab }) {
-  const hasLocation = !/waiting|permission denied|fallback/i.test(locationStatus || '');
-  const hasNotifications = notificationState?.permission === 'granted';
-  const hasMasjid = favoriteMasjids.length > 0;
-  const hasPrayerSetup = Boolean(prayerPreferences?.enabled);
-  const complete = hasLocation && hasNotifications && hasMasjid && hasPrayerSetup;
-  if (complete) return null;
-  const steps = [
-    { label: 'Location', done: hasLocation, action: requestLocation, actionLabel: hasLocation ? 'Refresh' : 'Enable', icon: Navigation },
-    { label: 'Notifications', done: hasNotifications, action: enablePushNotifications, actionLabel: hasNotifications ? 'Refresh' : 'Enable', icon: Bell },
-    { label: 'Follow masjid', done: hasMasjid, action: () => setTab('organizations'), actionLabel: hasMasjid ? 'View' : 'Find', icon: Building2 },
-    { label: 'Prayer reminders', done: hasPrayerSetup, action: () => setTab('prayer'), actionLabel: hasPrayerSetup ? 'Edit' : 'Set up', icon: ShieldCheck }
-  ];
-  return (
-    <section className="panel first-run-card">
-      <div className="section-title">
-        <div><p className="eyebrow">First-run setup</p><h2>Get Mujtama ready</h2></div>
-        <CheckCircle2 size={22} />
-      </div>
-      <div className="setup-step-list">
-        {steps.map((step) => {
-          const Icon = step.icon;
-          return (
-            <div className={step.done ? 'setup-step done' : 'setup-step'} key={step.label}>
-              <span><Icon size={16} /></span>
-              <strong>{step.label}</strong>
-              <button disabled={step.done} onClick={step.action}>{step.done ? 'Done' : step.actionLabel}</button>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
@@ -723,24 +654,22 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
 }
 
 function NotificationSetupCard({ notificationState, enablePushNotifications }) {
-  const standalone = isStandalonePwa();
-  const unsupported = !('Notification' in window);
-  const pushUnavailable = !('serviceWorker' in navigator) || !('PushManager' in window);
+  const native = isNativeApp();
+  const unsupported = !native && !('Notification' in window);
   const blocked = notificationState.permission === 'denied';
   return (
     <section className="panel notification-card">
       <div className="section-title">
-        <div><p className="eyebrow">First-run setup</p><h2>Notifications</h2></div>
+        <div><p className="eyebrow">App permissions</p><h2>Notifications</h2></div>
         <Bell size={22} />
       </div>
       <p>Enable prayer reminders, followed masjid posts, event updates, direct messages, and important community announcements.</p>
       {unsupported ? (
-        <p className="helper-text">This browser does not support PWA push notifications.</p>
+        <p className="helper-text">Notifications are unavailable in this environment.</p>
       ) : (
         <>
-          <p className="helper-text">{standalone ? 'Running from the installed app. You can receive message and prayer reminders.' : 'On iPhone, add Ummah Connect to your Home Screen and open it from the app icon for full push support. Browser notifications still help while the app is open.'}</p>
-          {pushUnavailable && <p className="helper-text">Full closed-app push is unavailable in this browser, but live message notifications can still work after permission is granted.</p>}
-          {blocked && <p className="helper-text warning-text">Notifications are blocked in this browser. Re-enable them from browser or device settings, then return here and refresh notifications.</p>}
+          <p className="helper-text">{native ? 'Mujtama uses your device notification permission for message alerts and prayer reminders.' : 'Notifications can appear while Mujtama is open. Native App Store builds use device notifications.'}</p>
+          {blocked && <p className="helper-text warning-text">Notifications are blocked. Re-enable them from device settings, then return here and refresh notifications.</p>}
           <div className="manager-row">
             <button className="primary-button" onClick={enablePushNotifications}>{notificationState.permission === 'granted' ? 'Refresh notifications' : 'Enable notifications'}</button>
             <span className="status-pill">{notificationState.permission || 'default'}</span>
@@ -810,7 +739,7 @@ function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = []
     );
   }
   return (
-    <Page title="Prayer" subtitle="Location-based prayer times, saved location, and PWA reminders.">
+    <Page title="Prayer" subtitle="Location-based prayer times, saved location, and device reminders.">
       <div className="prayer-app-layout">
         <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
         <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
@@ -1023,7 +952,7 @@ function PostEventScreen({ setTab, createEvent, myOrganizations }) {
 
 function OrganizationsScreen({ masjids, locationStatus, requestLocation, openOrganization }) {
   return (
-    <Page title="Masjid Discovery" subtitle="SQL-backed masjid profiles sorted by your browser location.">
+    <Page title="Masjid Discovery" subtitle="SQL-backed masjid profiles sorted by your location.">
       <NearbyMasjids masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
     </Page>
   );
@@ -4402,7 +4331,7 @@ function AuthenticatedApp() {
   const [profileSocial, setProfileSocial] = useState({ followers: [], following: [], followRequests: [], connections: [], followingMasjids: [], favoriteMasjids: [], savedEvents: [], affiliatedMasjids: [] });
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState(defaultLocation);
-  const [locationStatus, setLocationStatus] = useState('Waiting for browser location permission.');
+  const [locationStatus, setLocationStatus] = useState('Waiting for location permission.');
   const [masjids, setMasjids] = useState([]);
   const [prayerTimes, setPrayerTimes] = useState(prayers);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
@@ -4418,6 +4347,7 @@ function AuthenticatedApp() {
   const organizationsLoadedRef = useRef(false);
   const myOrganizationsLoadedRef = useRef(false);
   const locationDataLoadedRef = useRef(false);
+  const permissionPromptedRef = useRef(false);
 
   async function bootstrap() {
     if (!token()) return;
@@ -4582,12 +4512,18 @@ function AuthenticatedApp() {
   }
 
   async function enablePushNotifications() {
-    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-      setNotificationState({ permission: 'unsupported', message: 'This browser does not support PWA push notifications.' });
+    if (isNativeApp()) {
+      const permission = await requestNativeNotifications();
+      if (!permission.granted) {
+        setNotificationState({ permission: 'denied', message: 'Notifications were not enabled. You can allow them later in device settings.' });
+        return;
+      }
+      setNotificationState({ permission: 'granted', message: 'Notifications are enabled for this device.' });
+      if (!prayerPreferences.enabled) updatePrayerPreferences({ ...prayerPreferences, enabled: true }).catch(console.error);
       return;
     }
-    if (!isStandalonePwa() && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
-      setNotificationState({ permission: Notification.permission, message: 'On iPhone, add Ummah Connect to your Home Screen and open it from the app icon before enabling notifications.' });
+    if (!('Notification' in window)) {
+      setNotificationState({ permission: 'unsupported', message: 'Notifications are unavailable in this environment.' });
       return;
     }
     const permission = await Notification.requestPermission();
@@ -4595,17 +4531,7 @@ function AuthenticatedApp() {
       setNotificationState({ permission, message: 'Notifications were not enabled.' });
       return;
     }
-    const { publicKey, enabled } = await api('/api/notifications/vapid-public-key');
-    if (!enabled || !publicKey) {
-      setNotificationState({ permission, message: 'Backend VAPID keys are not configured yet, but your local permission is enabled.' });
-      if (!prayerPreferences.enabled) updatePrayerPreferences({ ...prayerPreferences, enabled: true }).catch(console.error);
-      return;
-    }
-    const registration = await navigator.serviceWorker.ready;
-    const existing = await registration.pushManager.getSubscription();
-    const subscription = existing || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
-    await api('/api/notifications/subscriptions', { method: 'POST', body: JSON.stringify({ subscription }) });
-    setNotificationState({ permission, message: 'Notifications are enabled for this device.' });
+    setNotificationState({ permission, message: 'Notifications are enabled while Mujtama is open.' });
     if (!prayerPreferences.enabled) updatePrayerPreferences({ ...prayerPreferences, enabled: true }).catch(console.error);
     loadNotificationPreferences().catch(console.error);
   }
@@ -4875,7 +4801,7 @@ function AuthenticatedApp() {
   }
 
   function schedulePrayerNotification(org) {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (!isNativeApp() && (!('Notification' in window) || Notification.permission !== 'granted')) return;
     const iqamah = dashboardIqamahTimes(org);
     const now = new Date();
     const candidates = prayers.map((prayer) => {
@@ -4899,7 +4825,8 @@ function AuthenticatedApp() {
   }
 
   function scheduleLocationPrayerNotifications(times = prayerTimes, preferences = prayerPreferences) {
-    if (!preferences.enabled || !('Notification' in window) || Notification.permission !== 'granted') return;
+    if (!preferences.enabled) return;
+    if (!isNativeApp() && (!('Notification' in window) || Notification.permission !== 'granted')) return;
     const now = new Date();
     times.forEach((prayer) => {
       if (!['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].includes(prayer.name) || preferences.prayers?.[prayer.name] === false) return;
@@ -4931,7 +4858,7 @@ function AuthenticatedApp() {
     if (!user) return alert('Log in to follow masjids and manage notifications.');
     if (notifyPrayers && notificationState.permission !== 'granted') {
       await enablePushNotifications();
-      if ('Notification' in window && Notification.permission !== 'granted') return alert('Notifications were not enabled.');
+      if (!isNativeApp() && 'Notification' in window && Notification.permission !== 'granted') return alert('Notifications were not enabled.');
     }
     const result = await api(`/api/organizations/${id}/follow`, { method: 'POST', body: JSON.stringify({ notifyPrayers }) });
     const org = result.organization || await api(`/api/organizations/${id}`);
@@ -4961,12 +4888,38 @@ function AuthenticatedApp() {
   }
 
   function requestLocation() {
+    if (isNativeApp()) {
+      setLocationStatus('Requesting device location permission...');
+      requestNativeLocation().then((result) => {
+        if (!result.granted) {
+          setLocationStatus('Location permission denied. Showing Milton fallback data.');
+          loadLocationData(defaultLocation);
+          return;
+        }
+        const next = { label: 'Your location', latitude: result.position.coords.latitude, longitude: result.position.coords.longitude };
+        setLocation(next);
+        setLocationStatus('Location enabled. Nearby masjids and prayer times refreshed.');
+        api('/api/notifications/preferences', {
+          method: 'PUT',
+          body: JSON.stringify({ location: { location: next.label, latitude: next.latitude, longitude: next.longitude, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } })
+        }).then((updated) => {
+          setUser(updated);
+          persistAuth(updated);
+        }).catch(console.error);
+        loadLocationData(next);
+      }).catch((error) => {
+        console.error(error);
+        setLocationStatus('Location permission failed. Showing Milton fallback data.');
+        loadLocationData(defaultLocation);
+      });
+      return;
+    }
     if (!navigator.geolocation) {
-      setLocationStatus('GPS is unavailable in this browser.');
+      setLocationStatus('GPS is unavailable in this environment.');
       loadLocationData(defaultLocation);
       return;
     }
-    setLocationStatus('Requesting browser GPS permission...');
+    setLocationStatus('Requesting location permission...');
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const next = { label: 'Your location', latitude: position.coords.latitude, longitude: position.coords.longitude };
@@ -5013,6 +4966,15 @@ function AuthenticatedApp() {
     setLocationStatus('Showing Milton fallback data. Enable location to find nearby masjids and accurate prayer times.');
     loadLocationData(defaultLocation);
   }, [Boolean(user)]);
+  useEffect(() => {
+    if (!user || permissionPromptedRef.current) return;
+    const promptKey = `mujtama-permissions:${user.id}`;
+    if (sessionStorage.getItem(promptKey)) return;
+    permissionPromptedRef.current = true;
+    sessionStorage.setItem(promptKey, '1');
+    window.setTimeout(() => requestLocation(), 650);
+    window.setTimeout(() => enablePushNotifications().catch(console.error), 1800);
+  }, [user?.id]);
   useEffect(() => { scheduleLocationPrayerNotifications(prayerTimes, prayerPreferences); }, [prayerTimes, prayerPreferences, notificationState.permission]);
   useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
   useEffect(() => {
@@ -5257,7 +5219,7 @@ function AuthenticatedApp() {
       <section className={isDetailRoute || (tab === 'messages' && messagesThreadActive) ? 'mobile-bottom-nav detail-hidden' : 'mobile-bottom-nav'}>
         {visibleMobileTabs.map((key) => navItems.find((item) => item.key === key)).filter(Boolean).map((item) => {
           const Icon = item.icon;
-          const label = item.key === 'profile' && isUserAccount(user) ? 'People' : item.label;
+          const label = item.key === 'network' ? 'Users' : item.label;
           return <button key={item.key} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><Icon size={19} /><span>{label}</span>{item.key === 'messages' && unreadTotal > 0 && <em>{unreadTotal > 9 ? '9+' : unreadTotal}</em>}</button>;
         })}
       </section>
