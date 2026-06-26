@@ -35,7 +35,11 @@ jobs:
           script: |
             set -e
             cd /opt/masjid
+            mkdir -p env-backups
             if [ -f backend/.env ]; then
+              backup_path="env-backups/backend.env.$(date -u +%Y%m%d-%H%M%S)"
+              cp backend/.env "$backup_path"
+              chmod 600 "$backup_path"
               cp backend/.env /tmp/masjid-backend.env
             fi
             git fetch origin
@@ -43,6 +47,7 @@ jobs:
             mkdir -p backend
             if [ -f /tmp/masjid-backend.env ]; then
               cp /tmp/masjid-backend.env backend/.env
+              chmod 600 backend/.env
             else
               required_env() {
                 name="$1"
@@ -75,6 +80,7 @@ jobs:
                 printf 'VAPID_SUBJECT=%s\n' "${VAPID_SUBJECT:-$FRONTEND_URL}"
                 printf 'PRAYER_NOTIFICATION_JOB_ENABLED=true\n'
               } > backend/.env
+              chmod 600 backend/.env
             fi
             docker compose build
             docker compose run --rm --no-deps \
