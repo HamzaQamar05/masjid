@@ -16,15 +16,66 @@ jobs:
     steps:
       - name: Deploy on VPS
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          PUBLIC_API_URL: ${{ secrets.PUBLIC_API_URL }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: DATABASE_URL,JWT_SECRET,FRONTEND_URL,PUBLIC_API_URL,CORS_ALLOWED_ORIGINS,OPENAI_API_KEY,OPENAI_MODEL,VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
           script: |
             set -e
             cd /opt/masjid
+            if [ -f backend/.env ]; then
+              cp backend/.env /tmp/masjid-backend.env
+            fi
             git fetch origin
             git reset --hard origin/main
+            mkdir -p backend
+            if [ -f /tmp/masjid-backend.env ]; then
+              cp /tmp/masjid-backend.env backend/.env
+            else
+              required_env() {
+                name="$1"
+                eval "value=\${$name:-}"
+                if [ -z "$value" ]; then
+                  echo "Missing required GitHub secret: $name" >&2
+                  exit 1
+                fi
+              }
+              required_env DATABASE_URL
+              required_env JWT_SECRET
+              required_env FRONTEND_URL
+              required_env OPENAI_API_KEY
+              required_env VAPID_PUBLIC_KEY
+              required_env VAPID_PRIVATE_KEY
+              {
+                printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
+                printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
+                printf 'PORT=5000\n'
+                printf 'FRONTEND_URL=%s\n' "$FRONTEND_URL"
+                printf 'APP_URL=%s\n' "$FRONTEND_URL"
+                printf 'PUBLIC_API_URL=%s\n' "${PUBLIC_API_URL:-$FRONTEND_URL}"
+                printf 'UPLOADS_DIR=/app/uploads\n'
+                printf 'MUSLIM_SALAT_API_KEY=\n'
+                printf 'CORS_ALLOWED_ORIGINS=%s\n' "${CORS_ALLOWED_ORIGINS:-$FRONTEND_URL}"
+                printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY"
+                printf 'OPENAI_MODEL=%s\n' "${OPENAI_MODEL:-gpt-4o-mini}"
+                printf 'VAPID_PUBLIC_KEY=%s\n' "$VAPID_PUBLIC_KEY"
+                printf 'VAPID_PRIVATE_KEY=%s\n' "$VAPID_PRIVATE_KEY"
+                printf 'VAPID_SUBJECT=%s\n' "${VAPID_SUBJECT:-$FRONTEND_URL}"
+                printf 'PRAYER_NOTIFICATION_JOB_ENABLED=true\n'
+              } > backend/.env
+            fi
             docker compose build
             docker compose run --rm --no-deps \
               -e PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 \
