@@ -37,14 +37,14 @@ import {
 import AuthScreen from './components/AuthScreen.jsx';
 import MasjidTvDisplay from './components/MasjidTvDisplay.jsx';
 import { businesses, defaultLocation, lectures, prayers, seedEvents, seedOrganizations } from './data/seedData.js';
-import { API_BASE as API, clearAuth, persistAuth, storedUser, token } from './lib/authStorage.js';
+import { API_BASE as API, clearAuth, hydratePersistentAuth, persistAuth, storedUser, token } from './lib/authStorage.js';
 import { api } from './lib/apiClient.js';
 import { coreInterestLabels, optionalInterestLabels, canPost, canManageOrgs, isOrganizationAccount, isImamAccount, isUserAccount, userPreferenceLabels, hasPreference, canUseJobs, displayRoleLabel } from './lib/account.js';
 import { initials, safeList, listToText, textToList, normalizeList, escapeHtml } from './lib/text.js';
 import { toDateInput } from './lib/date.js';
 import { distanceText, withLocalDistance } from './lib/geo.js';
-import { buildPrayerEditForm, cleanPrayerRows, dashboardIqamahTimes, directionsUrl, emptyAdditionalPrayer, emptyTemporaryPrayer, masjidAnnouncementTypes, standardPrayerKeys } from './lib/masjid.js';
-import { isNativeApp, requestNativeLocation, requestNativeNotifications, showNativeNotification } from './lib/nativeApp.js';
+import { buildPrayerEditForm, cleanPrayerRows, dashboardIqamahTimes, directionsUrl, emptyAdditionalPrayer, emptyTemporaryPrayer, hasMappableLocation, locationLabel, mapEmbedUrl, masjidAnnouncementTypes, standardPrayerKeys } from './lib/masjid.js';
+import { isNativeApp, openExternalUrl, requestNativeLocation, requestNativeNotifications, showNativeNotification } from './lib/nativeApp.js';
 
 const EVENT_AUTO_REFRESH_MS = 15000;
 const notificationTimers = new Map();
@@ -448,7 +448,7 @@ function FavoritePrograms({ programs, openOrganization }) {
             <p>{program.teacher || program.description || program.location || 'Details coming soon.'}</p>
             <div className="manager-row">
               <button onClick={() => openOrganization(program.masjid.id)}>Open masjid</button>
-              {program.registrationLink && <a className="secondary-button" href={program.registrationLink} target="_blank" rel="noreferrer">Register</a>}
+              {program.registrationLink && <ExternalLinkButton url={program.registrationLink}>Register</ExternalLinkButton>}
             </div>
           </article>
         ))}
@@ -643,8 +643,8 @@ function NearbyMasjids({ masjids, locationStatus, requestLocation, openOrganizat
             </div>
             <div className="nearby-actions">
               {openOrganization && <button className="secondary-button" onClick={(event) => { event.stopPropagation(); openOrganization(masjid.id); }}>Profile</button>}
-              {masjid.website && <a className="secondary-button" href={masjid.website} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Website</a>}
-              <a className="secondary-button" href={directionsUrl(masjid)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Directions</a>
+              {masjid.website && <ExternalLinkButton url={masjid.website}>Website</ExternalLinkButton>}
+              <ExternalLinkButton url={directionsUrl(masjid)}>Directions</ExternalLinkButton>
             </div>
           </article>
         ))}
@@ -749,7 +749,7 @@ function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = []
   );
 }
 
-function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrganizations, registerEvent, unregisterEvent, toggleEventSubscription, detailEventId, openEvent, openOrganization, onBack }) {
+function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrganizations, registerEvent, unregisterEvent, toggleEventSubscription, detailEventId, openEvent, openOrganization, onBack, locationStatus, requestLocation }) {
   const [eventQuery, setEventQuery] = useState('');
   const [eventKind, setEventKind] = useState('all');
   const [eventCategory, setEventCategory] = useState('all');
@@ -837,14 +837,15 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
           <div className="meta-line"><MapPin size={16} />{item.location || item.place || 'Location TBA'}</div>
           <TagRow tags={[(item.category || item.type || 'Community'), item.teacher && `Teacher: ${item.teacher}`, item.requiresApproval && 'Approval required', item.capacity && `${item.capacity} capacity`].filter(Boolean)} />
           <div className="hub-actions">
-            {item.isProgram && item.registrationLink && <a className="primary-button" href={item.registrationLink} target="_blank" rel="noreferrer">Register</a>}
+            {item.isProgram && item.registrationLink && <ExternalLinkButton url={item.registrationLink} className="primary-button">Register</ExternalLinkButton>}
             {item.isProgram && openOrganization && <button className="secondary-button" onClick={() => openOrganization(item.organizationId)}>Open masjid</button>}
             {!item.isProgram && (isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : (item.registrations || []).find((registration) => registration.userId === user.id) ? <button className="secondary-button" onClick={() => unregisterEvent(item.id)}>Cancel registration</button> : <button className="primary-button" onClick={() => registerEvent(item.id)}>{item.requiresApproval ? 'Request entry' : 'Register'}</button>)}
             {!item.isProgram && !isOrganizationAccount(user) && <button className="secondary-button" onClick={() => toggleEventSubscription(item, { saved: !item.isSaved, notify: item.notifyMe })}>{item.isSaved ? 'Saved' : 'Save event'}</button>}
             {!item.isProgram && !isOrganizationAccount(user) && <button className={item.notifyMe ? 'primary-button' : 'secondary-button'} onClick={() => toggleEventSubscription(item, { saved: true, notify: !item.notifyMe })}>{item.notifyMe ? 'Reminders on' : 'Notify me'}</button>}
-            {(item.location || item.place) && <a className="secondary-button" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location || item.place)}`} target="_blank" rel="noreferrer">Map</a>}
+            {hasMappableLocation(item) && <ExternalLinkButton url={directionsUrl(item)}>Open map</ExternalLinkButton>}
           </div>
         </div>
+        <LocationMapCard item={item} title="Event location" locationStatus={locationStatus} requestLocation={requestLocation} />
       </article>
     );
   }
@@ -868,7 +869,7 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
         <TagRow tags={[event.organization?.name || event.createdBy?.name || 'Community event', remaining !== null ? `${remaining} spots left` : `${registeredCount} registered`, event.requiresApproval && 'Approval required', registration && `Your status: ${registration.status}`].filter(Boolean)} />
         <div className="card-footer">
           <button className="secondary-button" onClick={() => openItem(event)}>Details</button>
-          {event.isProgram && event.registrationLink && <a className="primary-button" href={event.registrationLink} target="_blank" rel="noreferrer">Register</a>}
+          {event.isProgram && event.registrationLink && <ExternalLinkButton url={event.registrationLink} className="primary-button">Register</ExternalLinkButton>}
           {event.isProgram && openOrganization && <button className="secondary-button" onClick={() => openOrganization(event.organizationId)}>Masjid</button>}
           {!event.isProgram && (isOrganizationAccount(user) ? <span className="status-pill">Dashboard only</span> : registration ? <button className="secondary-button" onClick={() => unregisterEvent(event.id)}>Cancel</button> : <button className="primary-button" onClick={() => registerEvent(event.id)}>{event.requiresApproval ? 'Request entry' : 'Register'}</button>)}
           {!event.isProgram && !isOrganizationAccount(user) && <button className="secondary-button" onClick={() => toggleEventSubscription(event, { saved: !event.isSaved, notify: event.notifyMe })}>{event.isSaved ? 'Saved' : 'Save'}</button>}
@@ -1724,7 +1725,7 @@ function MasjidPrayerSchedule({ organization }) {
   );
 }
 
-function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavorite, onMessage, applyToOpportunity, onBack }) {
+function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavorite, onMessage, applyToOpportunity, onBack, locationStatus, requestLocation }) {
   if (!organization) return <Page title="Masjid Profile" subtitle="Choose a masjid to view its profile."><button className="secondary-button" onClick={onBack}>Back to masjids</button></Page>;
   const posts = organization.posts || [];
   const events = organization.events || [];
@@ -1784,9 +1785,9 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
           {canFollowMasjid && messageContact && <button className="secondary-button" onClick={() => onMessage(messageContact)}><MessageCircle size={17} />Message</button>}
           {canFollowMasjid && <button className={organization.notifyPrayers ? 'primary-button' : 'secondary-button'} onClick={() => onFollow(organization.id, true)}>{organization.notifyPrayers ? 'Notifications on' : 'Notify Me'}</button>}
           {!canFollowMasjid && <span className="status-pill">Organization profile</span>}
-          <a className="secondary-button" href={directionsUrl(organization)} target="_blank" rel="noreferrer">Directions</a>
-          {organization.website && <a className="secondary-button" href={organization.website} target="_blank" rel="noreferrer">Website</a>}
-          {organization.donationUrl && <a className="secondary-button" href={organization.donationUrl} target="_blank" rel="noreferrer">Donate</a>}
+          <ExternalLinkButton url={directionsUrl(organization)}>Directions</ExternalLinkButton>
+          {organization.website && <ExternalLinkButton url={organization.website}>Website</ExternalLinkButton>}
+          {organization.donationUrl && <ExternalLinkButton url={organization.donationUrl}>Donate</ExternalLinkButton>}
         </div>
       </section>
 
@@ -1835,6 +1836,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
           </section>
         </section>
         <aside className="right-rail">
+          <LocationMapCard item={organization} title="Masjid location" locationStatus={locationStatus} requestLocation={requestLocation} />
           <section className="panel">
             <div className="section-title"><h2>Imams & Team</h2><span>{organization.peopleCount || 0}</span></div>
             <div className="stack-list">
@@ -2128,7 +2130,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
 
   return (
     <Page title={editingSelf ? 'Your Profile' : profile.name} subtitle="Community profile, network, favorite masjids, and personal details.">
-      {!editingSelf && <button className="secondary-button" onClick={onCloseViewed}>Back to your profile</button>}
+      {!editingSelf && <BackHeader title={profile.name} subtitle={displayRoleLabel(profile.accountType)} onBack={onCloseViewed} />}
 
       <section className="panel profile-detail">
         <div className="profile-banner" style={profileBannerStyle(profile)} />
@@ -3941,7 +3943,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                             <TagRow tags={[item.location, item.notes, item.registrationLink && 'Registration link'].filter(Boolean)} />
                             <div className="manager-row">
                               <button onClick={() => startEditClass(org, item, index)}>Edit class</button>
-                              {item.registrationLink && <a className="secondary-button" href={item.registrationLink} target="_blank" rel="noreferrer">Open registration</a>}
+                              {item.registrationLink && <ExternalLinkButton url={item.registrationLink}>Open registration</ExternalLinkButton>}
                               <button className="secondary-button danger" onClick={() => deleteClass(org, item, index)}>Delete class</button>
                             </div>
                           </>
@@ -4297,6 +4299,56 @@ function BackHeader({ title, subtitle, onBack }) {
   );
 }
 
+function ExternalLinkButton({ url, children, className = 'secondary-button', onClick }) {
+  if (!url) return null;
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.(event);
+        openExternalUrl(url).catch((error) => {
+          console.error('Could not open external URL', error);
+          window.location.assign(url);
+        });
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LocationMapCard({ item, title = 'Location', locationStatus, requestLocation }) {
+  const label = locationLabel(item);
+  const canMap = hasMappableLocation(item);
+  return (
+    <section className="map-preview-card">
+      <div className="section-title">
+        <div><p className="eyebrow">{title}</p><h2>{label || 'Location not added'}</h2></div>
+        <MapPin size={20} />
+      </div>
+      {canMap ? (
+        <>
+          <div className="map-frame" aria-label={`${title} map`}>
+            <iframe title={`${title} map`} src={mapEmbedUrl(item)} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+          </div>
+          <div className="manager-row">
+            <ExternalLinkButton url={directionsUrl(item)} className="primary-button">Open in Google Maps</ExternalLinkButton>
+          </div>
+        </>
+      ) : (
+        <div className="map-empty-state">
+          <MapPin size={24} />
+          <strong>Location unavailable</strong>
+          <p>{locationStatus || 'This masjid or event has not added a usable address yet.'}</p>
+          {requestLocation && <button type="button" className="secondary-button" onClick={requestLocation}>Enable location</button>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function TagRow({ tags = [] }) {
   if (!tags.length) return null;
   return <div className="tag-row">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div>;
@@ -4308,6 +4360,10 @@ function AuthenticatedApp() {
   const tab = tabForPath(locationRoute.pathname);
   function setTab(key, id) {
     navigate(pathForTab(key, id));
+  }
+  function goBack(fallbackPath = '/home') {
+    if ((window.history.state?.idx || 0) > 0) navigate(-1);
+    else navigate(fallbackPath, { replace: true });
   }
   const [user, setUser] = useState(() => storedUser());
   const [users, setUsers] = useState([]);
@@ -4943,13 +4999,22 @@ function AuthenticatedApp() {
   }
 
   useEffect(() => {
-    bootstrap().catch((error) => {
+    let active = true;
+    async function restoreSession() {
+      const restoredUser = await hydratePersistentAuth();
+      if (active && restoredUser && !user) setUser(restoredUser);
+      await bootstrap();
+    }
+    restoreSession().catch((error) => {
       if ([401, 403].includes(error?.status)) {
         logout();
         return;
       }
       console.warn('Session restore failed; keeping cached user until the connection recovers.', error);
     });
+    return () => {
+      active = false;
+    };
   }, []);
   useEffect(() => {
     const landingPath = user && (isOrganizationAccount(user) || isImamAccount(user)) ? pathForTab('dashboard') : pathForTab('home');
@@ -5180,10 +5245,10 @@ function AuthenticatedApp() {
   const screens = {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} />,
     prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} />,
-    events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} loadPosts={loadPosts} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => navigate(-1)} />,
+    events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} loadPosts={loadPosts} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => goBack('/events')} locationStatus={locationStatus} requestLocation={requestLocation} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
-    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onUnfollow={unfollowOrganization} onFavorite={toggleFavoriteOrganization} onMessage={startMessage} applyToOpportunity={applyToOpportunity} onBack={() => navigate(-1)} />,
+    masjidProfile: <MasjidProfileScreen organization={selectedOrganization} user={user} onFollow={followOrganization} onUnfollow={unfollowOrganization} onFavorite={toggleFavoriteOrganization} onMessage={startMessage} applyToOpportunity={applyToOpportunity} onBack={() => goBack('/masjids')} locationStatus={locationStatus} requestLocation={requestLocation} />,
     network: <NetworkScreen user={user} users={users} connections={connections} loadNetwork={loadNetwork} openProfile={openProfile} startMessage={startMessage} />,
     volunteers: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="VOLUNTEER" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Volunteer Marketplace" subtitle="Apply for masjid-approved service opportunities. Hours only count after masjid approval." />,
     jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,

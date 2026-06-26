@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { Geolocation } from '@capacitor/geolocation';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PushNotifications } from '@capacitor/push-notifications';
@@ -40,6 +41,21 @@ export async function showNativeNotification({ title, body, tag, url }) {
     }]
   });
   return true;
+}
+
+export async function openExternalUrl(url) {
+  if (!url) return;
+  const normalizedUrl = normalizeUrl(url);
+  if (isNativeApp()) {
+    await Browser.open({ url: normalizedUrl, presentationStyle: 'fullscreen' });
+    return;
+  }
+  window.open(normalizedUrl, '_blank', 'noopener,noreferrer');
+}
+
+function normalizeUrl(url) {
+  if (/^(https?:|mailto:|tel:)/i.test(url)) return url;
+  return `https://${url}`;
 }
 
 function hashNotificationId(value) {

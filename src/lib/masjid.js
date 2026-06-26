@@ -58,6 +58,27 @@ export function buildPrayerEditForm(org = {}) {
 }
 
 export function directionsUrl(item) {
-  const query = item.latitude && item.longitude ? `${item.latitude},${item.longitude}` : encodeURIComponent(item.address || item.location || item.name);
-  return `https://www.google.com/maps/search/?api=1&query=${query}`;
+  const query = mapQuery(item);
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+export function mapEmbedUrl(item) {
+  return `https://www.google.com/maps?q=${encodeURIComponent(mapQuery(item))}&output=embed`;
+}
+
+export function locationLabel(item = {}) {
+  return item.address || item.location || item.place || item.city || '';
+}
+
+export function hasMappableLocation(item = {}) {
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+  return (Number.isFinite(latitude) && Number.isFinite(longitude)) || Boolean(locationLabel(item) || item.name);
+}
+
+function mapQuery(item = {}) {
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) return `${latitude},${longitude}`;
+  return locationLabel(item) || item.name || item.title || '';
 }
