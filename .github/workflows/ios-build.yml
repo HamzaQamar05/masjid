@@ -1,4 +1,3 @@
-# .github/workflows/ios-build.yml
 name: iOS Build Check
 
 on:
@@ -8,7 +7,7 @@ on:
 
 jobs:
   ios-build:
-    runs-on: macos-latest
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
@@ -23,4 +22,13 @@ jobs:
 
       - run: npx cap sync ios
 
-      - run: xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -sdk iphonesimulator build
+      - name: Check iOS files
+        run: ls -la ios/App
+
+      - name: Build iOS
+        run: |
+          if [ -f ios/App/App.xcworkspace ]; then
+            xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -sdk iphonesimulator build
+          else
+            xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator build
+          fi
