@@ -8,8 +8,6 @@ Native launch checklist
    - FRONTEND_URL matches the deployed web/app URL.
    - VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT are set only when web push is re-enabled.
    - PRAYER_NOTIFICATION_JOB_ENABLED=true unless another scheduler owns prayer reminders.
-   - WHATSAPP_ENABLED=false for launch unless a separate WhatsApp sender service is deployed.
-   - If WhatsApp is enabled, WHATSAPP_SERVICE_URL points to the isolated sender service and WHATSAPP_SERVICE_TOKEN is set.
    - Production startup must use `prisma migrate deploy`; do not run `prisma db push` against production data.
 
 2. Register or log in as a community user.
@@ -45,9 +43,3 @@ Native launch checklist
    - Temporarily remove VAPID keys in a non-production environment and confirm backend logs show push skipped rather than fake success.
    - Delete or invalidate a browser subscription and confirm stale subscriptions are cleaned after a failed send.
    - Create an event/post with push disabled and confirm the in-app notification history still records eligible notifications.
-
-8. WhatsApp foundation.
-   - Open Settings and save a phone number in E.164 format, for example +15551234567.
-   - Toggle WhatsApp notifications on and confirm the saved state survives refresh.
-   - With WHATSAPP_ENABLED=false, create a followed masjid event/post and confirm push still works while WhatsApp returns a disabled summary.
-   - With WHATSAPP_ENABLED=true but no WHATSAPP_SERVICE_URL, confirm backend logs show WhatsApp skipped as not configured.

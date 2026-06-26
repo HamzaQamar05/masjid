@@ -69,9 +69,6 @@ const vapidSubject = process.env.VAPID_SUBJECT || process.env.FRONTEND_URL || 'm
 const prayerNotificationJobEnabled = process.env.PRAYER_NOTIFICATION_JOB_ENABLED !== 'false';
 const prayerNotificationPollMs = Math.max(30_000, Number(process.env.PRAYER_NOTIFICATION_POLL_MS || 60_000));
 const prayerNotificationLookaheadMs = Math.max(prayerNotificationPollMs, Number(process.env.PRAYER_NOTIFICATION_LOOKAHEAD_MS || 90_000));
-const whatsappEnabled = process.env.WHATSAPP_ENABLED === 'true';
-const whatsappServiceUrl = (process.env.WHATSAPP_SERVICE_URL || '').replace(/\/$/, '');
-const whatsappServiceToken = process.env.WHATSAPP_SERVICE_TOKEN || '';
 const messageLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 45,
@@ -496,7 +493,6 @@ const defaultUserNotificationPreferences = {
   eventReminders: true,
   applicationStatusUpdates: true,
   messages: true,
-  whatsappNotifications: false,
   nearbyMasjids: false,
   nearbyEvents: false,
   nearbyVolunteerOpportunities: false,
@@ -517,16 +513,6 @@ function normalizeNotificationPreferences(input = {}) {
     if (typeof defaultValue === 'string') data[key] = ['followed', 'favorited', 'nearby'].includes(String(input[key])) ? String(input[key]) : defaultValue;
   });
   return data;
-}
-
-function normalizeWhatsappPhone(value) {
-  const raw = String(value || '').trim();
-  const digits = raw.replace(/\D/g, '');
-  if (!digits) return null;
-  if (!raw.startsWith('+') && digits.length === 10) return `+1${digits}`;
-  if (!raw.startsWith('+') && digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
-  const phone = `+${digits}`;
-  return /^\+[1-9]\d{7,14}$/.test(phone) ? phone : null;
 }
 
 function publicNotification(notification) {
@@ -607,11 +593,8 @@ async function notifyOrganizationFollowers(organizationId, payload, options = {}
     });
     if (organization?.name) enrichedPayload = { ...payload, organizationName: organization.name };
   }
-  const [push, whatsapp] = await Promise.all([
-    safeNotificationDelivery('push', () => sendPushToOrganizationFollowers(organizationId, enrichedPayload, options)),
-    safeNotificationDelivery('whatsapp', () => sendWhatsappToOrganizationFollowers(organizationId, enrichedPayload, options))
-  ]);
-  return { push, whatsapp };
+  const push = await safeNotificationDelivery('push', () => sendPushToOrganizationFollowers(organizationId, enrichedPayload, options));
+  return { push };
 }
 
 async function safeNotificationDelivery(channel, deliver) {
@@ -626,7 +609,7 @@ async function safeNotificationDelivery(channel, deliver) {
 async function notifyApplicationStatus(application, opportunity) {
   const preference = await prisma.userNotificationPreference.findUnique({ where: { userId: application.applicantId } });
   if (!publicNotificationPreferences(preference).applicationStatusUpdates) {
-    return { push: { sent: 0, skipped: true, reason: 'application status preference disabled' }, whatsapp: { sent: 0, skipped: true, reason: 'application status preference disabled' } };
+    return { push: { sent: 0, skipped: true, reason: 'application status preference disabled' } };
   }
   const status = normalizeApplicationStatus(application.status, application.status);
   const title = `Application ${status.toLowerCase()}: ${opportunity.title}`;
@@ -642,11 +625,8 @@ async function notifyApplicationStatus(application, opportunity) {
     tag: `application-status-${application.id}-${status}`,
     metadata: { opportunityId: opportunity.id, applicationId: application.id, status }
   };
-  const [push, whatsapp] = await Promise.all([
-    sendPushToUser(application.applicantId, payload),
-    sendWhatsappToUser(application.applicantId, payload)
-  ]);
-  return { push, whatsapp };
+  const push = await sendPushToUser(application.applicantId, payload);
+  return { push };
 }
 
 function publicPost(post) {
@@ -1208,106 +1188,6 @@ async function sendPushToOrganizationFollowers(organizationId, payload, options 
   };
 }
 
-async function dispatchWhatsappMessage(phone, payload) {
-  if (!whatsappEnabled) return { sent: 0, disabled: true };
-  if (!whatsappServiceUrl || !whatsappServiceToken) {
-    console.warn('WhatsApp notification skipped: sender URL or service token is not configured', { type: payload?.type });
-    return { sent: 0, failed: 0, disabled: false, notConfigured: true };
-  }
-  try {
-    const appUrl = payload.url
-      ? new URL(payload.url, process.env.FRONTEND_URL || 'https://ummahconnect.app').toString()
-      : process.env.FRONTEND_URL || '';
-    const type = String(payload.type || 'UPDATE').replaceAll('_', ' ').toLowerCase();
-    const preview = String(payload.body || '').trim().slice(0, 240);
-    const message = [
-      payload.organizationName ? `*${payload.organizationName}*` : '*Ummah Connect*',
-      `${type.charAt(0).toUpperCase()}${type.slice(1)}: ${payload.title || 'New community update'}`,
-      preview,
-      appUrl
-    ].filter(Boolean).join('\n');
-    const response = await fetch(`${whatsappServiceUrl}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${whatsappServiceToken}`
-      },
-      signal: AbortSignal.timeout(12_000),
-      body: JSON.stringify({
-        to: phone,
-        message,
-        idempotencyKey: `${payload.messageId || payload.eventId || payload.postId || payload.tag || 'notification'}:${phone}`
-      })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || `WhatsApp service returned ${response.status}`);
-    return { sent: result.duplicate ? 0 : 1, duplicate: Boolean(result.duplicate), failed: 0, disabled: false };
-  } catch (error) {
-    console.error('WhatsApp notification failed without blocking the triggering action', {
-      phone: phone ? `${phone.slice(0, 3)}***${phone.slice(-2)}` : null,
-      type: payload?.type,
-      message: error.message
-    });
-    return { sent: 0, failed: 1, disabled: false };
-  }
-}
-
-async function sendWhatsappToUser(userId, payload) {
-  try {
-    if (!whatsappEnabled) return { sent: 0, disabled: true };
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { whatsappPhone: true, notificationPreference: true }
-    });
-    const preferences = publicNotificationPreferences(user?.notificationPreference);
-    if (!preferences.whatsappNotifications) return { sent: 0, skipped: true, reason: 'whatsapp preference disabled' };
-    if (!user?.whatsappPhone) return { sent: 0, skipped: true, reason: 'whatsapp phone missing' };
-    return dispatchWhatsappMessage(user.whatsappPhone, payload);
-  } catch (error) {
-    console.error('WhatsApp user lookup failed without blocking the triggering action', { userId, message: error.message });
-    return { sent: 0, failed: 1, error: error.message };
-  }
-}
-
-async function sendWhatsappToOrganizationFollowers(organizationId, payload, options = {}) {
-  if (!whatsappEnabled) return { sent: 0, disabled: true, recipients: 0, eligibleRecipients: 0 };
-  const [follows, favorites] = await Promise.all([
-    prisma.organizationFollow.findMany({ where: { organizationId }, select: { userId: true } }),
-    prisma.favoriteMasjid.findMany({ where: { organizationId }, select: { userId: true } })
-  ]);
-  const excludedUserIds = new Set((options.excludeUserIds || []).filter(Boolean));
-  const recipientIds = [...new Set([
-    ...follows.map((follow) => follow.userId),
-    ...favorites.map((favorite) => favorite.userId)
-  ])]
-    .filter((userId) => !excludedUserIds.has(userId));
-  const users = await prisma.user.findMany({
-    where: { id: { in: recipientIds } },
-    select: { id: true, whatsappPhone: true, notificationPreference: true }
-  });
-  const type = String(payload?.type || '').toUpperCase();
-  const eligibleUsers = users.filter((user) => {
-    const preference = publicNotificationPreferences(user.notificationPreference);
-    if (!preference.whatsappNotifications || !user.whatsappPhone) return false;
-    if (type === 'ANNOUNCEMENT' && !preference.masjidAnnouncements) return false;
-    if (type === 'EVENT' && !preference.eventsFromFollowedMasjids) return false;
-    if (type === 'CLASS' && !preference.programsFromFollowedMasjids) return false;
-    if (type === 'PRAYER_UPDATE' && !preference.jamaatTimeUpdates) return false;
-    if (type === 'JOB' && !preference.jobOpportunities) return false;
-    if (['VOLUNTEER', 'OPPORTUNITY'].includes(type) && !preference.volunteerOpportunities) return false;
-    return true;
-  });
-  const results = await Promise.all(eligibleUsers.map((user) => dispatchWhatsappMessage(user.whatsappPhone, payload)));
-  return {
-    sent: results.reduce((sum, result) => sum + (result.sent || 0), 0),
-    failed: results.reduce((sum, result) => sum + (result.failed || 0), 0),
-    disabled: results.some((result) => result.disabled),
-    notConfigured: results.some((result) => result.notConfigured),
-    recipients: recipientIds.length,
-    eligibleRecipients: eligibleUsers.length
-  };
-}
-
 const sentPrayerNotificationKeys = new Map();
 const prayerTimeCache = new Map();
 
@@ -1805,12 +1685,6 @@ app.get('/api/notifications/preferences', auth, async (req, res) => {
       timezone: user.timezone,
       prayerMethod: user.prayerMethod
     },
-    whatsapp: {
-      phone: user.whatsappPhone || '',
-      enabled: Boolean(notificationPreferences.whatsappNotifications),
-      integrationEnabled: whatsappEnabled,
-      serviceConfigured: Boolean(whatsappServiceUrl && whatsappServiceToken)
-    },
     prayerNotificationPreferences: normalizePrayerPreferences(user.prayerNotificationPreferences || { enabled: false }),
     notificationPreferences: publicNotificationPreferences(notificationPreferences)
   });
@@ -1843,25 +1717,9 @@ app.put('/api/notifications/preferences', auth, notificationLimiter, async (req,
       update: normalizeNotificationPreferences(req.body.notificationPreferences)
     });
   }
-  if (req.body.whatsapp) {
-    const phone = normalizeWhatsappPhone(req.body.whatsapp.phone);
-    if (req.body.whatsapp.enabled && !phone) return res.status(400).json({ error: 'A valid WhatsApp phone number is required to enable WhatsApp notifications' });
-    data.whatsappPhone = phone;
-    notificationPreferences = await prisma.userNotificationPreference.upsert({
-      where: { userId: req.user.id },
-      create: { userId: req.user.id, whatsappNotifications: Boolean(req.body.whatsapp.enabled) },
-      update: { whatsappNotifications: Boolean(req.body.whatsapp.enabled) }
-    });
-  }
   const user = Object.keys(data).length ? await prisma.user.update({ where: { id: req.user.id }, data }) : await prisma.user.findUnique({ where: { id: req.user.id } });
   res.json({
     ...publicUser(user, { includeEmail: true }),
-    whatsapp: {
-      phone: user.whatsappPhone || '',
-      enabled: Boolean(notificationPreferences?.whatsappNotifications),
-      integrationEnabled: whatsappEnabled,
-      serviceConfigured: Boolean(whatsappServiceUrl && whatsappServiceToken)
-    },
     notificationPreferences: publicNotificationPreferences(notificationPreferences)
   });
 });
@@ -2928,7 +2786,7 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
     },
     include: { author: true, organization: true }
   });
-  const { push, whatsapp } = await notifyOrganizationFollowers(req.params.id, {
+  const { push } = await notifyOrganizationFollowers(req.params.id, {
     title: post.title,
     body: post.content,
     url: `/masjids/${req.params.id}`,
@@ -2937,7 +2795,7 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
     organizationId: req.params.id,
     postId: post.id
   }, { excludeUserIds: [req.user.id] });
-  res.json({ ...publicPost(post), push, whatsapp });
+  res.json({ ...publicPost(post), push });
 });
 
 app.put('/api/posts/:id', auth, async (req, res) => {
@@ -3182,9 +3040,8 @@ app.post('/api/events', auth, async (req, res) => {
   });
   await syncEventPost(event, req.user.id);
   let push = null;
-  let whatsapp = null;
   if (organizationId) {
-    ({ push, whatsapp } = await notifyOrganizationFollowers(organizationId, {
+    ({ push } = await notifyOrganizationFollowers(organizationId, {
       title: `New event: ${event.title}`,
       body: event.description || event.location || 'A masjid you follow posted a new event.',
       url: `/events/${event.id}`,
@@ -3193,7 +3050,7 @@ app.post('/api/events', auth, async (req, res) => {
       eventId: event.id
     }, { excludeUserIds: [req.user.id] }));
   }
-  res.json({ ...event, push, whatsapp });
+  res.json({ ...event, push });
 });
 
 app.put('/api/events/:eventId', auth, async (req, res) => {
@@ -3232,9 +3089,8 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
   const updated = await prisma.event.update({ where: { id: event.id }, data, include: { organization: true, createdBy: { select: { id: true, name: true, accountType: true } }, registrations: { include: { user: true } } } });
   await updateSyncedEventPost(event, updated, updated.createdById || req.user.id);
   let push = null;
-  let whatsapp = null;
   if (updated.organizationId) {
-    ({ push, whatsapp } = await notifyOrganizationFollowers(updated.organizationId, {
+    ({ push } = await notifyOrganizationFollowers(updated.organizationId, {
       title: `Event updated: ${updated.title}`,
       body: updated.description || updated.location || 'An event from a masjid you follow was updated.',
       url: `/events/${updated.id}`,
@@ -3243,7 +3099,7 @@ app.put('/api/events/:eventId', auth, async (req, res) => {
       eventId: updated.id
     }, { excludeUserIds: [req.user.id] }));
   }
-  res.json({ ...updated, push, whatsapp, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user, { includeEmail: true }) })) });
+  res.json({ ...updated, push, registrations: updated.registrations.map((registration) => ({ ...registration, user: publicUser(registration.user, { includeEmail: true }) })) });
 });
 
 app.delete('/api/events/:eventId', auth, async (req, res) => {
@@ -3373,7 +3229,7 @@ app.post('/api/organizations/:id/opportunities', auth, async (req, res) => {
   });
   const notificationType = type === 'JOB' ? 'JOB' : 'VOLUNTEER';
   const syncedPost = await syncOpportunityPost(opportunity, req.user.id);
-  const { push, whatsapp } = await notifyOrganizationFollowers(req.params.id, {
+  const { push } = await notifyOrganizationFollowers(req.params.id, {
     title: `${type === 'JOB' ? 'New job' : 'New volunteer opportunity'}: ${opportunity.title}`,
     body: opportunity.description || opportunity.location || 'A masjid you follow posted a new opportunity.',
     url: type === 'JOB' ? '/network/jobs' : '/network/volunteers',
@@ -3383,7 +3239,7 @@ app.post('/api/organizations/:id/opportunities', auth, async (req, res) => {
     tag: `opportunity-${opportunity.id}`,
     metadata: { opportunityId: opportunity.id }
   }, { excludeUserIds: [req.user.id] });
-  res.json({ ...opportunity, push, whatsapp });
+  res.json({ ...opportunity, push });
 });
 
 app.put('/api/opportunities/:id', auth, async (req, res) => {
@@ -3626,18 +3482,8 @@ app.post('/api/messages', auth, messageLimiter, async (req, res) => {
         senderId: req.user.id
       })
     : { sent: 0, skipped: true, reason: conversationPreference?.muted ? 'conversation muted' : 'messages preference disabled' };
-  const messageWhatsapp = messageNotificationsEnabled && finalReceiverFolder !== 'REQUEST'
-    ? await sendWhatsappToUser(receiverId, {
-        type: 'MESSAGE',
-        title: `New message from ${message.sender.name}`,
-        body: normalizedContent.slice(0, 120),
-        url: `/messages/${req.user.id}`,
-        messageId: message.id,
-        senderId: req.user.id
-      })
-    : { sent: 0, skipped: true, reason: finalReceiverFolder === 'REQUEST' ? 'message request' : conversationPreference?.muted ? 'conversation muted' : 'messages preference disabled' };
   await emitUnread(receiverId);
-  res.json({ ...serialized, folder: finalReceiverFolder, push: messagePush, whatsapp: messageWhatsapp });
+  res.json({ ...serialized, folder: finalReceiverFolder, push: messagePush });
 });
 
 app.put('/api/messages/threads/:userId', auth, async (req, res) => {
