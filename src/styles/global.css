@@ -8864,3 +8864,202 @@ select:focus {
     justify-content: center;
   }
 }
+
+.ai-assist-card,
+.translation-card,
+.ai-discovery-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--soft));
+}
+
+.ai-assist-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  margin: 12px 0;
+}
+
+.ai-assist-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ai-assist-head svg {
+  color: var(--accent);
+}
+
+.ai-assist-head div {
+  display: grid;
+  gap: 2px;
+}
+
+.ai-assist-head span,
+.ai-recommendation-row span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.ai-assist-card textarea {
+  min-height: 88px;
+}
+
+.ai-action-row,
+.ai-newsletter-row,
+.ai-translate-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ai-action-row button,
+.ai-newsletter-row button,
+.ai-file-button,
+.ai-translate-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.ai-action-row button:first-child,
+.ai-newsletter-row button:first-child {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.ai-file-button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.ai-file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ai-draft-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-draft-preview textarea {
+  min-height: 180px;
+}
+
+.ai-translate-bar {
+  margin: 8px 0;
+}
+
+.ai-translate-bar span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.ai-translate-bar button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
+.translation-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  margin: 8px 0;
+}
+
+.translation-card.error {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+}
+
+.translation-card p {
+  margin: 0;
+}
+
+.ai-recommendation-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.ai-recommendation-row div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.ai-recommendation-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.ai-skeleton {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-skeleton span {
+  height: 54px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--soft), color-mix(in srgb, var(--surface) 82%, white), var(--soft));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position-x: -200%;
+  }
+}
+
+@media (max-width: 880px) {
+  .ai-assist-card {
+    margin-inline: -2px;
+  }
+
+  .ai-action-row,
+  .ai-newsletter-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-action-row button,
+  .ai-newsletter-row button,
+  .ai-file-button {
+    width: 100%;
+    border-radius: 8px;
+  }
+
+  .ai-translate-bar {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+  }
+}

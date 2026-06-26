@@ -16,6 +16,7 @@ import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
 import webPush from 'web-push';
 import { canOperateOrganizationRole, organizationManagerRoleFilters } from './lib/organizationPermissions.js';
+import { isAiConfigured, parseAiJson, runAiImageRead, runAiText, runModeration } from './lib/aiService.js';
 
 dotenv.config();
 dotenv.config({ path: '.env.local', override: true });
@@ -94,6 +95,13 @@ const notificationLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false
+});
+const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 35,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${req.user?.id || 'anonymous'}:${req.params.id || req.body?.organizationId || 'global'}:${req.path}`
 });
 
 if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32 || process.env.JWT_SECRET === 'dev_secret')) {
@@ -216,7 +224,7 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '6mb' }));
 app.use('/uploads', express.static(uploadsDirectory, {
   fallthrough: false,
   immutable: true,
@@ -1500,6 +1508,68 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function hashAiInput(value) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function truncateForAi(value, max = 1800) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function aiJsonResponse(text, fallback = {}) {
+  const parsed = parseAiJson(text, fallback);
+  return parsed && typeof parsed === 'object' ? parsed : fallback;
+}
+
+async function logAiUsage({ feature, userId, organizationId = null, success, usage = {}, error = null, metadata = {} }) {
+  try {
+    await prisma.aiUsageLog.create({
+      data: {
+        feature,
+        userId,
+        organizationId,
+        success: Boolean(success),
+        promptTokens: usage.promptTokens ?? null,
+        completionTokens: usage.completionTokens ?? null,
+        totalTokens: usage.totalTokens ?? null,
+        error: error ? String(error).slice(0, 500) : null,
+        metadata
+      }
+    });
+  } catch (writeError) {
+    console.error('AI usage log failed', { feature, message: writeError.message });
+  }
+}
+
+async function runLoggedAi({ feature, req, organizationId = null, metadata = {}, task }) {
+  if (!isAiConfigured()) {
+    await logAiUsage({ feature, userId: req.user.id, organizationId, success: false, error: 'OPENAI_API_KEY is not configured.', metadata });
+    const error = new Error('AI is not configured yet. Add OPENAI_API_KEY on the backend and restart.');
+    error.status = 503;
+    throw error;
+  }
+  try {
+    const result = await task();
+    await logAiUsage({ feature, userId: req.user.id, organizationId, success: true, usage: result.usage, metadata });
+    return result;
+  } catch (error) {
+    await logAiUsage({ feature, userId: req.user.id, organizationId, success: false, usage: error.usage, error: error.message, metadata });
+    throw error;
+  }
+}
+
+function aiErrorResponse(res, error, fallback = 'AI is temporarily unavailable. Please edit manually and try again later.') {
+  const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 502;
+  return res.status(status).json({ error: error.message || fallback, fallback });
+}
+
+function safeAiDateInput(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || !Number.isFinite(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
 function organizationType(value) {
   return ['MASJID', 'MSA'].includes(String(value || '').toUpperCase()) ? String(value).toUpperCase() : 'MASJID';
 }
@@ -2422,6 +2492,305 @@ app.post('/api/organizations/:id/onboard', auth, requireAdmin, async (req, res) 
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not onboard masjid' });
   }
+});
+
+app.post('/api/ai/moderate', auth, aiLimiter, async (req, res) => {
+  const text = truncateForAi(req.body.text, 4000);
+  if (!text) return res.status(400).json({ error: 'Text is required' });
+  try {
+    const result = await runLoggedAi({
+      feature: 'moderation',
+      req,
+      metadata: { length: text.length },
+      task: () => runModeration(text)
+    });
+    res.json({ flagged: result.flagged, categories: result.categories, categoryScores: result.categoryScores });
+  } catch (error) {
+    aiErrorResponse(res, error, 'Moderation is temporarily unavailable.');
+  }
+});
+
+app.post('/api/ai/masjids/:id/generate-copy', auth, aiLimiter, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this masjid or admin can use AI writing tools' });
+  const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+  const notes = truncateForAi(req.body.notes || req.body.content, 1400);
+  const mode = ['announcement', 'improve', 'shorter', 'formal', 'engaging'].includes(String(req.body.mode || '').toLowerCase())
+    ? String(req.body.mode).toLowerCase()
+    : 'announcement';
+  const contentType = String(req.body.contentType || req.body.type || 'ANNOUNCEMENT').toUpperCase();
+  if (!notes) return res.status(400).json({ error: 'Add rough notes or draft text first' });
+  try {
+    const moderation = await runLoggedAi({
+      feature: 'moderation',
+      req,
+      organizationId: organization.id,
+      metadata: { sourceFeature: 'generate-copy' },
+      task: () => runModeration(notes)
+    });
+    if (moderation.flagged) return res.status(400).json({ error: 'This draft may violate community safety rules. Please rewrite it before using AI.' });
+    const prompt = [
+      `Masjid: ${organization.name}`,
+      `City/address: ${[organization.city, organization.address].filter(Boolean).join(', ') || 'not provided'}`,
+      `Content type: ${contentType}`,
+      `Requested action: ${mode}`,
+      `Rough notes or existing draft: ${notes}`,
+      '',
+      'Return only JSON with keys: title, description, shortCaption, suggestedType, fields.',
+      'fields can include location, dateText, timeText, audience, registrationLink, speaker, and notes when present.'
+    ].join('\n');
+    const result = await runLoggedAi({
+      feature: 'generate-copy',
+      req,
+      organizationId: organization.id,
+      metadata: { mode, contentType },
+      task: () => runAiText({
+        maxOutputTokens: 650,
+        system: 'You write concise, respectful Muslim community announcements for masjid apps. Preserve facts, never invent dates, prices, speakers, registration links, religious claims, or rulings. Make copy warm, clear, mobile-friendly, and ready for admin review.',
+        prompt
+      })
+    });
+    const parsed = aiJsonResponse(result.text, {});
+    res.json({
+      title: truncateForAi(parsed.title, 140) || organization.name,
+      description: truncateForAi(parsed.description || parsed.shortCaption || result.text, 1800),
+      shortCaption: truncateForAi(parsed.shortCaption, 280),
+      suggestedType: parsed.suggestedType || contentType,
+      fields: parsed.fields || {},
+      reviewRequired: true
+    });
+  } catch (error) {
+    aiErrorResponse(res, error);
+  }
+});
+
+app.post('/api/ai/masjids/:id/extract-poster', auth, aiLimiter, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this masjid or admin can read posters with AI' });
+  const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+  const imageUrl = String(req.body.imageUrl || req.body.imageDataUrl || '').trim();
+  if (!imageUrl) return res.status(400).json({ error: 'Upload a poster image or provide an image URL' });
+  if (imageUrl.startsWith('data:') && imageUrl.length > 5_500_000) return res.status(413).json({ error: 'Poster image is too large. Please use a smaller image.' });
+  if (!imageUrl.startsWith('data:image/') && !/^https?:\/\//i.test(imageUrl)) return res.status(400).json({ error: 'Poster must be an image URL or image data URL' });
+  try {
+    const result = await runLoggedAi({
+      feature: 'poster-extract',
+      req,
+      organizationId: organization.id,
+      metadata: { dataUrl: imageUrl.startsWith('data:'), inputBytes: imageUrl.length },
+      task: () => runAiImageRead({
+        maxOutputTokens: 800,
+        system: 'You extract public event information from an existing poster image for a masjid admin. Do not create poster art. Do not invent missing facts. Return concise JSON only.',
+        prompt: 'Read this event poster. Return only JSON with: title, date, time, location, speaker, host, audience, registrationLink, shortDescription, confidence, missingFields. Use null for unavailable fields.',
+        imageUrl
+      })
+    });
+    const parsed = aiJsonResponse(result.text, {});
+    const cacheKey = `poster:${organization.id}:${hashAiInput({ imageUrl: imageUrl.slice(0, 200), text: result.text })}`;
+    await prisma.aiCache.upsert({
+      where: { cacheKey },
+      create: {
+        feature: 'poster-extract',
+        cacheKey,
+        sourceHash: hashAiInput(imageUrl.slice(0, 1200)),
+        input: { organizationId: organization.id },
+        output: parsed,
+        userId: req.user.id,
+        organizationId: organization.id,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      },
+      update: { output: parsed, userId: req.user.id, organizationId: organization.id }
+    });
+    res.json({ ...parsed, reviewRequired: true });
+  } catch (error) {
+    aiErrorResponse(res, error, 'Poster reading is temporarily unavailable. You can still enter event details manually.');
+  }
+});
+
+app.post('/api/ai/translate', auth, aiLimiter, async (req, res) => {
+  const languageMap = { english: 'English', arabic: 'Arabic', urdu: 'Urdu' };
+  const targetLanguage = languageMap[String(req.body.targetLanguage || '').toLowerCase()] || null;
+  const text = truncateForAi(req.body.text, 2500);
+  const contentId = String(req.body.id || '').slice(0, 120);
+  const contentType = String(req.body.contentType || 'post').toLowerCase().slice(0, 40);
+  if (!targetLanguage) return res.status(400).json({ error: 'Choose English, Arabic, or Urdu' });
+  if (!text) return res.status(400).json({ error: 'Text is required' });
+  const cacheKey = `translate:${contentType}:${contentId}:${targetLanguage}:${hashAiInput(text)}`;
+  const cached = await prisma.aiCache.findUnique({ where: { cacheKey } });
+  if (cached && (!cached.expiresAt || cached.expiresAt > new Date())) {
+    await logAiUsage({ feature: 'translate-cache-hit', userId: req.user.id, success: true, metadata: { contentType, contentId, targetLanguage } });
+    return res.json({ translatedText: cached.output.translatedText, targetLanguage, cached: true });
+  }
+  try {
+    const result = await runLoggedAi({
+      feature: 'translate',
+      req,
+      metadata: { contentType, contentId, targetLanguage },
+      task: () => runAiText({
+        maxOutputTokens: 700,
+        system: 'Translate public masjid app content faithfully. Preserve dates, times, names, URLs, and Islamic terms when appropriate. Return only JSON.',
+        prompt: `Translate this public ${contentType} into ${targetLanguage}. Return JSON with translatedText only.\n\n${text}`
+      })
+    });
+    const parsed = aiJsonResponse(result.text, {});
+    const translatedText = truncateForAi(parsed.translatedText || result.text, 2500);
+    await prisma.aiCache.upsert({
+      where: { cacheKey },
+      create: {
+        feature: 'translate',
+        cacheKey,
+        sourceHash: hashAiInput(text),
+        input: { contentType, contentId, targetLanguage },
+        output: { translatedText },
+        userId: req.user.id,
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+      },
+      update: { output: { translatedText }, userId: req.user.id }
+    });
+    res.json({ translatedText, targetLanguage, cached: false });
+  } catch (error) {
+    aiErrorResponse(res, error, 'Translation is temporarily unavailable. The original content is still visible.');
+  }
+});
+
+app.get('/api/ai/recommendations', auth, aiLimiter, async (req, res) => {
+  const currentUser = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    include: {
+      favoriteMasjids: true,
+      organizationFollows: true,
+      eventSubscriptions: true
+    }
+  });
+  if (!currentUser) return res.status(404).json({ error: 'User not found' });
+  const favoriteIds = new Set(currentUser.favoriteMasjids.map((item) => item.organizationId));
+  const followedIds = new Set(currentUser.organizationFollows.map((item) => item.organizationId));
+  const interests = new Set([...(currentUser.interests || []), ...(currentUser.skills || [])].map((item) => String(item).toLowerCase()));
+  const organizations = await prisma.organization.findMany({
+    include: { followers: true, favoritedBy: true },
+    orderBy: { createdAt: 'desc' },
+    take: 80
+  });
+  const events = await prisma.event.findMany({
+    where: { startTime: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } },
+    include: { organization: true },
+    orderBy: { startTime: 'asc' },
+    take: 80
+  });
+  const opportunities = await prisma.opportunity.findMany({
+    where: { isActive: true },
+    include: { organization: true },
+    orderBy: { createdAt: 'desc' },
+    take: 80
+  });
+  const users = await prisma.user.findMany({
+    where: { id: { not: req.user.id }, isPrivate: false },
+    orderBy: { createdAt: 'desc' },
+    take: 80
+  });
+  function scoreText(text = '') {
+    const lower = text.toLowerCase();
+    let score = 0;
+    interests.forEach((interest) => {
+      if (interest && lower.includes(interest)) score += 2;
+    });
+    if (currentUser.city && lower.includes(String(currentUser.city).toLowerCase())) score += 1;
+    return score;
+  }
+  function reasonForOrg(org) {
+    if (favoriteIds.has(org.id)) return 'Recommended because this is one of your favorite masjids.';
+    if (followedIds.has(org.id)) return 'Recommended because you follow this masjid.';
+    if (currentUser.city && org.city && currentUser.city.toLowerCase() === org.city.toLowerCase()) return 'Recommended because it is in your city.';
+    return 'Recommended because it is active in your community.';
+  }
+  const masjidItems = organizations
+    .map((org) => {
+      const classes = Array.isArray(org.classes) ? org.classes : [];
+      return { kind: 'masjid', item: publicOrganization(org, req.user.id), score: (favoriteIds.has(org.id) ? 8 : 0) + (followedIds.has(org.id) ? 6 : 0) + scoreText(`${org.name} ${org.description || ''} ${org.city || ''} ${classes.map((item) => item.title || '').join(' ')}`), reason: reasonForOrg(org) };
+    })
+    .sort((a, b) => b.score - a.score || Number(b.item?.followerCount || 0) - Number(a.item?.followerCount || 0))
+    .slice(0, 6);
+  const eventItems = events
+    .map((event) => ({ kind: 'event', item: event, score: (favoriteIds.has(event.organizationId) ? 8 : 0) + (followedIds.has(event.organizationId) ? 6 : 0) + scoreText(`${event.title} ${event.description || ''} ${event.location || ''}`), reason: favoriteIds.has(event.organizationId) ? 'Recommended because it is from a favorite masjid.' : followedIds.has(event.organizationId) ? 'Recommended because you follow the host masjid.' : 'Recommended because it matches your community interests.' }))
+    .sort((a, b) => b.score - a.score || new Date(a.item.startTime) - new Date(b.item.startTime))
+    .slice(0, 6);
+  const opportunityItems = opportunities
+    .map((opportunity) => ({ kind: 'opportunity', item: opportunity, score: (favoriteIds.has(opportunity.organizationId) ? 8 : 0) + (followedIds.has(opportunity.organizationId) ? 6 : 0) + scoreText(`${opportunity.title} ${opportunity.description || ''} ${(opportunity.skills || []).join(' ')}`), reason: opportunity.type === 'JOB' ? 'Recommended from Muslim community job listings.' : 'Recommended because it is a community service opportunity.' }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
+  const userItems = users
+    .map((person) => ({ kind: 'user', item: publicUser(person), score: scoreText(`${person.name} ${person.bio || ''} ${person.city || ''} ${(person.skills || []).join(' ')} ${(person.interests || []).join(' ')}`), reason: 'Recommended from public profile interests and community skills.' }))
+    .filter((entry) => entry.score > 0 || currentUser.city && entry.item.city === currentUser.city)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
+  await logAiUsage({ feature: 'recommendations', userId: req.user.id, success: true, metadata: { deterministic: true } });
+  res.json({ masjids: masjidItems, events: eventItems, opportunities: opportunityItems, users: userItems });
+});
+
+app.post('/api/ai/masjids/:id/newsletter', auth, aiLimiter, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this masjid or admin can generate newsletters' });
+  const organization = await prisma.organization.findUnique({
+    where: { id: req.params.id },
+    include: {
+      events: { where: { startTime: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }, orderBy: { startTime: 'asc' }, take: 12 },
+      posts: { orderBy: { createdAt: 'desc' }, take: 12 },
+      opportunities: { where: { isActive: true }, orderBy: { createdAt: 'desc' }, take: 8 }
+    }
+  });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+  const source = {
+    masjid: { name: organization.name, city: organization.city },
+    events: organization.events.map((event) => ({ title: event.title, startTime: event.startTime, location: event.location, description: truncateForAi(event.description, 320) })),
+    posts: organization.posts.map((post) => ({ title: post.title, type: post.type, content: truncateForAi(post.content, 320) })),
+    opportunities: organization.opportunities.map((item) => ({ title: item.title, type: item.type, description: truncateForAi(item.description, 260), location: item.location })),
+    programs: (Array.isArray(organization.classes) ? organization.classes : []).slice(0, 10).map((item) => ({ title: item.title, teacher: item.teacher, dayTime: item.dayTime, location: item.location }))
+  };
+  const cacheKey = `newsletter:${organization.id}:${hashAiInput(source)}`;
+  const cached = await prisma.aiNewsletterDraft.findFirst({
+    where: { organizationId: organization.id, metadata: { path: ['cacheKey'], equals: cacheKey } },
+    orderBy: { createdAt: 'desc' }
+  });
+  if (cached && cached.createdAt > new Date(Date.now() - 12 * 60 * 60 * 1000)) return res.json({ draft: cached, cached: true, reviewRequired: true });
+  try {
+    const result = await runLoggedAi({
+      feature: 'newsletter',
+      req,
+      organizationId: organization.id,
+      metadata: { eventCount: source.events.length, postCount: source.posts.length },
+      task: () => runAiText({
+        maxOutputTokens: 900,
+        system: 'You create clean weekly masjid newsletters for mobile app preview. Be organized, respectful, concise, and community-friendly. Do not invent details. Return only JSON.',
+        prompt: `Create a weekly newsletter draft from this source data. Return JSON with title and content. Include sections for upcoming events, announcements, programs/classes, and opportunities only when data exists.\n\n${JSON.stringify(source)}`
+      })
+    });
+    const parsed = aiJsonResponse(result.text, {});
+    const draft = await prisma.aiNewsletterDraft.create({
+      data: {
+        organizationId: organization.id,
+        userId: req.user.id,
+        title: truncateForAi(parsed.title, 160) || `${organization.name} Weekly Update`,
+        content: truncateForAi(parsed.content || result.text, 5000),
+        sourceRangeStart: new Date(),
+        sourceRangeEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        metadata: { cacheKey, sourceSummary: { events: source.events.length, posts: source.posts.length, opportunities: source.opportunities.length, programs: source.programs.length } }
+      }
+    });
+    res.json({ draft, cached: false, reviewRequired: true });
+  } catch (error) {
+    aiErrorResponse(res, error, 'Newsletter generation is temporarily unavailable. You can still write one manually.');
+  }
+});
+
+app.put('/api/ai/newsletters/:draftId', auth, aiLimiter, async (req, res) => {
+  const draft = await prisma.aiNewsletterDraft.findUnique({ where: { id: req.params.draftId } });
+  if (!draft) return res.status(404).json({ error: 'Newsletter draft not found' });
+  if (!(await canManageOrganization(req.user, draft.organizationId))) return res.status(403).json({ error: 'Only this masjid or admin can update this newsletter' });
+  const data = {};
+  if (req.body.title !== undefined) data.title = truncateForAi(req.body.title, 160) || draft.title;
+  if (req.body.content !== undefined) data.content = truncateForAi(req.body.content, 5000) || draft.content;
+  if (req.body.status !== undefined) data.status = ['DRAFT', 'APPROVED', 'POSTED'].includes(String(req.body.status).toUpperCase()) ? String(req.body.status).toUpperCase() : draft.status;
+  const updated = await prisma.aiNewsletterDraft.update({ where: { id: draft.id }, data });
+  res.json(updated);
 });
 
 app.get('/api/posts', auth, async (req, res) => {

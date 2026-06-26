@@ -74,6 +74,9 @@ model User {
   groupChatsCreated        GroupChat[]             @relation("GroupChatCreator")
   groupMemberships         GroupChatMember[]
   groupMessages            GroupMessage[]
+  aiUsageLogs              AiUsageLog[]
+  aiCaches                 AiCache[]
+  aiNewsletterDrafts       AiNewsletterDraft[]
 }
 
 model UserWarning {
@@ -183,8 +186,71 @@ model Organization {
   followers     OrganizationFollow[]
   favoritedBy    FavoriteMasjid[]
   people        OrganizationPerson[]
+  aiUsageLogs   AiUsageLog[]
+  aiCaches      AiCache[]
+  aiNewsletterDrafts AiNewsletterDraft[]
 
   @@index([type, city])
+}
+
+model AiUsageLog {
+  id             String   @id @default(cuid())
+  feature        String
+  userId         String?
+  organizationId String?
+  success        Boolean  @default(false)
+  promptTokens   Int?
+  completionTokens Int?
+  totalTokens    Int?
+  error          String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([feature, createdAt])
+  @@index([userId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model AiCache {
+  id             String   @id @default(cuid())
+  feature        String
+  cacheKey       String   @unique
+  sourceHash     String?
+  input          Json?
+  output         Json
+  userId         String?
+  organizationId String?
+  expiresAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([feature, createdAt])
+  @@index([organizationId, feature])
+}
+
+model AiNewsletterDraft {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  title          String
+  content        String
+  sourceRangeStart DateTime?
+  sourceRangeEnd DateTime?
+  status         String   @default("DRAFT")
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status, createdAt])
 }
 
 model Post {

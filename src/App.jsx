@@ -11,10 +11,12 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  FileImage,
   HeartHandshake,
   Home,
   ImageIcon,
   Inbox,
+  Languages,
   Library,
   LogOut,
   Mail,
@@ -28,6 +30,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Sparkles,
   UserCheck,
   Users,
   Volume2,
@@ -403,7 +406,37 @@ function ProfileSummary({ user, onLogout, setTab }) {
   );
 }
 
-function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment, notificationState, enablePushNotifications, prayerPreferences }) {
+function AiDiscoveryPanel({ recommendations, loading, openOrganization, setTab }) {
+  const items = [
+    ...(recommendations?.masjids || []).map((entry) => ({ ...entry, title: entry.item?.name, subtitle: entry.item?.city || entry.item?.address, action: () => openOrganization(entry.item.id) })),
+    ...(recommendations?.events || []).map((entry) => ({ ...entry, title: entry.item?.title, subtitle: entry.item?.organization?.name || entry.item?.location, action: () => setTab('events', entry.item.id) })),
+    ...(recommendations?.opportunities || []).map((entry) => ({ ...entry, title: entry.item?.title, subtitle: entry.item?.organization?.name || entry.item?.type, action: () => setTab(entry.item?.type === 'JOB' ? 'jobs' : 'volunteers') })),
+    ...(recommendations?.users || []).map((entry) => ({ ...entry, title: entry.item?.name, subtitle: [displayRoleLabel(entry.item?.accountType), entry.item?.city].filter(Boolean).join(' - '), action: () => setTab('network') }))
+  ].filter((item) => item.title).slice(0, 6);
+  return (
+    <section className="panel ai-discovery-panel">
+      <div className="section-title"><div><p className="eyebrow">AI discovery</p><h2>For you</h2></div><Sparkles size={21} /></div>
+      {loading && <div className="ai-skeleton"><span /><span /><span /></div>}
+      {!loading && (
+        <div className="stack-list">
+          {items.map((entry, index) => (
+            <button className="ai-recommendation-row" key={`${entry.kind}-${entry.item?.id || index}`} onClick={entry.action}>
+              <div>
+                <strong>{entry.title}</strong>
+                <span>{entry.subtitle || entry.kind}</span>
+                <p>{entry.reason}</p>
+              </div>
+              <ChevronRight size={18} />
+            </button>
+          ))}
+          {!items.length && <p className="helper-text">Follow masjids, save events, or add interests to unlock better suggestions.</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, requestLocation, prayerTimes, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment, notificationState, enablePushNotifications, prayerPreferences, aiRecommendations, aiRecommendationsLoading }) {
   const orgAccount = isOrganizationAccount(user);
   const favoritePrograms = favoriteMasjids.flatMap((masjid) => (masjid.classes || masjid.programs || []).map((program) => ({ ...program, masjid })));
   return (
@@ -425,6 +458,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
       </section>
       <aside className="right-rail">
         {orgAccount ? <MasjidPrayerManagerNotice setTab={setTab} /> : <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />}
+        {!orgAccount && <AiDiscoveryPanel recommendations={aiRecommendations} loading={aiRecommendationsLoading} openOrganization={openOrganization} setTab={setTab} />}
         <FavoritePrograms programs={favoritePrograms} openOrganization={openOrganization} />
         <NearbyMasjids masjids={masjids.slice(0, 3)} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
         <section className="panel">
@@ -461,6 +495,8 @@ function FavoritePrograms({ programs, openOrganization }) {
 function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment }) {
   const [commentForms, setCommentForms] = useState({});
   const [commentingPostId, setCommentingPostId] = useState('');
+  const [translations, setTranslations] = useState({});
+  const [translatingKey, setTranslatingKey] = useState('');
   function sharePost(post) {
     const text = `${post.title} - ${post.organization?.name || 'Mujtama'}`;
     if (navigator.share) {
@@ -485,6 +521,26 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
   function canDeleteComment(comment) {
     return comment.author?.id === user?.id || user?.accountType === 'ADMIN' || isOrganizationAccount(user);
   }
+  async function translatePost(post, targetLanguage) {
+    const key = `${post.id}:${targetLanguage}`;
+    setTranslatingKey(key);
+    try {
+      const result = await api('/api/ai/translate', {
+        method: 'POST',
+        body: JSON.stringify({
+          contentType: post.type || 'post',
+          id: post.id,
+          text: `${post.title}\n\n${post.content}`,
+          targetLanguage
+        })
+      });
+      setTranslations((current) => ({ ...current, [key]: result }));
+    } catch (error) {
+      setTranslations((current) => ({ ...current, [key]: { error: error.message || 'Translation unavailable' } }));
+    } finally {
+      setTranslatingKey('');
+    }
+  }
   return (
     <section className="panel">
       <div className="section-title"><div><p className="eyebrow">Feed</p><h2>Community updates</h2></div><span>{posts.length}</span></div>
@@ -508,6 +564,23 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
             />
             <strong>{post.title}</strong>
             <p>{post.content}</p>
+            <div className="ai-translate-bar">
+              <span><Languages size={15} />Translate</span>
+              {['Arabic', 'Urdu', 'English'].map((language) => {
+                const key = `${post.id}:${language}`;
+                return <button key={language} type="button" disabled={translatingKey === key} onClick={() => translatePost(post, language)}>{translatingKey === key ? '...' : language}</button>;
+              })}
+            </div>
+            {['Arabic', 'Urdu', 'English'].map((language) => {
+              const result = translations[`${post.id}:${language}`];
+              if (!result) return null;
+              return (
+                <div className={result.error ? 'translation-card error' : 'translation-card'} key={language}>
+                  <strong>{language}</strong>
+                  <p>{result.error || result.translatedText}</p>
+                </div>
+              );
+            })}
             {post.location && <div className="meta-line"><MapPin size={16} />{post.location}</div>}
             {post.eventTime && <div className="meta-line"><CalendarDays size={16} />{new Date(post.eventTime).toLocaleString()}</div>}
             <div className="post-social-row">
@@ -757,6 +830,8 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
   const [eventLocation, setEventLocation] = useState('all');
   const [eventHost, setEventHost] = useState('all');
   const [detailItem, setDetailItem] = useState(null);
+  const [eventTranslations, setEventTranslations] = useState({});
+  const [eventTranslatingKey, setEventTranslatingKey] = useState('');
   async function deleteEvent(id) {
     if (!confirm('Delete this event?')) return;
     await api(`/api/events/${id}`, { method: 'DELETE' });
@@ -772,6 +847,26 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
   }
   function openItem(item) {
     setDetailItem(item);
+  }
+  async function translateEvent(item, targetLanguage) {
+    const key = `${item.id}:${targetLanguage}`;
+    setEventTranslatingKey(key);
+    try {
+      const result = await api('/api/ai/translate', {
+        method: 'POST',
+        body: JSON.stringify({
+          contentType: item.isProgram ? 'program' : 'event',
+          id: item.id,
+          text: `${item.title}\n\n${item.description || ''}`,
+          targetLanguage
+        })
+      });
+      setEventTranslations((current) => ({ ...current, [key]: result }));
+    } catch (error) {
+      setEventTranslations((current) => ({ ...current, [key]: { error: error.message || 'Translation unavailable' } }));
+    } finally {
+      setEventTranslatingKey('');
+    }
   }
   function matchesDate(event) {
     if (eventDate === 'all') return true;
@@ -833,6 +928,23 @@ function EventsScreen({ user, events, masjids = [], loadEvents, loadPosts, myOrg
           <p className="eyebrow">{item.organization?.name || item.createdBy?.name || 'Community host'}</p>
           <h2>{item.title}</h2>
           <p>{item.description || 'Event details will appear here once the host adds them.'}</p>
+          <div className="ai-translate-bar">
+            <span><Languages size={15} />Translate</span>
+            {['Arabic', 'Urdu', 'English'].map((language) => {
+              const key = `${item.id}:${language}`;
+              return <button key={language} type="button" disabled={eventTranslatingKey === key} onClick={() => translateEvent(item, language)}>{eventTranslatingKey === key ? '...' : language}</button>;
+            })}
+          </div>
+          {['Arabic', 'Urdu', 'English'].map((language) => {
+            const result = eventTranslations[`${item.id}:${language}`];
+            if (!result) return null;
+            return (
+              <div className={result.error ? 'translation-card error' : 'translation-card'} key={language}>
+                <strong>{language}</strong>
+                <p>{result.error || result.translatedText}</p>
+              </div>
+            );
+          })}
           <div className="meta-line"><CalendarDays size={16} />{item.isProgram ? item.dayTime || 'Schedule TBA' : eventTiming(item)?.toLocaleString() || item.time || 'Time TBA'}</div>
           <div className="meta-line"><MapPin size={16} />{item.location || item.place || 'Location TBA'}</div>
           <TagRow tags={[(item.category || item.type || 'Community'), item.teacher && `Teacher: ${item.teacher}`, item.requiresApproval && 'Approval required', item.capacity && `${item.capacity} capacity`].filter(Boolean)} />
@@ -2756,6 +2868,10 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     volunteers: scopedOrganizations.reduce((sum, org) => sum + (org.opportunities || []).filter((item) => item.type !== 'JOB').length, 0)
   };
   const selectedOrg = myOrganizations.find((org) => org.id === selectedOrgId) || scopedOrganizations[0] || myOrganizations[0];
+  const [aiNotes, setAiNotes] = useState('');
+  const [aiLoading, setAiLoading] = useState('');
+  const [aiMessage, setAiMessage] = useState('');
+  const [newsletterDraft, setNewsletterDraft] = useState(null);
   const onboardingOrg = myOrganizations.find((org) => org.id === onboardForm.organizationId) || myOrganizations.find((org) => !org.verified) || myOrganizations[0];
   const unverifiedOrganizations = myOrganizations.filter((org) => !org.verified);
   const selectedOrgEvents = selectedOrg?.events || [];
@@ -2855,6 +2971,101 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   function openUserView() {
     if (!selectedOrg?.id) return alert('Create or select a masjid profile first.');
     openOrganization(selectedOrg.id).catch(console.error);
+  }
+  function activeAiOrganizationId(preferred = postForm.organizationId || eventForm.organizationId || classForm.organizationId) {
+    return preferred || selectedOrg?.id || myOrganizations[0]?.id || '';
+  }
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+  async function generateAiCopy(mode = 'announcement', target = 'post') {
+    const organizationId = activeAiOrganizationId(target === 'event' ? eventForm.organizationId : postForm.organizationId);
+    if (!organizationId) return alert('Create or select a masjid first.');
+    const notes = aiNotes.trim() || (target === 'event' ? `${eventForm.title}\n${eventForm.description}` : `${postForm.title}\n${postForm.content}`).trim();
+    if (!notes) return alert('Add rough notes or draft text first.');
+    setAiLoading(`${target}:${mode}`);
+    setAiMessage('');
+    try {
+      const result = await api(`/api/ai/masjids/${organizationId}/generate-copy`, {
+        method: 'POST',
+        body: JSON.stringify({ notes, mode, contentType: target === 'event' ? 'EVENT' : postForm.type })
+      });
+      if (target === 'event') {
+        setEventForm((current) => ({
+          ...current,
+          organizationId,
+          title: result.title || current.title,
+          description: result.description || current.description,
+          location: result.fields?.location || current.location
+        }));
+      } else {
+        setPostForm((current) => ({
+          ...current,
+          organizationId,
+          title: result.title || current.title,
+          content: result.description || current.content,
+          location: result.fields?.location || current.location
+        }));
+      }
+      setAiMessage('AI draft added. Please review and edit before publishing.');
+    } catch (error) {
+      setAiMessage(error.message || 'AI writing is unavailable right now.');
+    } finally {
+      setAiLoading('');
+    }
+  }
+  async function extractPosterDetails(file) {
+    const organizationId = activeAiOrganizationId(eventForm.organizationId);
+    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!file) return;
+    setAiLoading('poster');
+    setAiMessage('');
+    try {
+      const imageDataUrl = await readFileAsDataUrl(file);
+      const result = await api(`/api/ai/masjids/${organizationId}/extract-poster`, {
+        method: 'POST',
+        body: JSON.stringify({ imageDataUrl })
+      });
+      setEventForm((current) => ({
+        ...current,
+        organizationId,
+        title: result.title || current.title,
+        description: result.shortDescription || current.description,
+        location: result.location || current.location
+      }));
+      setAiNotes([result.date, result.time, result.speaker && `Speaker: ${result.speaker}`, result.audience && `Audience: ${result.audience}`, result.registrationLink && `Register: ${result.registrationLink}`].filter(Boolean).join('\n'));
+      setAiMessage('Poster details filled in. Check the date, time, and registration link before posting.');
+    } catch (error) {
+      setAiMessage(error.message || 'Poster reading is unavailable right now.');
+    } finally {
+      setAiLoading('');
+    }
+  }
+  async function generateNewsletter() {
+    const organizationId = activeAiOrganizationId();
+    if (!organizationId) return alert('Create or select a masjid first.');
+    setAiLoading('newsletter');
+    setAiMessage('');
+    try {
+      const result = await api(`/api/ai/masjids/${organizationId}/newsletter`, { method: 'POST', body: JSON.stringify({}) });
+      setNewsletterDraft(result.draft);
+      setAiMessage('Newsletter draft ready. Review it before posting.');
+    } catch (error) {
+      setAiMessage(error.message || 'Newsletter generation is unavailable right now.');
+    } finally {
+      setAiLoading('');
+    }
+  }
+  function useNewsletterAsPost() {
+    if (!newsletterDraft) return;
+    const organizationId = newsletterDraft.organizationId || activeAiOrganizationId();
+    setPostForm({ organizationId, type: 'ANNOUNCEMENT', title: newsletterDraft.title, content: newsletterDraft.content, imageUrl: '', location: '', eventTime: '' });
+    openDashboardSection('posts');
   }
   async function deleteUser(id) {
     if (!confirm('Delete this user and their messages/events?')) return;
@@ -3632,6 +3843,28 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
           {activeSection === 'posts' && <section className="panel">
             <div className="section-title"><h2>Create From Dashboard</h2><span>{postDestination(postForm.type)}</span></div>
             <p className="helper-text">Choose a category and it will publish to the right place: Events, Programs, Volunteers, Jobs, or the Home feed.</p>
+            <div className="ai-assist-card">
+              <div className="ai-assist-head"><Sparkles size={19} /><div><strong>AI writing assistant</strong><span>Draft first, review before publishing.</span></div></div>
+              <textarea value={aiNotes} onChange={(event) => setAiNotes(event.target.value)} placeholder="Rough notes: Youth qiyam Friday 8pm, pizza, brothers 13+" />
+              <div className="ai-action-row">
+                <button type="button" onClick={() => generateAiCopy('announcement', 'post')} disabled={Boolean(aiLoading)}><Sparkles size={15} />Generate</button>
+                <button type="button" onClick={() => generateAiCopy('improve', 'post')} disabled={Boolean(aiLoading)}>Improve</button>
+                <button type="button" onClick={() => generateAiCopy('shorter', 'post')} disabled={Boolean(aiLoading)}>Shorter</button>
+                <button type="button" onClick={() => generateAiCopy('formal', 'post')} disabled={Boolean(aiLoading)}>Formal</button>
+                <button type="button" onClick={() => generateAiCopy('engaging', 'post')} disabled={Boolean(aiLoading)}>Engaging</button>
+              </div>
+              <div className="ai-newsletter-row">
+                <button type="button" onClick={generateNewsletter} disabled={Boolean(aiLoading)}><Sparkles size={15} />Generate newsletter</button>
+                {newsletterDraft && <button type="button" onClick={useNewsletterAsPost}>Use as post</button>}
+              </div>
+              {newsletterDraft && (
+                <div className="ai-draft-preview">
+                  <input value={newsletterDraft.title} onChange={(event) => setNewsletterDraft((draft) => ({ ...draft, title: event.target.value }))} />
+                  <textarea value={newsletterDraft.content} onChange={(event) => setNewsletterDraft((draft) => ({ ...draft, content: event.target.value }))} />
+                </div>
+              )}
+              {aiMessage && <p className="helper-text">{aiMessage}</p>}
+            </div>
             <form className="profile-form" onSubmit={submitPost}>
               <div className="form-grid">
                 <select value={postForm.organizationId} onChange={(event) => setPostForm({ ...postForm, organizationId: event.target.value })}>
@@ -3659,6 +3892,21 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
 
           {(activeSection === 'events' || activeSection === 'eventApprovals') && <section className="panel">
             <div className="section-title"><h2>Create Event</h2></div>
+            <div className="ai-assist-card">
+              <div className="ai-assist-head"><FileImage size={19} /><div><strong>Create from poster or notes</strong><span>AI extracts details from an existing poster; it does not generate images.</span></div></div>
+              <textarea value={aiNotes} onChange={(event) => setAiNotes(event.target.value)} placeholder="Event notes or pasted flyer text" />
+              <div className="ai-action-row">
+                <label className="ai-file-button">
+                  <FileImage size={15} />Create from poster
+                  <input type="file" accept="image/*" onChange={(event) => extractPosterDetails(event.target.files?.[0])} />
+                </label>
+                <button type="button" onClick={() => generateAiCopy('announcement', 'event')} disabled={Boolean(aiLoading)}><Sparkles size={15} />Generate event copy</button>
+                <button type="button" onClick={() => generateAiCopy('shorter', 'event')} disabled={Boolean(aiLoading)}>Shorter</button>
+                <button type="button" onClick={() => generateAiCopy('formal', 'event')} disabled={Boolean(aiLoading)}>Formal</button>
+              </div>
+              {aiLoading && <p className="helper-text">Working on it...</p>}
+              {aiMessage && <p className="helper-text">{aiMessage}</p>}
+            </div>
             <form className="profile-form" onSubmit={submitEvent}>
               <div className="form-grid">
                 <select value={eventForm.organizationId} onChange={(event) => setEventForm({ ...eventForm, organizationId: event.target.value })}>
@@ -4399,6 +4647,8 @@ function AuthenticatedApp() {
   const [notificationPreferences, setNotificationPreferences] = useState(defaultNotificationPreferences);
   const [whatsappSettings, setWhatsappSettings] = useState({ phone: '', enabled: false, integrationEnabled: false, serviceConfigured: false });
   const [dashboardOrganizationsState, setDashboardOrganizationsState] = useState({ loading: false, error: '' });
+  const [aiRecommendations, setAiRecommendations] = useState(null);
+  const [aiRecommendationsLoading, setAiRecommendationsLoading] = useState(false);
   const eventsLoadedRef = useRef(false);
   const organizationsLoadedRef = useRef(false);
   const myOrganizationsLoadedRef = useRef(false);
@@ -4421,7 +4671,8 @@ function AuthenticatedApp() {
       loadThreads(),
       loadNotificationMasjids(),
       loadNotificationPreferences(),
-      loadNotificationHistory()
+      loadNotificationHistory(),
+      loadAiRecommendations()
     ]);
     const failed = results.filter((result) => result.status === 'rejected');
     if (failed.length) console.warn('Some startup data failed to load; keeping the signed-in session.', failed.map((result) => result.reason?.message || result.reason));
@@ -4508,6 +4759,22 @@ function AuthenticatedApp() {
   async function loadOpportunities() {
     const loaded = await api('/api/opportunities').catch(() => []);
     setOpportunities(loaded);
+  }
+
+  async function loadAiRecommendations() {
+    if (!token()) return null;
+    setAiRecommendationsLoading(true);
+    try {
+      const loaded = await api('/api/ai/recommendations');
+      setAiRecommendations(loaded);
+      return loaded;
+    } catch (error) {
+      console.warn('AI recommendations unavailable', error);
+      setAiRecommendations(null);
+      return null;
+    } finally {
+      setAiRecommendationsLoading(false);
+    }
   }
 
   async function loadMyOrganizations(currentUser = user, options = {}) {
@@ -5243,7 +5510,7 @@ function AuthenticatedApp() {
   if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
 
   const screens = {
-    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} />,
+    home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} aiRecommendations={aiRecommendations} aiRecommendationsLoading={aiRecommendationsLoading} />,
     prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} />,
     events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} loadPosts={loadPosts} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => goBack('/events')} locationStatus={locationStatus} requestLocation={requestLocation} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
