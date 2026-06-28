@@ -381,6 +381,45 @@
 }
 
 @media (max-width: 760px) {
+  .landing-nav {
+    align-items: flex-start;
+    padding-top: 16px;
+  }
+
+  .landing-nav nav {
+    display: none;
+  }
+
+  .landing-hero {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    padding: 34px 0 56px;
+  }
+
+  .landing-hero h1 {
+    font-size: clamp(48px, 16vw, 68px);
+  }
+
+  .landing-actions,
+  .store-button,
+  .landing-web-link {
+    width: 100%;
+  }
+
+  .store-button,
+  .landing-web-link {
+    justify-content: center;
+  }
+
+  .landing-phone {
+    width: min(320px, 100%);
+  }
+
+  .landing-band {
+    margin-top: 0;
+    grid-template-columns: 1fr;
+  }
+
   .messaging-layout {
     grid-template-columns: 1fr;
   }
@@ -437,6 +476,246 @@ select {
 
 button {
   cursor: pointer;
+}
+
+.landing-page {
+  min-height: 100dvh;
+  color: #10231e;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(238, 245, 242, 0.92)),
+    url('/icons/mujtama-icon-512.png') center 12% / min(520px, 82vw) no-repeat;
+}
+
+.landing-nav {
+  width: min(1180px, calc(100% - 36px));
+  margin: 0 auto;
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.landing-brand,
+.landing-nav nav,
+.landing-actions,
+.landing-web-link,
+.store-button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.landing-brand {
+  gap: 10px;
+  color: #10231e;
+}
+
+.landing-brand span {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0f766e;
+}
+
+.landing-brand img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.landing-brand strong {
+  font-size: 17px;
+}
+
+.landing-nav nav {
+  gap: 8px;
+}
+
+.landing-nav nav a,
+.landing-web-link {
+  min-height: 40px;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #10231e;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 118, 110, 0.16);
+}
+
+.landing-hero {
+  width: min(1180px, calc(100% - 36px));
+  min-height: calc(100dvh - 156px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 420px);
+  align-items: center;
+  gap: clamp(28px, 6vw, 86px);
+  padding: 36px 0 70px;
+}
+
+.landing-hero-copy {
+  display: grid;
+  gap: 18px;
+  max-width: 710px;
+}
+
+.landing-hero h1 {
+  margin: 0;
+  font-size: clamp(48px, 8vw, 96px);
+  line-height: 0.9;
+  letter-spacing: 0;
+}
+
+.landing-hero p {
+  margin: 0;
+  max-width: 620px;
+  color: #3d5750;
+  font-size: clamp(18px, 2.2vw, 24px);
+  line-height: 1.45;
+}
+
+.landing-actions {
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.store-button {
+  min-width: 184px;
+  min-height: 58px;
+  gap: 10px;
+  padding: 0 16px;
+  border-radius: 8px;
+  color: #fff;
+  background: #10231e;
+  box-shadow: 0 14px 30px rgba(16, 35, 30, 0.18);
+}
+
+.store-button span {
+  display: grid;
+  gap: 1px;
+}
+
+.store-button small {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.store-button strong {
+  font-size: 17px;
+}
+
+.landing-web-link {
+  width: fit-content;
+  margin-top: 2px;
+  font-weight: 900;
+}
+
+.landing-phone {
+  justify-self: center;
+  width: min(360px, 84vw);
+  aspect-ratio: 0.5;
+  padding: 14px;
+  border-radius: 32px;
+  background: #10231e;
+  box-shadow: 0 28px 70px rgba(16, 35, 30, 0.28);
+}
+
+.landing-phone-screen {
+  height: 100%;
+  border-radius: 24px;
+  overflow: hidden;
+  padding: 22px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  background: #f7fbf8;
+}
+
+.phone-top,
+.phone-prayer,
+.phone-update,
+.phone-tabs {
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.phone-top {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px;
+  color: #4f655e;
+}
+
+.phone-prayer {
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+  background: #0f766e;
+  color: #fff;
+}
+
+.phone-prayer strong {
+  font-size: 42px;
+}
+
+.phone-prayer em {
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.phone-update {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+}
+
+.phone-update span {
+  color: #5d716b;
+}
+
+.phone-tabs {
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 12px;
+}
+
+.phone-tabs span {
+  height: 8px;
+  border-radius: 8px;
+  background: #dce8e4;
+}
+
+.phone-tabs span:first-child {
+  background: #0f766e;
+}
+
+.landing-band {
+  width: min(1180px, calc(100% - 36px));
+  margin: -42px auto 0;
+  padding: 18px 0 34px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.landing-band div {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border-top: 1px solid rgba(15, 118, 110, 0.18);
+}
+
+.landing-band strong {
+  font-size: 18px;
+}
+
+.landing-band span {
+  color: #4f655e;
+  line-height: 1.45;
 }
 
 a {

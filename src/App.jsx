@@ -14,6 +14,7 @@ import {
   FileImage,
   HeartHandshake,
   Home,
+  Download,
   ImageIcon,
   Inbox,
   Languages,
@@ -31,6 +32,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   UserCheck,
   Users,
@@ -156,6 +158,7 @@ function pathForTab(key, id) {
 }
 
 function tabForPath(pathname) {
+  if (pathname === '/app') return 'home';
   if (pathname === '/' || pathname === '/home') return 'home';
   if (pathname.startsWith('/prayer')) return 'prayer';
   if (pathname === '/login' || pathname === '/register') return 'auth';
@@ -174,6 +177,60 @@ function tabForPath(pathname) {
   if (pathname.startsWith('/dashboard')) return 'dashboard';
   if (pathname.startsWith('/settings')) return 'settings';
   return 'home';
+}
+
+function LandingPage() {
+  const appStoreHref = '#app-store-link-coming-soon';
+  const playStoreHref = '#play-store-link-coming-soon';
+  return (
+    <main className="landing-page">
+      <header className="landing-nav">
+        <a className="landing-brand" href="/" aria-label="Mujtama Connect home">
+          <span><img src="/icons/mujtama-icon-192.png" alt="" /></span>
+          <strong>Mujtama Connect</strong>
+        </a>
+        <nav>
+          <a href="/app">Open app</a>
+          <a href="#download">Download</a>
+        </nav>
+      </header>
+
+      <section className="landing-hero">
+        <div className="landing-hero-copy">
+          <p className="eyebrow">Muslim community, connected</p>
+          <h1>Mujtama Connect</h1>
+          <p>Find masjids, follow local updates, message community members, discover events, and stay close to prayer times in one focused app.</p>
+          <div className="landing-actions" id="download">
+            <a className="store-button" href={appStoreHref} aria-label="Download Mujtama Connect from the App Store">
+              <Download size={20} />
+              <span><small>Download on the</small><strong>App Store</strong></span>
+            </a>
+            <a className="store-button" href={playStoreHref} aria-label="Get Mujtama Connect on Google Play">
+              <Smartphone size={20} />
+              <span><small>Get it on</small><strong>Google Play</strong></span>
+            </a>
+          </div>
+          <a className="landing-web-link" href="/app">Continue to the web app for now</a>
+        </div>
+
+        <div className="landing-phone" aria-hidden="true">
+          <div className="landing-phone-screen">
+            <div className="phone-top"><span>Mujtama</span><strong>Today</strong></div>
+            <div className="phone-prayer"><span>Fajr</span><strong>3:51</strong><em>Milton, ON</em></div>
+            <div className="phone-update"><b>Islamic Centre</b><span>Community halaqah tonight</span></div>
+            <div className="phone-update"><b>Messages</b><span>2 new conversations</span></div>
+            <div className="phone-tabs"><span /><span /><span /><span /></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-band">
+        <div><strong>Masjid updates</strong><span>Announcements, classes, events, and prayer schedules.</span></div>
+        <div><strong>Community DMs</strong><span>Connect with Muslims nearby and across your network.</span></div>
+        <div><strong>Profiles</strong><span>Search by skills, roles, organizations, and headlines.</span></div>
+      </section>
+    </main>
+  );
 }
 
 function routeId(pathname, prefix) {
@@ -5293,7 +5350,7 @@ function AuthenticatedApp() {
   }, []);
   useEffect(() => {
     const landingPath = user && (isOrganizationAccount(user) || isImamAccount(user)) ? pathForTab('dashboard') : pathForTab('home');
-    if (locationRoute.pathname === '/') navigate(user ? landingPath : '/login', { replace: true });
+    if (locationRoute.pathname === '/app') navigate(user ? landingPath : '/login', { replace: true });
     if (user && ['/login', '/register'].includes(locationRoute.pathname)) navigate(landingPath, { replace: true });
   }, [locationRoute.pathname, navigate, Boolean(user), user?.accountType]);
   useEffect(() => {
@@ -5610,5 +5667,6 @@ export default function App() {
   if (displayMatch) {
     return <MasjidTvDisplay masjidId={decodeURIComponent(displayMatch[1])} apiBase={API} />;
   }
+  if (window.location.pathname === '/') return <LandingPage />;
   return <AuthenticatedApp />;
 }

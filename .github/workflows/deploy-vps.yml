@@ -35,6 +35,19 @@ jobs:
           script: |
             set -e
             cd /opt/masjid
+            FRONTEND_URL="${FRONTEND_URL:-https://mujtamaconnect.com}"
+            if echo "$FRONTEND_URL" | grep -qi 'vercel.app'; then
+              FRONTEND_URL="https://mujtamaconnect.com"
+            fi
+            APP_URL="${APP_URL:-$FRONTEND_URL}"
+            PUBLIC_API_URL="${PUBLIC_API_URL:-https://api.mujtamaconnect.com}"
+            if echo "$PUBLIC_API_URL" | grep -qi 'vercel.app'; then
+              PUBLIC_API_URL="https://api.mujtamaconnect.com"
+            fi
+            CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-$FRONTEND_URL,https://www.mujtamaconnect.com,capacitor://localhost,http://localhost}"
+            VAPID_SUBJECT="${VAPID_SUBJECT:-$FRONTEND_URL}"
+            VITE_API_URL="${VITE_API_URL:-$PUBLIC_API_URL}"
+            export FRONTEND_URL APP_URL PUBLIC_API_URL CORS_ALLOWED_ORIGINS VAPID_SUBJECT VITE_API_URL
             mkdir -p env-backups
             if [ -f backend/.env ]; then
               backup_path="env-backups/backend.env.$(date -u +%Y%m%d-%H%M%S)"
@@ -103,11 +116,17 @@ jobs:
               backend npm run migrate:deploy
             docker compose up -d --remove-orphans
             docker compose ps
+            backend_ready=0
             for attempt in $(seq 1 30); do
               if curl --fail --silent http://127.0.0.1:5000/api/health >/dev/null; then
-                exit 0
+                backend_ready=1
+                break
               fi
               sleep 2
             done
-            docker compose logs --tail=100 backend
-            exit 1
+            if [ "$backend_ready" -ne 1 ]; then
+              docker compose logs --tail=100 backend
+              exit 1
+            fi
+            curl --fail --silent http://127.0.0.1/ >/dev/null
+            exit 0

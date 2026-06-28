@@ -36,9 +36,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:4173',
   process.env.FRONTEND_URL,
-  'https://ummah-connect-psi.vercel.app',
-  'https://masjid-hamzaqamar05s-projects.vercel.app',
-  'https://masjid-fx6xjm2vo-hamzaqamar05s-projects.vercel.app',
+  'https://mujtamaconnect.com',
+  'https://www.mujtamaconnect.com',
   ...configuredOrigins
 ].filter(Boolean);
 const allowedOriginSet = new Set(allowedOrigins);

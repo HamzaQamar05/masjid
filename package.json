@@ -11,7 +11,6 @@
     "@capacitor/local-notifications": "^8.2.0",
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/push-notifications": "^8.1.1",
-    "@vercel/speed-insights": "^2.0.0",
     "esbuild": "^0.28.1",
     "lucide-react": "^0.263.1",
     "qrcode.react": "^4.2.0",
