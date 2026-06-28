@@ -9566,3 +9566,229 @@ select:focus {
     padding-bottom: 2px;
   }
 }
+
+.auth-register-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-field-shell {
+  min-width: 0;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--line, #d8e2df);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #fff) 92%, var(--panel-soft, #f8fbfa));
+  color: var(--muted, #5d716b);
+}
+
+.auth-form .auth-field-shell input,
+.auth-form .auth-field-shell textarea {
+  width: 100%;
+  min-height: 50px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink, var(--text));
+  box-shadow: none;
+}
+
+.auth-form .auth-field-shell input:focus,
+.auth-form .auth-field-shell textarea:focus {
+  box-shadow: none;
+  outline: 0;
+}
+
+.auth-field-shell:focus-within {
+  border-color: color-mix(in srgb, var(--brand) 48%, var(--line, #d8e2df));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.auth-bio-shell {
+  align-items: start;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.auth-form .auth-bio-shell textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.auth-interest-picker {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, transparent), transparent 56%),
+    var(--surface, #fff);
+}
+
+.auth-interest-picker .interest-picker-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-interest-picker .interest-picker-head span {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface, #fff));
+  color: var(--brand);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.auth-interest-picker .interest-options {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.auth-interest-picker .check-toggle {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border-color: var(--line, #d8e2df);
+  background: var(--surface, #fff);
+  color: var(--ink, var(--text));
+  font-size: 0.88rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.auth-interest-picker .check-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.auth-interest-picker .check-toggle svg {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.auth-interest-picker .check-toggle.active {
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--line, #d8e2df));
+  background: var(--brand);
+  color: #fff;
+}
+
+.auth-interest-picker .check-toggle.active svg {
+  display: block;
+}
+
+@media (min-width: 620px) {
+  .auth-register-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .auth-register-grid .auth-field-shell:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 880px) {
+  .app.auth-only {
+    width: 100%;
+    min-height: 100svh;
+    place-content: start center;
+    padding: max(14px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .auth-screen {
+    width: 100%;
+    max-width: 520px;
+    padding: 18px;
+    border-radius: 8px;
+  }
+
+  .auth-screen .brand-mark {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+  }
+
+  .auth-screen h1 {
+    margin: 12px 0 6px;
+    font-size: 2rem;
+    line-height: 1.05;
+  }
+
+  .auth-screen .muted {
+    margin: 0;
+    font-size: 0.94rem;
+    line-height: 1.4;
+  }
+
+  .auth-form {
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .auth-form > input,
+  .auth-form > textarea,
+  .auth-form > select {
+    min-height: 50px;
+    padding: 12px 13px;
+  }
+
+  .auth-interest-picker {
+    padding: 12px;
+  }
+
+  .auth-interest-picker .interest-picker-head p {
+    font-size: 0.86rem;
+  }
+
+  .auth-interest-picker .interest-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .auth-interest-picker .check-toggle {
+    width: 100%;
+    min-height: 38px;
+    padding: 7px 9px;
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .auth-screen {
+    padding: 16px;
+  }
+
+  .auth-interest-picker .interest-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+:root[data-theme="dark"] .auth-field-shell,
+:root[data-theme="dark"] .auth-interest-picker,
+:root[data-theme="dark"] .auth-interest-picker .check-toggle {
+  background: color-mix(in srgb, var(--surface) 90%, #000);
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .auth-form .auth-field-shell input,
+:root[data-theme="dark"] .auth-form .auth-field-shell textarea {
+  background: transparent;
+  color: var(--ink);
+}

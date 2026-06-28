@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { KeyRound, Mail } from 'lucide-react';
+import { CalendarDays, Check, KeyRound, Mail, MapPin, Sparkles, User2 } from 'lucide-react';
 import { API_BASE as API, persistAuth } from '../lib/authStorage.js';
 const requiredInterests = ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile'];
 const optionalInterests = ['Events', 'Library', 'Volunteer', 'Jobs', 'Business'];
@@ -79,23 +79,38 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
       <form onSubmit={submit} className="auth-form">
         {mode === 'register' && (
           <>
-            <input required placeholder="Name / organization" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-            <label className="field-label auth-date-field">
-              <span>Date of birth</span>
-              <input required type="date" value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} />
+            <div className="auth-register-grid">
+              <label className="auth-field-shell">
+                <User2 size={18} />
+                <input required placeholder="Name or organization" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              </label>
+              <label className="auth-field-shell">
+                <CalendarDays size={18} />
+                <input required aria-label="Date of birth" type="date" value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} />
+              </label>
+              <label className="auth-field-shell">
+                <MapPin size={18} />
+                <input placeholder="City" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
+              </label>
+            </div>
+            <label className="auth-field-shell auth-bio-shell">
+              <Sparkles size={18} />
+              <textarea placeholder="Headline or short bio" value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} />
             </label>
-            <input placeholder="City" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
-            <textarea placeholder="Short bio" value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} />
             <section className="interest-picker auth-interest-picker">
               <div className="interest-picker-head">
-                <strong>Categories</strong>
-                <p>All categories are selected by default. Core app tabs are always included.</p>
+                <div>
+                  <strong>Choose your spaces</strong>
+                  <p>Core tabs are included. Pick the extra areas you want to see first.</p>
+                </div>
+                <span>{form.interests.length}/{optionalInterests.length}</span>
               </div>
               <div className="interest-options">
                 {optionalInterests.map((interest) => (
-                  <label key={interest} className="check-toggle">
+                  <label key={interest} className={form.interests.includes(interest) ? 'check-toggle active' : 'check-toggle'}>
                     <input type="checkbox" checked={form.interests.includes(interest)} onChange={() => toggleInterest(interest)} />
-                    {interest}
+                    <span>{interest}</span>
+                    <Check size={15} />
                   </label>
                 ))}
               </div>
