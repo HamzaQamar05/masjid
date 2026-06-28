@@ -28,6 +28,7 @@ model User {
   accountType  AccountType @default(USER)
   isPrivate    Boolean     @default(false)
   bio          String?
+  headline     String?
   city         String?
   location     String?
   education    String?

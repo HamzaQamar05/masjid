@@ -26,6 +26,7 @@ import {
   MoreHorizontal,
   Navigation,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Settings,
@@ -496,6 +497,7 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
   const [commentingPostId, setCommentingPostId] = useState('');
   const [translations, setTranslations] = useState({});
   const [translatingKey, setTranslatingKey] = useState('');
+  const commentInputRefs = useRef({});
   function sharePost(post) {
     const text = `${post.title} - ${post.organization?.name || 'Mujtama'}`;
     if (navigator.share) {
@@ -519,6 +521,13 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
   }
   function canDeleteComment(comment) {
     return comment.author?.id === user?.id || user?.accountType === 'ADMIN' || isOrganizationAccount(user);
+  }
+  function openCommentComposer(postId) {
+    setCommentForms((forms) => ({ ...forms, [postId]: forms[postId] || '' }));
+    window.requestAnimationFrame(() => {
+      commentInputRefs.current[postId]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      commentInputRefs.current[postId]?.focus();
+    });
   }
   async function translatePost(post, targetLanguage) {
     const key = `${post.id}:${targetLanguage}`;
@@ -584,7 +593,7 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
             {post.eventTime && <div className="meta-line"><CalendarDays size={16} />{new Date(post.eventTime).toLocaleString()}</div>}
             <div className="post-social-row">
               <button onClick={() => toggleLikePost(post)}><HeartHandshake size={17} />{post.isLiked ? 'Liked' : 'Like'}{post.likeCount ? ` ${post.likeCount}` : ''}</button>
-              <button onClick={() => setCommentForms((forms) => ({ ...forms, [post.id]: forms[post.id] || '' }))}><MessageCircle size={17} />Comment{post.commentCount ? ` ${post.commentCount}` : ''}</button>
+              <button onClick={() => openCommentComposer(post.id)}><MessageCircle size={17} />Comment{post.commentCount ? ` ${post.commentCount}` : ''}</button>
               <button onClick={() => post.organization?.id && openOrganization(post.organization.id)}><Building2 size={17} />View masjid</button>
               <button onClick={() => sharePost(post)}><Send size={17} />Share</button>
               <button onClick={() => toggleSavePost(post)}><Library size={17} />{post.isSaved ? 'Saved' : 'Save'}</button>
@@ -604,7 +613,7 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
               ))}
               {post.commentCount > (post.comments || []).length && <span className="comment-more">{post.commentCount - (post.comments || []).length} more comments</span>}
               <form className="comment-form" onSubmit={(event) => submitComment(event, post)}>
-                <input value={commentForms[post.id] || ''} maxLength={500} onChange={(event) => setCommentForms((forms) => ({ ...forms, [post.id]: event.target.value }))} placeholder="Add a comment" />
+                <input ref={(node) => { if (node) commentInputRefs.current[post.id] = node; }} value={commentForms[post.id] || ''} maxLength={500} onChange={(event) => setCommentForms((forms) => ({ ...forms, [post.id]: event.target.value }))} placeholder="Add a comment" />
                 <button type="submit" disabled={commentingPostId === post.id || !(commentForms[post.id] || '').trim()}><Send size={15} /></button>
               </form>
             </div>
@@ -793,7 +802,16 @@ function PrayerSettingsCard({ user, locationStatus, prayerPreferences, updatePra
   );
 }
 
-function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = [], locationStatus, requestLocation, notificationState, enablePushNotifications, prayerPreferences, updatePrayerPreferences, saveManualLocation, openOrganization, setTab }) {
+function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = [], locationStatus, requestLocation, notificationState, enablePushNotifications, prayerPreferences, updatePrayerPreferences, saveManualLocation, openOrganization, setTab, refreshPrayerTimes }) {
+  const [refreshingPrayer, setRefreshingPrayer] = useState(false);
+  async function refreshPrayer() {
+    setRefreshingPrayer(true);
+    try {
+      await refreshPrayerTimes?.();
+    } finally {
+      setRefreshingPrayer(false);
+    }
+  }
   if (isOrganizationAccount(user)) {
     return (
       <Page title="Prayer" subtitle="Masjid accounts edit their own public prayer schedule from the dashboard.">
@@ -812,6 +830,10 @@ function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = []
   }
   return (
     <Page title="Prayer" subtitle="Location-based prayer times, saved location, and device reminders.">
+      <div className="refresh-strip">
+        <button type="button" onClick={refreshPrayer} disabled={refreshingPrayer}><RefreshCw size={17} className={refreshingPrayer ? 'spin-icon' : ''} />Refresh times</button>
+        <span>{locationStatus}</span>
+      </div>
       <div className="prayer-app-layout">
         <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
         <NotificationSetupCard notificationState={notificationState} enablePushNotifications={enablePushNotifications} />
@@ -1124,6 +1146,7 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
       person.email,
       person.accountType,
       displayRoleLabel(person.accountType),
+      person.headline,
       person.city,
       person.location,
       person.bio,
@@ -1144,7 +1167,7 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
           <input
             value={networkQuery}
             onChange={(event) => setNetworkQuery(event.target.value)}
-            placeholder="Search users, masjids, imams, skills, city, or role"
+            placeholder="Search users, headline, company, skills, city, or role"
           />
         </label>
         <p className="helper-text">
@@ -1165,7 +1188,7 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
               </button>
               <div>
                 <h3>{person.name}</h3>
-                <p>{displayRoleLabel(person.accountType)} - {person.city || person.location || 'Location not added'}</p>
+                <p>{person.headline || `${displayRoleLabel(person.accountType)} - ${person.city || person.location || 'Location not added'}`}</p>
               </div>
               <div className="trust-strip">
                 <span>{displayRoleLabel(person.accountType)}</span>
@@ -1173,7 +1196,7 @@ function NetworkScreen({ user, users, connections, loadNetwork, openProfile, sta
                 <span>{person.followerCount || 0} followers</span>
                 <span>{person.followingCount || 0} following</span>
               </div>
-              <p>{person.bio || 'No bio yet.'}</p>
+              <p>{person.bio || person.headline || 'No bio yet.'}</p>
               <TagRow tags={[status !== 'NONE' && status !== 'SELF' ? status.replace('_', ' ') : null, ...(person.skills || [])].filter(Boolean)} />
               <div className="card-footer profile-actions">
                 <button className="secondary-button" onClick={() => openProfile(person)}>View profile</button>
@@ -1307,6 +1330,7 @@ function MessagesScreen({
   selectedUser,
   setSelectedUser,
   messages,
+  setMessages,
   threads,
   loadMessages,
   loadOlderMessages,
@@ -1320,7 +1344,8 @@ function MessagesScreen({
   detailMode = false,
   onThreadOpen,
   onBackToInbox,
-  onThreadActiveChange
+  onThreadActiveChange,
+  onRefresh
 }) {
   const [draft, setDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -1339,6 +1364,8 @@ function MessagesScreen({
   const [groupMemberIds, setGroupMemberIds] = useState([]);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const conversationTouch = useRef(null);
+  const inboxTouch = useRef(null);
+  const [refreshingInbox, setRefreshingInbox] = useState(false);
   const selectedThread = selectedUser ? threads.find((thread) => thread.user.id === selectedUser.id) : null;
   const allowedMessageUsers = users.filter((person) => person.id !== currentUser?.id && canMessageUser(person));
   const conversationUsers = conversationQuery.trim()
@@ -1495,7 +1522,7 @@ function MessagesScreen({
     await api(`/api/messages/threads/${person.id}`, { method: 'PUT', body: JSON.stringify({ action }) });
     if (['DECLINE', 'ARCHIVE'].includes(action)) {
       setSelectedUser(null);
-      setMessages([]);
+      setMessages?.([]);
       onBackToInbox?.();
     }
     if (action === 'ACCEPT') setConversationFilter('GENERAL');
@@ -1571,6 +1598,33 @@ function MessagesScreen({
     conversationTouch.current = null;
   }
 
+  async function refreshInbox() {
+    setRefreshingInbox(true);
+    try {
+      await Promise.all([refreshFolderThreads(conversationFilter), loadGroups(), onRefresh?.()]);
+    } finally {
+      setRefreshingInbox(false);
+    }
+  }
+
+  function onInboxTouchStart(event) {
+    if (event.currentTarget.scrollTop > 0) return;
+    const touch = event.touches[0];
+    inboxTouch.current = { x: touch.clientX, y: touch.clientY };
+  }
+
+  function onInboxTouchEnd(event) {
+    if (!inboxTouch.current || refreshingInbox) {
+      inboxTouch.current = null;
+      return;
+    }
+    const touch = event.changedTouches[0];
+    const deltaY = touch.clientY - inboxTouch.current.y;
+    const deltaX = touch.clientX - inboxTouch.current.x;
+    if (deltaY > 78 && Math.abs(deltaX) < 60) refreshInbox().catch(console.error);
+    inboxTouch.current = null;
+  }
+
   const activeMessages = selectedGroup ? groupMessages : messages;
   const renderedMessages = activeMessages.map((message, index) => {
     const previous = activeMessages[index - 1];
@@ -1605,13 +1659,15 @@ function MessagesScreen({
 
   return (
     <Page>
-      <div className={detailMode || selectedUser || selectedGroup ? 'messaging-layout thread-route' : 'messaging-layout'}>
-        <section className="panel inbox-list">
+      <div className={detailMode || selectedUser || selectedGroup ? 'messaging-layout thread-route' : 'messaging-layout inbox-only'}>
+        <section className="panel inbox-list" onTouchStart={onInboxTouchStart} onTouchEnd={onInboxTouchEnd}>
           <div className="dm-mobile-titlebar">
             <span className="org-logo dm-self-avatar"><ResilientImage src={currentUser?.avatarUrl} alt="" fallback={initials(currentUser?.name || 'M')} /></span>
             <strong>Chats</strong>
+            <button type="button" onClick={refreshInbox} disabled={refreshingInbox} aria-label="Refresh chats"><RefreshCw size={21} className={refreshingInbox ? 'spin-icon' : ''} /></button>
             <button type="button" onClick={() => setShowNewChat(true)} aria-label="Create new chat"><Plus size={23} /></button>
           </div>
+          {refreshingInbox && <div className="pull-refresh-indicator"><RefreshCw size={15} className="spin-icon" />Refreshing</div>}
           <label className="dm-search"><Search size={16} /><input placeholder="Search conversations" value={conversationQuery} onChange={(event) => setConversationQuery(event.target.value)} /></label>
           <div className="dm-filter-row">
             {[
@@ -1638,7 +1694,7 @@ function MessagesScreen({
           })}
           {!visibleUsers.length && <div className="dm-empty-inbox"><MessageCircle size={30} /><strong>No conversations yet</strong><span>Search approved followers/following above to start a chat. New non-mutual inbound messages appear in Requests.</span></div>}
         </section>
-        <section className="panel message-thread" onTouchStart={onConversationTouchStart} onTouchMove={onConversationTouchMove} onTouchEnd={onConversationTouchEnd}>
+        {(selectedUser || selectedGroup || detailMode) && <section className="panel message-thread" onTouchStart={onConversationTouchStart} onTouchMove={onConversationTouchMove} onTouchEnd={onConversationTouchEnd}>
           {selectedUser || selectedGroup ? (
             <>
               <div className="dm-conversation-header">
@@ -1673,8 +1729,8 @@ function MessagesScreen({
               </div>
               {messageError && <p className="message-error">{messageError}</p>}
             </>
-          ) : <div className="dm-empty-state"><MessageCircle size={30} /><h2>Select a conversation</h2><p>Search for a user, masjid, imam, or organization to start a direct message.</p></div>}
-        </section>
+          ) : null}
+        </section>}
       </div>
       {showNewChat && (
         <div className="modal-backdrop dm-new-chat-backdrop" onClick={() => setShowNewChat(false)}>
@@ -2168,6 +2224,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
     dateOfBirth: toDateInput(profile.dateOfBirth),
     city: profile.city || '',
     location: profile.location || '',
+    headline: profile.headline || '',
     bio: profile.bio || '',
     education: profile.education || '',
     experience: profile.experience || '',
@@ -2187,6 +2244,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
       dateOfBirth: toDateInput(profile.dateOfBirth),
       city: profile.city || '',
       location: profile.location || '',
+      headline: profile.headline || '',
       bio: profile.bio || '',
       education: profile.education || '',
       experience: profile.experience || '',
@@ -2253,7 +2311,8 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
 
           <div className="profile-main-info">
             <h2>{profile.name}</h2>
-            <p>{displayRoleLabel(profile.accountType)} · {profile.city || profile.location || 'Location open'} · {profile.isPrivate ? 'Private' : 'Public'}</p>
+            <p>{profile.headline || `${displayRoleLabel(profile.accountType)} · ${profile.city || profile.location || 'Location open'} · ${profile.isPrivate ? 'Private' : 'Public'}`}</p>
+            {profile.headline && <p className="profile-subline">{displayRoleLabel(profile.accountType)} · {profile.city || profile.location || 'Location open'} · {profile.isPrivate ? 'Private' : 'Public'}</p>}
             {profile.bio && <p className="profile-bio">{profile.bio}</p>}
           </div>
 
@@ -2291,6 +2350,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
             <div className="form-grid">
               <input placeholder="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
               <input type="date" value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} aria-label="Date of birth" />
+              <input placeholder="Headline, e.g. Software engineer at Google" maxLength={160} value={form.headline} onChange={(event) => setForm({ ...form, headline: event.target.value })} />
               {['city', 'location', 'availability', 'avatarUrl', 'bannerUrl'].map((field) => <input key={field} placeholder={field} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />)}
             </div>
 
@@ -2433,6 +2493,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
 function ProfileSections({ profile }) {
   return (
     <div className="profile-section-stack">
+      <ProfileInfoBlock title="Headline" text={profile.headline || 'No headline added yet.'} />
       <ProfileInfoBlock title="About" text={profile.bio || 'No bio added yet.'} />
       <ProfileInfoBlock title="Experience" text={profile.experience || 'No experience added yet.'} />
       <ProfileInfoBlock title="Education" text={profile.education || 'No education added yet.'} />
@@ -5039,10 +5100,11 @@ function AuthenticatedApp() {
     socket.emit(isTyping ? 'typing:start' : 'typing:stop', { receiverId });
   }
 
-  async function loadLocationData(nextLocation) {
+  async function loadLocationData(nextLocation, options = {}) {
+    const refreshParam = options.refresh ? '&refresh=1' : '';
     const [masjidResult, prayerResult] = await Promise.allSettled([
       api(`/api/location/masjids?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}`),
-      api(`/api/prayer-times?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}&city=${encodeURIComponent(nextLocation.label || '')}&date=${Math.floor(Date.now() / 1000)}`)
+      api(`/api/prayer-times?lat=${nextLocation.latitude}&lng=${nextLocation.longitude}&city=${encodeURIComponent(nextLocation.label || '')}&date=${Math.floor(Date.now() / 1000)}${refreshParam}`)
     ]);
     if (masjidResult.status === 'fulfilled') {
       const masjidData = masjidResult.value;
@@ -5254,6 +5316,13 @@ function AuthenticatedApp() {
     window.setTimeout(() => enablePushNotifications().catch(console.error), 1800);
   }, [user?.id]);
   useEffect(() => { scheduleLocationPrayerNotifications(prayerTimes, prayerPreferences); }, [prayerTimes, prayerPreferences, notificationState.permission]);
+  useEffect(() => {
+    if (!user) return undefined;
+    const timer = window.setInterval(() => {
+      loadLocationData(location, { refresh: true }).catch(console.error);
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [Boolean(user), location.latitude, location.longitude, location.label]);
   useEffect(() => { selectedUserIdRef.current = selectedUser?.id || null; }, [selectedUser?.id]);
   useEffect(() => {
     if (!user || tab !== 'masjidProfile') return;
@@ -5442,7 +5511,7 @@ function AuthenticatedApp() {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
     const index = [
-      ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.accountType} ${person.city || ''} ${safeList(person.skills).join(' ')}`, tab: 'network' })),
+      ...users.map((person) => ({ id: person.id, kind: 'User', title: person.name, subtitle: `${person.headline || ''} ${person.accountType} ${person.city || ''} ${safeList(person.skills).join(' ')}`, tab: 'network' })),
       ...prioritizedPosts.map((post) => ({ id: post.id, kind: 'Post', title: post.title, subtitle: `${post.organization?.name || ''} ${post.type} ${post.content || ''}`, tab: 'home' })),
       ...prioritizedMasjids.map((masjid) => ({ id: masjid.id, kind: 'Masjid', title: masjid.name, subtitle: `${masjid.address || ''} ${masjid.city || ''}`, tab: 'organizations' })),
       ...prioritizedEvents.map((event) => ({ id: event.id, kind: 'Event', title: event.title, subtitle: `${event.description || ''} ${event.location || ''}`, tab: 'events' })),
@@ -5457,7 +5526,7 @@ function AuthenticatedApp() {
 
   const screens = {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} aiRecommendations={aiRecommendations} aiRecommendationsLoading={aiRecommendationsLoading} />,
-    prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} />,
+    prayer: <PrayerScreen user={user} prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} myOrganizations={myOrganizations} locationStatus={locationStatus} requestLocation={requestLocation} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} updatePrayerPreferences={updatePrayerPreferences} saveManualLocation={saveManualLocation} openOrganization={openOrganization} setTab={setTab} refreshPrayerTimes={() => loadLocationData(location, { refresh: true })} />,
     events: <EventsScreen user={user} events={prioritizedEvents} masjids={prioritizedMasjids} loadEvents={loadEvents} loadPosts={loadPosts} myOrganizations={myOrganizations} registerEvent={registerEvent} unregisterEvent={unregisterEvent} toggleEventSubscription={toggleEventSubscription} detailEventId={routeEventId} openEvent={(id) => setTab('events', id)} openOrganization={openOrganization} onBack={() => goBack('/events')} locationStatus={locationStatus} requestLocation={requestLocation} />,
     post: <PostEventScreen setTab={setTab} createEvent={createEvent} myOrganizations={myOrganizations} />,
     organizations: <OrganizationsScreen masjids={prioritizedMasjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />,
@@ -5467,7 +5536,7 @@ function AuthenticatedApp() {
     jobs: <OpportunitiesScreen user={user} opportunities={prioritizedOpportunities} type="JOB" applyToOpportunity={applyToOpportunity} updateNotificationPreferences={updateNotificationPreferences} notificationPreferences={notificationPreferences} title="Jobs" subtitle="Separate job category for paid and professional Muslim community opportunities." />,
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
-    messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setMessagesThreadActive(false); setTab('messages'); }} onThreadActiveChange={setMessagesThreadActive} />,
+    messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} setMessages={setMessages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setMessagesThreadActive(false); setTab('messages'); }} onThreadActiveChange={setMessagesThreadActive} onRefresh={() => loadNetwork()} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); loadProfileSocial(user.id); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} onRefreshSocial={() => loadProfileSocial(viewedUser?.id || user.id)} onMessage={startMessage} />,
     settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} theme={theme} setTheme={setTheme} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />

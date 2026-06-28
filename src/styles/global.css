@@ -290,6 +290,96 @@
   font-weight: 800;
 }
 
+.spin-icon {
+  animation: mujtama-spin 0.8s linear infinite;
+}
+
+@keyframes mujtama-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pull-refresh-indicator,
+.refresh-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.refresh-strip {
+  justify-content: space-between;
+  padding: 10px 2px;
+}
+
+.refresh-strip button {
+  width: auto;
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-weight: 900;
+}
+
+.profile-subline {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.messaging-layout.inbox-only {
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
+}
+
+.messaging-layout.inbox-only .inbox-list {
+  min-height: min(760px, calc(100dvh - 150px));
+}
+
+.panel,
+.feed-post,
+.mini-row,
+.person-card,
+.organization-card,
+.metric-card,
+.application-card {
+  border-color: color-mix(in srgb, var(--border), transparent 55%);
+  border-radius: 8px;
+  box-shadow: 0 12px 34px rgba(20, 36, 31, 0.08);
+}
+
+.feed-post,
+.mini-row,
+.person-card,
+.organization-card {
+  overflow: hidden;
+}
+
+.prayer-grid div,
+.dm-thread-row,
+.comment-bubble,
+.global-search,
+.dm-search {
+  border-radius: 8px;
+}
+
+.dm-thread-row {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--panel-bg), var(--panel-soft) 45%);
+}
+
+.dm-thread-row.active,
+.dm-thread-row:hover {
+  background: color-mix(in srgb, var(--brand), var(--panel-bg) 90%);
+}
+
 @media (max-width: 760px) {
   .messaging-layout {
     grid-template-columns: 1fr;
@@ -3634,6 +3724,37 @@ button.mini-org-avatar {
   .nearby-actions > * {
     flex: 1;
   }
+}
+
+.panel,
+.feed-post,
+.mini-row,
+.person-card,
+.organization-card,
+.metric-card,
+.application-card,
+.right-rail .panel,
+.settings-grid > .panel {
+  border-color: color-mix(in srgb, var(--border, var(--line)) 45%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 12px 34px rgba(20, 36, 31, 0.08);
+}
+
+.messaging-layout.inbox-only {
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
+}
+
+.messaging-layout.inbox-only .inbox-list {
+  min-height: min(760px, calc(100dvh - 150px));
+}
+
+.prayer-grid div,
+.dm-thread-row,
+.comment-bubble,
+.global-search,
+.dm-search {
+  border-radius: 8px;
 }
 
 /* Mobile-first direct messages */

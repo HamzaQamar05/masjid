@@ -412,6 +412,7 @@ function publicUser(user, options = {}) {
     dateOfBirth: user.dateOfBirth,
     age: calculateAge(user.dateOfBirth),
     bio: user.bio,
+    headline: user.headline,
     city: user.city,
     location: user.location,
     education: user.education,
@@ -1228,12 +1229,12 @@ function parsePrayerClock(value) {
   return { hour, minute };
 }
 
-async function fetchPrayerTimings({ latitude, longitude, method, dateKey, city }) {
-  const cacheKey = `${Number(latitude).toFixed(4)}:${Number(longitude).toFixed(4)}:${method || 2}:${dateKey}:${city || ''}`;
+async function fetchPrayerTimings({ latitude, longitude, method, dateKey, city, refresh = false }) {
+  const cacheKey = `${Number(latitude).toFixed(4)}:${Number(longitude).toFixed(4)}:${method || 3}:${dateKey}:${city || ''}`;
   const cached = prayerTimeCache.get(cacheKey);
-  if (cached && Date.now() - cached.cachedAt < 6 * 60 * 60 * 1000) return cached.timings;
+  if (!refresh && cached && Date.now() - cached.cachedAt < 30 * 60 * 1000) return cached.timings;
   const date = Math.floor(new Date(`${dateKey}T12:00:00Z`).getTime() / 1000);
-  const url = `https://api.aladhan.com/v1/timings/${date}?latitude=${latitude}&longitude=${longitude}&method=${method || 2}`;
+  const url = `https://api.aladhan.com/v1/timings/${date}?latitude=${latitude}&longitude=${longitude}&method=${method || 3}&school=1`;
   let timings = {};
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(8_000) });
@@ -1571,6 +1572,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         accountType: 'USER',
         isPrivate: Boolean(req.body.isPrivate),
         city,
+        headline: req.body.headline ? String(req.body.headline).trim().slice(0, 160) : undefined,
         bio,
         skills: normalizeList(req.body.skills),
         interests: normalizeList(req.body.interests),
@@ -1637,6 +1639,7 @@ app.put('/api/me', auth, async (req, res) => {
     name: req.body.name,
     dateOfBirth: req.body.dateOfBirth !== undefined ? normalizeBirthDate(req.body.dateOfBirth) : undefined,
     bio: req.body.bio,
+    headline: req.body.headline === undefined ? undefined : String(req.body.headline || '').trim().slice(0, 160),
     city: req.body.city,
     location: req.body.location,
     education: req.body.education,
@@ -2577,7 +2580,7 @@ app.get('/api/ai/recommendations', auth, aiLimiter, async (req, res) => {
     .sort((a, b) => b.score - a.score)
     .slice(0, 6);
   const userItems = users
-    .map((person) => ({ kind: 'user', item: publicUser(person), score: scoreText(`${person.name} ${person.bio || ''} ${person.city || ''} ${(person.skills || []).join(' ')} ${(person.interests || []).join(' ')}`), reason: 'Recommended from public profile interests and community skills.' }))
+    .map((person) => ({ kind: 'user', item: publicUser(person), score: scoreText(`${person.name} ${person.headline || ''} ${person.bio || ''} ${person.city || ''} ${(person.skills || []).join(' ')} ${(person.interests || []).join(' ')}`), reason: 'Recommended from public profile interests and community skills.' }))
     .filter((entry) => entry.score > 0 || currentUser.city && entry.item.city === currentUser.city)
     .sort((a, b) => b.score - a.score)
     .slice(0, 6);
@@ -3806,11 +3809,11 @@ app.get('/api/prayer-times', async (req, res) => {
   const latitude = Number(req.query.lat);
   const longitude = Number(req.query.lng);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ error: 'lat and lng query parameters are required' });
-  const method = req.query.method || 2;
+  const method = req.query.method || 3;
   const requestedDate = new Date(Number(req.query.date || Math.floor(Date.now() / 1000)) * 1000);
   const dateKey = Number.isFinite(requestedDate.getTime()) ? requestedDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
   try {
-    const timings = await fetchPrayerTimings({ latitude, longitude, method, dateKey, city: req.query.city });
+    const timings = await fetchPrayerTimings({ latitude, longitude, method, dateKey, city: req.query.city, refresh: req.query.refresh === '1' || req.query.refresh === 'true' });
     res.json({ timings, meta: { latitude, longitude, method, date: dateKey } });
   } catch (err) {
     console.error('Prayer time providers failed', { latitude, longitude, message: err.message });
