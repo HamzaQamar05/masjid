@@ -9586,6 +9586,19 @@ select:focus {
   color: var(--muted, #5d716b);
 }
 
+.auth-date-shell > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.auth-date-shell small {
+  color: var(--muted, #5d716b);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .auth-form .auth-field-shell input,
 .auth-form .auth-field-shell textarea {
   width: 100%;
@@ -9596,6 +9609,18 @@ select:focus {
   background: transparent;
   color: var(--ink, var(--text));
   box-shadow: none;
+}
+
+.auth-form .auth-date-shell input[type="date"] {
+  min-height: 28px;
+  color: var(--ink, var(--text));
+  color-scheme: light;
+  line-height: 1.2;
+}
+
+.auth-form .auth-date-shell input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.75;
+  filter: none;
 }
 
 .auth-form .auth-field-shell input:focus,
@@ -9791,4 +9816,13 @@ select:focus {
 :root[data-theme="dark"] .auth-form .auth-field-shell textarea {
   background: transparent;
   color: var(--ink);
+}
+
+:root[data-theme="dark"] .auth-form .auth-date-shell input[type="date"] {
+  color: #f3fbf8;
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] .auth-form .auth-date-shell input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
 }

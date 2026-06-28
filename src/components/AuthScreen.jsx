@@ -84,9 +84,12 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
                 <User2 size={18} />
                 <input required placeholder="Name or organization" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
               </label>
-              <label className="auth-field-shell">
+              <label className="auth-field-shell auth-date-shell">
                 <CalendarDays size={18} />
-                <input required aria-label="Date of birth" type="date" value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} />
+                <span>
+                  <small>Date of birth</small>
+                  <input required aria-label="Date of birth" type="date" value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} />
+                </span>
               </label>
               <label className="auth-field-shell">
                 <MapPin size={18} />
