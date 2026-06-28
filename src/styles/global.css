@@ -718,6 +718,109 @@ button {
   line-height: 1.45;
 }
 
+@media (max-width: 760px) {
+  .landing-page {
+    min-height: 100dvh;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(238, 245, 242, 0.96)),
+      url('/icons/mujtama-icon-512.png') center 88px / min(320px, 78vw) no-repeat;
+  }
+
+  .landing-nav {
+    width: min(100% - 28px, 1180px);
+    min-height: 68px;
+    padding-top: 8px;
+    align-items: center;
+  }
+
+  .landing-nav nav {
+    display: none;
+  }
+
+  .landing-brand strong {
+    font-size: 16px;
+  }
+
+  .landing-hero {
+    width: min(100% - 28px, 1180px);
+    min-height: auto;
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+    gap: 28px;
+    padding: 26px 0 34px;
+  }
+
+  .landing-hero-copy {
+    gap: 14px;
+  }
+
+  .landing-hero h1 {
+    max-width: 9ch;
+    font-size: clamp(44px, 14vw, 64px);
+    line-height: 0.94;
+  }
+
+  .landing-hero p {
+    font-size: 17px;
+    line-height: 1.5;
+  }
+
+  .landing-actions,
+  .store-button,
+  .landing-web-link {
+    width: 100%;
+  }
+
+  .landing-actions {
+    gap: 8px;
+  }
+
+  .store-button,
+  .landing-web-link {
+    justify-content: center;
+  }
+
+  .store-button {
+    min-width: 0;
+  }
+
+  .landing-phone {
+    width: min(300px, 78vw);
+    padding: 10px;
+    border-radius: 28px;
+  }
+
+  .landing-phone-screen {
+    border-radius: 22px;
+    padding: 16px;
+    gap: 10px;
+  }
+
+  .phone-top,
+  .phone-update {
+    padding: 12px;
+  }
+
+  .phone-prayer {
+    padding: 14px;
+  }
+
+  .phone-prayer strong {
+    font-size: 34px;
+  }
+
+  .landing-band {
+    width: min(100% - 28px, 1180px);
+    margin-top: 0;
+    padding: 0 0 28px;
+    grid-template-columns: 1fr;
+  }
+
+  .landing-band div {
+    padding: 16px 0;
+  }
+}
+
 a {
   color: #0f766e;
   font-weight: 800;
