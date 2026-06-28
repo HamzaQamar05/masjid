@@ -128,5 +128,5 @@ jobs:
               docker compose logs --tail=100 backend
               exit 1
             fi
-            curl --fail --silent http://127.0.0.1/ >/dev/null
+            curl --fail --silent http://127.0.0.1:8080/ >/dev/null
             exit 0
