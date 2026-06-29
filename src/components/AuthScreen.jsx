@@ -13,10 +13,12 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
     name: '',
     email: params.get('email') || '',
     password: '',
+    confirmPassword: '',
     dateOfBirth: '',
     city: '',
     bio: '',
     resetToken,
+    verificationCode: '',
     interests: [...optionalInterests]
   });
 
@@ -35,9 +37,11 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
 
   async function submit(e) {
     e.preventDefault();
+    if (mode === 'verify') return verifyEmail();
     if (mode === 'forgot') return requestReset();
+    if (mode === 'reset' && form.password !== form.confirmPassword) return alert('Passwords do not match');
     const endpoint = mode === 'reset' ? '/api/auth/reset-password' : (mode === 'login' ? '/api/auth/login' : '/api/auth/register');
-    const payload = mode === 'register' ? { ...form, interests: [...requiredInterests, ...form.interests] } : form;
+    const payload = mode === 'register' ? { ...form, interests: [...requiredInterests, ...form.interests] } : { ...form, resetToken: form.resetToken || form.verificationCode, code: form.verificationCode };
     try {
       const res = await fetch(`${API}${endpoint}`, {
         method: 'POST',
@@ -45,7 +49,21 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
         body: JSON.stringify(payload)
       });
       const data = await res.json();
-      if (!res.ok) return alert(data.error || 'Something went wrong');
+      if (!res.ok) {
+        if (data.verificationRequired) {
+          setForm((current) => ({ ...current, email: data.email || current.email, verificationCode: '' }));
+          setMessage(data.error || 'Check your email for the verification code.');
+          setMode('verify');
+          return;
+        }
+        return alert(data.error || 'Something went wrong');
+      }
+      if (mode === 'register' && data.verificationRequired) {
+        setForm((current) => ({ ...current, email: data.email || current.email, verificationCode: '' }));
+        setMessage(data.message || 'Check your email for the verification code.');
+        setMode('verify');
+        return;
+      }
       persistAuth(data.user, data.token);
       onLogin(data.user);
     } catch (err) {
@@ -63,7 +81,41 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
       });
       const data = await res.json();
       if (!res.ok) return alert(data.error || 'Something went wrong');
-      setMessage(data.devResetLink ? `${data.message} Dev link: ${data.devResetLink}` : data.message);
+      setMessage(data.devResetCode ? `${data.message} Dev code: ${data.devResetCode}` : 'Check your email for the reset code.');
+      setMode('reset');
+    } catch (err) {
+      console.error(err);
+      alert('Cannot reach Mujtama right now. Check your connection and try again.');
+    }
+  }
+
+  async function verifyEmail() {
+    try {
+      const res = await fetch(`${API}/api/auth/verify-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email, code: form.verificationCode })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Something went wrong');
+      persistAuth(data.user, data.token);
+      onLogin(data.user);
+    } catch (err) {
+      console.error(err);
+      alert('Cannot reach Mujtama right now. Check your connection and try again.');
+    }
+  }
+
+  async function resendVerification() {
+    try {
+      const res = await fetch(`${API}/api/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Something went wrong');
+      setMessage(data.devVerificationCode ? `${data.message} Dev code: ${data.devVerificationCode}` : 'Verification code sent. Check your email.');
     } catch (err) {
       console.error(err);
       alert('Cannot reach Mujtama right now. Check your connection and try again.');
@@ -73,8 +125,8 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
   return (
     <main className="screen auth-screen">
       <div className="brand-mark"><img src="/icons/mujtama-icon-192.png" alt="" /></div>
-      <h1>{mode === 'login' ? 'Welcome back' : mode === 'register' ? 'Join Mujtama' : mode === 'forgot' ? 'Reset password' : 'Choose new password'}</h1>
-      <p className="muted">A community app for masjids, MSAs, imams, students, volunteers, and Muslim professionals.</p>
+      <h1>{mode === 'login' ? 'Welcome back' : mode === 'register' ? 'Join Mujtama' : mode === 'forgot' ? 'Reset password' : mode === 'verify' ? 'Verify email' : 'Choose new password'}</h1>
+      <p className="muted">{mode === 'verify' ? `Enter the 6-digit code sent to ${form.email}.` : mode === 'reset' ? 'Enter the code from your email, then choose a new password.' : 'A community app for masjids, MSAs, imams, students, volunteers, and Muslim professionals.'}</p>
 
       <form onSubmit={submit} className="auth-form">
         {mode === 'register' && (
@@ -120,10 +172,12 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
             </section>
           </>
         )}
-        <input required placeholder="Email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-        {mode === 'reset' && <input required placeholder="Reset token" value={form.resetToken} onChange={e => setForm({ ...form, resetToken: e.target.value })} />}
-        {mode !== 'forgot' && <input required placeholder={mode === 'reset' ? 'New password' : 'Password'} type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />}
-        <button className="primary-button">{mode === 'login' ? 'Login' : mode === 'register' ? 'Create account' : mode === 'forgot' ? <><Mail size={18} />Email reset link</> : <><KeyRound size={18} />Save password</>}</button>
+        {mode !== 'verify' && <input required placeholder="Email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />}
+        {mode === 'verify' && <input required className="auth-code-input" placeholder="6-digit code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={form.verificationCode} onChange={e => setForm({ ...form, verificationCode: e.target.value.replace(/\D/g, '').slice(0, 6) })} />}
+        {mode === 'reset' && <input required className="auth-code-input" placeholder="6-digit reset code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={form.verificationCode} onChange={e => setForm({ ...form, verificationCode: e.target.value.replace(/\D/g, '').slice(0, 6), resetToken: e.target.value.replace(/\D/g, '').slice(0, 6) })} />}
+        {mode !== 'forgot' && mode !== 'verify' && <input required placeholder={mode === 'reset' ? 'New password' : 'Password'} type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />}
+        {mode === 'reset' && <input required placeholder="Confirm new password" type="password" value={form.confirmPassword} onChange={e => setForm({ ...form, confirmPassword: e.target.value })} />}
+        <button className="primary-button">{mode === 'login' ? 'Login' : mode === 'register' ? 'Create account' : mode === 'verify' ? <><Mail size={18} />Verify and log in</> : mode === 'forgot' ? <><Mail size={18} />Send reset code</> : <><KeyRound size={18} />Save password</>}</button>
       </form>
       {message && <p className="helper-text reset-message">{message}</p>}
 
@@ -131,6 +185,7 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
         <button className="text-btn" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setMessage(''); }}>
           {mode === 'login' ? 'Need an account? Register' : 'Back to login'}
         </button>
+        {mode === 'verify' && <button className="text-btn" onClick={resendVerification}>Resend code</button>}
         {mode === 'login' && <button className="text-btn" onClick={() => { setMode('forgot'); setMessage(''); }}>Forgot password?</button>}
       </div>
     </main>

@@ -7,7 +7,7 @@ import nodemailer from 'nodemailer';
 import rateLimit from 'express-rate-limit';
 import Redis from 'ioredis';
 import { createServer } from 'http';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomInt } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { lookup } from 'dns/promises';
@@ -903,13 +903,15 @@ function createToken(user) {
   return jwt.sign({ id: user.id, accountType: user.accountType }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: process.env.JWT_EXPIRES_IN || '30d' });
 }
 
-function publicResetLink(email, rawToken) {
-  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
-  return `${frontendUrl}/?resetToken=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(email)}`;
+function mailFrom() {
+  return process.env.MAIL_FROM || 'Mujtama Connect <app@mujtamaconnect.com>';
 }
 
-async function sendPasswordResetEmail(user, rawToken) {
-  const resetLink = publicResetLink(user.email, rawToken);
+function createEmailCode() {
+  return String(randomInt(100000, 1000000));
+}
+
+async function sendAppEmail({ to, subject, text, html }) {
   if (process.env.SMTP_HOST) {
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
@@ -918,16 +920,42 @@ async function sendPasswordResetEmail(user, rawToken) {
       auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
     });
     await transporter.sendMail({
-      from: process.env.MAIL_FROM || 'Ummah Connect <no-reply@ummahconnect.app>',
-      to: user.email,
-      subject: 'Reset your Ummah Connect password',
-      text: `Use this link to reset your password: ${resetLink}`,
-      html: `<p>Use this link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p><p>This link expires in 1 hour.</p>`
+      from: mailFrom(),
+      to,
+      subject,
+      text,
+      html
     });
   } else {
-    console.log(`[password-reset] ${user.email}: Reset your Ummah Connect password: ${resetLink}`);
+    console.log(`[email] ${to}: ${subject}: ${text}`);
   }
-  return resetLink;
+}
+
+async function issueEmailVerification(user) {
+  const code = createEmailCode();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerificationTokenHash: await bcrypt.hash(code, 10),
+      emailVerificationExpiresAt: new Date(Date.now() + 15 * 60 * 1000)
+    }
+  });
+  await sendAppEmail({
+    to: user.email,
+    subject: 'Verify your Mujtama Connect email',
+    text: `Your Mujtama Connect verification code is ${code}. It expires in 15 minutes.`,
+    html: `<p>Your Mujtama Connect verification code is:</p><h2>${code}</h2><p>This code expires in 15 minutes.</p>`
+  });
+  return code;
+}
+
+async function sendPasswordResetEmail(user, code) {
+  await sendAppEmail({
+    to: user.email,
+    subject: 'Reset your Mujtama Connect password',
+    text: `Your Mujtama Connect password reset code is ${code}. It expires in 1 hour.`,
+    html: `<p>Your Mujtama Connect password reset code is:</p><h2>${code}</h2><p>This code expires in 1 hour.</p>`
+  });
 }
 
 function threadIdFor(a, b) {
@@ -1579,7 +1607,13 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         hobbies: normalizeList(req.body.hobbies)
       }
     });
-    res.json({ token: createToken(user), user: publicUser(user, { includeEmail: true }) });
+    const devVerificationCode = await issueEmailVerification(user);
+    res.status(201).json({
+      verificationRequired: true,
+      email: user.email,
+      message: 'Account created. Check your email for the verification code.',
+      devVerificationCode: process.env.NODE_ENV === 'production' ? undefined : devVerificationCode
+    });
   } catch (err) {
     console.error(err);
     res.status(400).json({ error: err.code === 'P2002' ? 'Email already exists' : err.message });
@@ -1592,34 +1626,69 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Invalid login' });
   const valid = await bcrypt.compare(password || '', user.passwordHash);
   if (!valid) return res.status(401).json({ error: 'Invalid login' });
+  if (!user.emailVerifiedAt) return res.status(403).json({ error: 'Verify your email before logging in.', verificationRequired: true, email: user.email });
   res.json({ token: createToken(user), user: publicUser(user, { includeEmail: true }) });
+});
+
+app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+  if (user && !user.emailVerifiedAt) {
+    const devVerificationCode = await issueEmailVerification(user);
+    return res.json({
+      message: 'Verification email sent if the account exists.',
+      devVerificationCode: process.env.NODE_ENV === 'production' ? undefined : devVerificationCode
+    });
+  }
+  res.json({ message: 'Verification email sent if the account exists.' });
+});
+
+app.post('/api/auth/verify-email', authLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const code = String(req.body.code || '').trim();
+  if (!email || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Email and 6-digit verification code are required' });
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user?.emailVerificationTokenHash || !user.emailVerificationExpiresAt || user.emailVerificationExpiresAt < new Date()) {
+    return res.status(400).json({ error: 'Verification code is invalid or expired' });
+  }
+  const valid = await bcrypt.compare(code, user.emailVerificationTokenHash);
+  if (!valid) return res.status(400).json({ error: 'Verification code is invalid or expired' });
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerifiedAt: new Date(),
+      emailVerificationTokenHash: null,
+      emailVerificationExpiresAt: null
+    }
+  });
+  res.json({ token: createToken(updated), user: publicUser(updated, { includeEmail: true }) });
 });
 
 app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
   if (user) {
-    const rawToken = randomBytes(32).toString('hex');
-    const passwordResetTokenHash = await bcrypt.hash(rawToken, 10);
+    const code = createEmailCode();
+    const passwordResetTokenHash = await bcrypt.hash(code, 10);
     const passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
     await prisma.user.update({ where: { id: user.id }, data: { passwordResetTokenHash, passwordResetExpiresAt } });
-    const resetLink = await sendPasswordResetEmail(user, rawToken);
-    return res.json({ message: 'Password reset email sent if the account exists.', devResetLink: process.env.NODE_ENV === 'production' ? undefined : resetLink });
+    await sendPasswordResetEmail(user, code);
+    return res.json({ message: 'Password reset code sent if the account exists.', devResetCode: process.env.NODE_ENV === 'production' ? undefined : code });
   }
-  res.json({ message: 'Password reset email sent if the account exists.' });
+  res.json({ message: 'Password reset code sent if the account exists.' });
 });
 
 app.post('/api/auth/reset-password', passwordResetLimiter, async (req, res) => {
   const email = normalizeEmail(req.body.email);
-  const resetToken = String(req.body.resetToken || '');
+  const resetToken = String(req.body.resetToken || req.body.code || '').trim();
   const password = String(req.body.password || '');
-  if (!email || !resetToken || password.length < 8) return res.status(400).json({ error: 'Email, reset token, and an 8+ character password are required' });
+  if (!email || !/^\d{6}$/.test(resetToken) || password.length < 8) return res.status(400).json({ error: 'Email, 6-digit reset code, and an 8+ character password are required' });
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user?.passwordResetTokenHash || !user.passwordResetExpiresAt || user.passwordResetExpiresAt < new Date()) {
-    return res.status(400).json({ error: 'Reset link is invalid or expired' });
+    return res.status(400).json({ error: 'Reset code is invalid or expired' });
   }
   const valid = await bcrypt.compare(resetToken, user.passwordResetTokenHash);
-  if (!valid) return res.status(400).json({ error: 'Reset link is invalid or expired' });
+  if (!valid) return res.status(400).json({ error: 'Reset code is invalid or expired' });
   const passwordHash = await bcrypt.hash(password, 10);
   const updated = await prisma.user.update({
     where: { id: user.id },
@@ -1893,12 +1962,12 @@ app.put('/api/users/:id/role', auth, requireAdmin, async (req, res) => {
 app.post('/api/users/:id/password-reset', auth, requireAdmin, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const rawToken = randomBytes(32).toString('hex');
-  const passwordResetTokenHash = await bcrypt.hash(rawToken, 10);
+  const code = createEmailCode();
+  const passwordResetTokenHash = await bcrypt.hash(code, 10);
   const passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
   await prisma.user.update({ where: { id: user.id }, data: { passwordResetTokenHash, passwordResetExpiresAt } });
-  const resetLink = await sendPasswordResetEmail(user, rawToken);
-  res.json({ message: 'Password reset generated.', resetLink });
+  await sendPasswordResetEmail(user, code);
+  res.json({ message: 'Password reset code sent.', devResetCode: process.env.NODE_ENV === 'production' ? undefined : code });
 });
 
 app.get('/api/users/:id/warnings', auth, requireAdmin, async (req, res) => {

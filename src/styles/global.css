@@ -9623,6 +9623,13 @@ select:focus {
   filter: none;
 }
 
+.auth-form .auth-code-input {
+  text-align: center;
+  font-size: 1.28rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
 .auth-form .auth-field-shell input:focus,
 .auth-form .auth-field-shell textarea:focus {
   box-shadow: none;
@@ -9825,4 +9832,9 @@ select:focus {
 
 :root[data-theme="dark"] .auth-form .auth-date-shell input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
+}
+
+.mobile-settings-link {
+  margin-top: 10px;
+  margin-bottom: 0;
 }

@@ -418,6 +418,7 @@ function Shell({ user, tab, setTab, children, searchQuery, setSearchQuery, searc
           <div><strong>{user.name}</strong><span>{user.accountType}</span></div>
         </div>
         <NavigationList tab={tab} setTab={navigate} user={user} hasDashboardAccess={hasDashboardAccess} />
+        <button className="mobile-logout mobile-settings-link" onClick={() => navigate('settings')}><Settings size={18} />Settings</button>
         <button className="mobile-logout" onClick={onLogout}><LogOut size={18} />Logout</button>
       </div>
       <aside className="rail left-rail">

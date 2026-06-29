@@ -23,6 +23,9 @@ model User {
   email        String      @unique
   passwordHash String
   dateOfBirth  DateTime?
+  emailVerifiedAt DateTime?
+  emailVerificationTokenHash String?
+  emailVerificationExpiresAt DateTime?
   passwordResetTokenHash String?
   passwordResetExpiresAt DateTime?
   accountType  AccountType @default(USER)
