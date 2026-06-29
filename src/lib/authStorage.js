@@ -1,7 +1,15 @@
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 
-export const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
+function resolveApiBase() {
+  const configured = import.meta.env.VITE_API_URL || '';
+  if (Capacitor.isNativePlatform()) return configured || 'https://api.mujtamaconnect.com';
+  if (import.meta.env.DEV) return configured || 'http://localhost:5000';
+  if (typeof window !== 'undefined' && /(^|\.)mujtamaconnect\.com$/i.test(window.location.hostname)) return '';
+  return configured;
+}
+
+export const API_BASE = resolveApiBase();
 const TOKEN_KEY = 'token';
 const USER_KEY = 'user';
 
