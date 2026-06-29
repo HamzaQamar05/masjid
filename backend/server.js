@@ -7,7 +7,7 @@ import nodemailer from 'nodemailer';
 import rateLimit from 'express-rate-limit';
 import Redis from 'ioredis';
 import { createServer } from 'http';
-import { createHash, randomBytes, randomInt } from 'crypto';
+import { createHash, createPublicKey, randomBytes, randomInt, verify as verifySignature } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { lookup } from 'dns/promises';
@@ -451,7 +451,11 @@ function publicOrganization(org, viewerId, options = {}) {
       }))
     };
   });
-  const posts = (org.posts || []).filter((post) => hasMatchingEvent(post, events)).map(publicPost);
+  const now = new Date();
+  const posts = (org.posts || [])
+    .filter((post) => viewerCanManage || (post.status !== 'SCHEDULED' && (!post.publishAt || post.publishAt <= now)))
+    .filter((post) => hasMatchingEvent(post, events))
+    .map(publicPost);
   const opportunities = (org.opportunities || []).map((opportunity) => {
     const visibleApplications = (opportunity.applications || []).filter((application) => viewerCanManage || application.applicantId === viewerId);
     return {
@@ -649,7 +653,9 @@ function publicPost(post) {
       ...comment,
       author: publicUser(comment.author)
     })),
-    commentCount: _count?.comments ?? comments.length
+    commentCount: _count?.comments ?? comments.length,
+    likeCount: _count?.likedBy ?? post.likedBy?.length ?? 0,
+    saveCount: _count?.savedBy ?? post.savedBy?.length ?? 0
   };
 }
 
@@ -670,6 +676,53 @@ function hasMatchingEvent(post, events = []) {
 
 function eventPostContent(event) {
   return String(event.description || event.location || 'Event details coming soon.').trim();
+}
+
+function normalizeMoneyCents(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return Math.round(amount * 100);
+}
+
+function publicCampaign(campaign) {
+  if (!campaign) return null;
+  const donations = campaign.donations || [];
+  const raisedCents = campaign.raisedCents ?? donations.reduce((sum, donation) => sum + donation.amountCents, 0);
+  return {
+    ...campaign,
+    raisedCents,
+    donationCount: donations.length,
+    donations: donations.map(publicDonation)
+  };
+}
+
+function publicDonation(donation) {
+  if (!donation) return null;
+  return {
+    ...donation,
+    donorName: donation.anonymous ? 'Anonymous' : donation.donorName,
+    donorEmail: donation.anonymous ? null : donation.donorEmail,
+    user: donation.anonymous ? null : publicUser(donation.user)
+  };
+}
+
+async function sendDonationReceipt(donation, organization, campaign) {
+  const donorEmail = donation.donorEmail;
+  if (!donorEmail) return null;
+  if (!process.env.SMTP_HOST) return null;
+  const dollars = (donation.amountCents / 100).toFixed(2);
+  await sendAppEmail({
+    to: donorEmail,
+    subject: `Donation receipt from ${organization.name}`,
+    text: [
+      `Receipt for your ${donation.currency} ${dollars} donation to ${organization.name}.`,
+      campaign ? `Campaign: ${campaign.title}` : `Category: ${donation.category}`,
+      donation.recurring ? `Recurring: ${donation.frequency || 'Yes'}` : null,
+      `Receipt ID: ${donation.id}`
+    ].filter(Boolean).join('\n'),
+    html: `<p>Receipt for your <strong>${donation.currency} ${dollars}</strong> donation to <strong>${organization.name}</strong>.</p><p>${campaign ? `Campaign: ${campaign.title}` : `Category: ${donation.category}`}</p><p>Receipt ID: ${donation.id}</p>`
+  });
+  return prisma.donation.update({ where: { id: donation.id }, data: { receiptEmailSentAt: new Date() } });
 }
 
 async function syncEventPost(event, authorId) {
@@ -901,6 +954,85 @@ function enrichMasjid(item = {}) {
 
 function createToken(user) {
   return jwt.sign({ id: user.id, accountType: user.accountType }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: process.env.JWT_EXPIRES_IN || '30d' });
+}
+
+function base64UrlJson(value = '') {
+  return JSON.parse(Buffer.from(String(value).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error_description || data.error || `Request failed with ${response.status}`);
+  return data;
+}
+
+function verifyJwtWithJwk(identityToken, jwk) {
+  const [encodedHeader, encodedPayload, encodedSignature] = String(identityToken || '').split('.');
+  if (!encodedHeader || !encodedPayload || !encodedSignature) throw new Error('Identity token is malformed');
+  const keyObject = createPublicKey({ key: jwk, format: 'jwk' });
+  const signature = Buffer.from(encodedSignature.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  const valid = verifySignature('RSA-SHA256', Buffer.from(`${encodedHeader}.${encodedPayload}`), keyObject, signature);
+  if (!valid) throw new Error('Identity token signature is invalid');
+  return base64UrlJson(encodedPayload);
+}
+
+async function verifyProviderIdentity(provider, identityToken) {
+  if (!identityToken) throw new Error('Identity token is required');
+  const { kid, alg } = base64UrlJson(String(identityToken).split('.')[0]);
+  const providerConfig = provider === 'google'
+    ? {
+        jwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+        issuer: ['https://accounts.google.com', 'accounts.google.com'],
+        audience: process.env.GOOGLE_CLIENT_ID
+      }
+    : {
+        jwksUrl: 'https://appleid.apple.com/auth/keys',
+        issuer: ['https://appleid.apple.com'],
+        audience: process.env.APPLE_CLIENT_ID || process.env.APPLE_SERVICE_ID || process.env.IOS_BUNDLE_ID
+      };
+  if (!providerConfig.audience) throw new Error(`${provider.toUpperCase()} client ID is not configured`);
+  if (alg !== 'RS256') throw new Error('Unsupported identity token algorithm');
+  const jwks = await fetchJson(providerConfig.jwksUrl);
+  const jwk = (jwks.keys || []).find((key) => key.kid === kid);
+  if (!jwk) throw new Error('Identity token key was not found');
+  const payload = verifyJwtWithJwk(identityToken, jwk);
+  if (!providerConfig.issuer.includes(payload.iss)) throw new Error('Identity token issuer is invalid');
+  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (!audiences.includes(providerConfig.audience)) throw new Error('Identity token audience is invalid');
+  if (Number(payload.exp || 0) * 1000 < Date.now()) throw new Error('Identity token is expired');
+  const email = normalizeEmail(payload.email);
+  if (!email || !isValidEmail(email)) throw new Error('Provider did not return a verified email');
+  if (provider === 'google' && payload.email_verified !== true && payload.email_verified !== 'true') throw new Error('Google email is not verified');
+  if (provider === 'apple' && payload.email_verified && payload.email_verified !== true && payload.email_verified !== 'true') throw new Error('Apple email is not verified');
+  return {
+    email,
+    providerId: payload.sub,
+    name: payload.name || ''
+  };
+}
+
+async function loginWithProvider(provider, identityToken, profile = {}) {
+  const verified = await verifyProviderIdentity(provider, identityToken);
+  const email = verified.email;
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    const updated = existing.emailVerifiedAt ? existing : await prisma.user.update({ where: { id: existing.id }, data: { emailVerifiedAt: new Date(), emailVerificationTokenHash: null, emailVerificationExpiresAt: null } });
+    return updated;
+  }
+  const fallbackName = profile.name || verified.name || email.split('@')[0] || `${provider} user`;
+  return prisma.user.create({
+    data: {
+      name: String(fallbackName).trim().slice(0, 120),
+      email,
+      passwordHash: await bcrypt.hash(randomBytes(32).toString('hex'), 10),
+      emailVerifiedAt: new Date(),
+      accountType: 'USER',
+      city: profile.city ? String(profile.city).trim().slice(0, 120) : undefined,
+      headline: `${provider === 'apple' ? 'Apple' : 'Google'} sign-in account`,
+      interests: normalizeList(profile.interests)
+    }
+  });
 }
 
 function mailFrom() {
@@ -1414,6 +1546,19 @@ async function auth(req, res, next) {
   }
 }
 
+async function authOptional(req, _res, next) {
+  const header = req.headers.authorization;
+  if (!header) return next();
+  try {
+    const decoded = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev_secret');
+    const currentUser = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (currentUser) req.user = { id: currentUser.id, name: currentUser.name, email: currentUser.email, accountType: currentUser.accountType };
+  } catch {
+    req.user = null;
+  }
+  next();
+}
+
 function requireAdmin(req, res, next) {
   if (req.user.accountType !== 'ADMIN') return res.status(403).json({ error: 'Admin account required' });
   next();
@@ -1631,6 +1776,18 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Invalid login' });
   if (!user.emailVerifiedAt) return res.status(403).json({ error: 'Verify your email before logging in.', verificationRequired: true, email: user.email });
   res.json({ token: createToken(user), user: publicUser(user, { includeEmail: true }) });
+});
+
+app.post('/api/auth/oauth/:provider', authLimiter, async (req, res) => {
+  const provider = String(req.params.provider || '').toLowerCase();
+  if (!['apple', 'google'].includes(provider)) return res.status(404).json({ error: 'Unsupported sign-in provider' });
+  try {
+    const user = await loginWithProvider(provider, req.body.identityToken || req.body.credential || req.body.idToken, req.body.profile || {});
+    res.json({ token: createToken(user), user: publicUser(user, { includeEmail: true }) });
+  } catch (error) {
+    console.error(`[oauth:${provider}]`, error);
+    res.status(401).json({ error: error.message || 'Could not verify provider sign-in' });
+  }
 });
 
 app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
@@ -2401,6 +2558,123 @@ app.put('/api/organizations/:id', auth, async (req, res) => {
   res.json({ ...org, notifications });
 });
 
+app.post('/api/organizations/:id/notifications', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can send notifications' });
+  const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+  const title = String(req.body.title || '').trim().slice(0, 180);
+  const body = String(req.body.body || '').trim().slice(0, 500);
+  if (!title || !body) return res.status(400).json({ error: 'Title and body are required' });
+  const type = String(req.body.type || 'ANNOUNCEMENT').toUpperCase();
+  const url = req.body.url || `/masjids/${organization.id}`;
+  const result = await notifyOrganizationFollowers(organization.id, {
+    title,
+    body,
+    url,
+    tag: `admin-push-${organization.id}-${Date.now()}`,
+    type,
+    organizationId: organization.id
+  }, { excludeUserIds: [req.user.id] });
+  res.json({ ok: true, notification: { title, body, url, type }, delivery: result });
+});
+
+app.get('/api/organizations/:id/donations', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can view donations' });
+  const [campaigns, donations] = await Promise.all([
+    prisma.donationCampaign.findMany({ where: { organizationId: req.params.id }, include: { donations: { include: { user: true }, orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' } }),
+    prisma.donation.findMany({ where: { organizationId: req.params.id }, include: { user: true, campaign: true }, orderBy: { createdAt: 'desc' }, take: 100 })
+  ]);
+  const totalCents = donations.reduce((sum, donation) => sum + donation.amountCents, 0);
+  const recurringCents = donations.filter((donation) => donation.recurring).reduce((sum, donation) => sum + donation.amountCents, 0);
+  const byCategory = donations.reduce((acc, donation) => {
+    acc[donation.category] = (acc[donation.category] || 0) + donation.amountCents;
+    return acc;
+  }, {});
+  res.json({
+    summary: {
+      totalCents,
+      recurringCents,
+      donationCount: donations.length,
+      anonymousCount: donations.filter((donation) => donation.anonymous).length,
+      byCategory
+    },
+    campaigns: campaigns.map(publicCampaign),
+    donations: donations.map(publicDonation)
+  });
+});
+
+app.post('/api/organizations/:id/donation-campaigns', auth, async (req, res) => {
+  if (!(await canManageOrganization(req.user, req.params.id))) return res.status(403).json({ error: 'Only this organization owner or admin can manage donation campaigns' });
+  const title = String(req.body.title || '').trim();
+  if (!title) return res.status(400).json({ error: 'Campaign title is required' });
+  const goalCents = req.body.goal ? normalizeMoneyCents(req.body.goal) : null;
+  const campaign = await prisma.donationCampaign.create({
+    data: {
+      organizationId: req.params.id,
+      title: title.slice(0, 160),
+      description: req.body.description ? String(req.body.description).trim().slice(0, 1000) : null,
+      category: String(req.body.category || 'GENERAL').toUpperCase(),
+      goalCents,
+      active: req.body.active === undefined ? true : Boolean(req.body.active)
+    },
+    include: { donations: true }
+  });
+  res.status(201).json(publicCampaign(campaign));
+});
+
+app.put('/api/donation-campaigns/:id', auth, async (req, res) => {
+  const campaign = await prisma.donationCampaign.findUnique({ where: { id: req.params.id } });
+  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+  if (!(await canManageOrganization(req.user, campaign.organizationId))) return res.status(403).json({ error: 'Only this organization owner or admin can manage donation campaigns' });
+  const data = {};
+  if (req.body.title !== undefined) data.title = String(req.body.title || '').trim().slice(0, 160);
+  if (req.body.description !== undefined) data.description = req.body.description ? String(req.body.description).trim().slice(0, 1000) : null;
+  if (req.body.category !== undefined) data.category = String(req.body.category || 'GENERAL').toUpperCase();
+  if (req.body.goal !== undefined) data.goalCents = req.body.goal ? normalizeMoneyCents(req.body.goal) : null;
+  if (req.body.active !== undefined) data.active = Boolean(req.body.active);
+  const updated = await prisma.donationCampaign.update({ where: { id: campaign.id }, data, include: { donations: true } });
+  res.json(publicCampaign(updated));
+});
+
+app.post('/api/organizations/:id/donations', authOptional, async (req, res) => {
+  const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+  const amountCents = normalizeMoneyCents(req.body.amount);
+  if (!amountCents) return res.status(400).json({ error: 'Donation amount is required' });
+  const campaign = req.body.campaignId ? await prisma.donationCampaign.findUnique({ where: { id: req.body.campaignId } }) : null;
+  if (campaign && campaign.organizationId !== organization.id) return res.status(400).json({ error: 'Campaign does not belong to this organization' });
+  const anonymous = Boolean(req.body.anonymous);
+  const donorEmail = normalizeEmail(req.body.donorEmail || req.user?.email);
+  const donation = await prisma.donation.create({
+    data: {
+      organizationId: organization.id,
+      campaignId: campaign?.id || null,
+      userId: req.user?.id || null,
+      donorName: anonymous ? null : String(req.body.donorName || req.user?.name || '').trim().slice(0, 120),
+      donorEmail: anonymous ? null : donorEmail || null,
+      amountCents,
+      currency: String(req.body.currency || 'CAD').toUpperCase().slice(0, 3),
+      category: String(req.body.category || campaign?.category || 'GENERAL').toUpperCase(),
+      recurring: Boolean(req.body.recurring),
+      frequency: req.body.recurring ? String(req.body.frequency || 'MONTHLY').toUpperCase() : null,
+      anonymous,
+      provider: req.body.provider || 'MANUAL',
+      providerRef: req.body.providerRef || null
+    },
+    include: { user: true, campaign: true }
+  });
+  if (campaign) {
+    await prisma.donationCampaign.update({ where: { id: campaign.id }, data: { raisedCents: { increment: amountCents } } });
+  }
+  let receipt = null;
+  try {
+    receipt = await sendDonationReceipt(donation, organization, campaign);
+  } catch (error) {
+    console.error('[donation-receipt]', error);
+  }
+  res.status(201).json({ donation: publicDonation(receipt || donation), receiptSent: Boolean(receipt?.receiptEmailSentAt) });
+});
+
 app.post('/api/organizations/:id/onboard', auth, requireAdmin, async (req, res) => {
   const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
   if (!organization) return res.status(404).json({ error: 'Organization not found' });
@@ -2742,6 +3016,15 @@ app.get('/api/posts', auth, async (req, res) => {
   const likedIds = new Set(liked.map((item) => item.postId));
   const q = searchTerm(req);
   const postWhere = {
+    AND: [
+      {
+        OR: [
+          { status: { not: 'SCHEDULED' } },
+          { publishAt: null },
+          { publishAt: { lte: new Date() } }
+        ]
+      }
+    ],
     ...(req.query.type ? { type: String(req.query.type).toUpperCase() } : {}),
     ...(req.query.organizationId ? { organizationId: String(req.query.organizationId) } : {}),
     ...(q ? {
@@ -2760,7 +3043,7 @@ app.get('/api/posts', auth, async (req, res) => {
       organization: { include: { followers: true, favoritedBy: true } },
       likedBy: true,
       comments: { include: { author: true }, orderBy: { createdAt: 'desc' }, take: 3 },
-      _count: { select: { comments: true } }
+      _count: { select: { comments: true, likedBy: true, savedBy: true } }
     },
     orderBy: { createdAt: 'desc' },
     ...parsePagination(req, 100, 100)
@@ -2847,6 +3130,9 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
   const type = ['ANNOUNCEMENT', 'EVENT', 'REMINDER', 'FUNDRAISER', 'CLASS', 'VOLUNTEER', 'JOB'].includes(String(req.body.type || '').toUpperCase()) ? String(req.body.type).toUpperCase() : 'ANNOUNCEMENT';
   const eventTime = req.body.eventTime ? normalizeRequiredDate(req.body.eventTime) : null;
   if (req.body.eventTime && !eventTime) return res.status(400).json({ error: 'Event time must be a valid date' });
+  const publishAt = req.body.publishAt ? normalizeRequiredDate(req.body.publishAt) : null;
+  if (req.body.publishAt && !publishAt) return res.status(400).json({ error: 'Publish time must be a valid date' });
+  const isScheduled = publishAt && publishAt > new Date();
   let imageUrl = null;
   try {
     imageUrl = await archiveRemoteImage(req.body.imageUrl, req);
@@ -2862,11 +3148,15 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
       type,
       imageUrl,
       location: req.body.location || null,
-      eventTime
+      eventTime,
+      publishAt,
+      status: isScheduled ? 'SCHEDULED' : 'PUBLISHED',
+      publishedAt: isScheduled ? null : new Date()
     },
     include: { author: true, organization: true }
   });
-  const { push } = await notifyOrganizationFollowers(req.params.id, {
+  let push = null;
+  if (!isScheduled) ({ push } = await notifyOrganizationFollowers(req.params.id, {
     title: post.title,
     body: post.content,
     url: `/masjids/${req.params.id}`,
@@ -2874,7 +3164,7 @@ app.post('/api/organizations/:id/posts', auth, async (req, res) => {
     type,
     organizationId: req.params.id,
     postId: post.id
-  }, { excludeUserIds: [req.user.id] });
+  }, { excludeUserIds: [req.user.id] }));
   res.json({ ...publicPost(post), push });
 });
 
@@ -2905,8 +3195,21 @@ app.put('/api/posts/:id', auth, async (req, res) => {
     data.eventTime = req.body.eventTime ? normalizeRequiredDate(req.body.eventTime) : null;
     if (req.body.eventTime && !data.eventTime) return res.status(400).json({ error: 'Event time must be a valid date' });
   }
+  if (req.body.publishAt !== undefined) {
+    data.publishAt = req.body.publishAt ? normalizeRequiredDate(req.body.publishAt) : null;
+    if (req.body.publishAt && !data.publishAt) return res.status(400).json({ error: 'Publish time must be a valid date' });
+    data.status = data.publishAt && data.publishAt > new Date() ? 'SCHEDULED' : 'PUBLISHED';
+    data.publishedAt = data.status === 'PUBLISHED' ? (post.publishedAt || new Date()) : null;
+  }
   const updated = await prisma.post.update({ where: { id: post.id }, data, include: { author: true, organization: true } });
   res.json(publicPost(updated));
+});
+
+app.post('/api/posts/:id/view', authOptional, async (req, res) => {
+  const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  const updated = await prisma.post.update({ where: { id: post.id }, data: { viewCount: { increment: 1 } }, select: { id: true, viewCount: true } });
+  res.json(updated);
 });
 
 app.delete('/api/posts/:id', auth, async (req, res) => {

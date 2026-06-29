@@ -31,6 +31,7 @@ import {
   Search,
   Send,
   Settings,
+  Share2,
   ShieldCheck,
   Smartphone,
   Sparkles,
@@ -53,9 +54,20 @@ import { buildPrayerEditForm, cleanPrayerRows, dashboardIqamahTimes, directionsU
 import { isNativeApp, openExternalUrl, requestNativeLocation, requestNativeNotifications, showNativeNotification } from './lib/nativeApp.js';
 
 const EVENT_AUTO_REFRESH_MS = 15000;
+const PRAYER_CACHE_PREFIX = 'mujtama:prayer-times:';
+const IOS_INSTALL_DISMISS_KEY = 'mujtama:ios-install-dismissed';
 const notificationTimers = new Map();
 const notifiedMessageIds = new Set();
 const seedOrganizationsWithoutPrograms = seedOrganizations.map((org) => ({ ...org, classes: [], programs: [] }));
+const guestUser = {
+  id: 'guest',
+  name: 'Guest Explorer',
+  accountType: 'USER',
+  city: defaultLocation.label,
+  location: defaultLocation.label,
+  headline: 'Exploring Mujtama',
+  interests: ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile', 'Events', 'Library']
+};
 
 const defaultNotificationPreferences = {
   masjidAnnouncements: true,
@@ -134,6 +146,45 @@ const mobileNavKeys = ['home', 'organizations', 'messages', 'network', 'prayer']
 const swipeDistance = 64;
 const swipeEdgeWidth = 34;
 const swipeVerticalTolerance = 44;
+
+function isIosSafariBrowser() {
+  if (typeof window === 'undefined') return false;
+  const ua = window.navigator.userAgent || '';
+  const isiOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  return isiOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua) && !isStandalone;
+}
+
+function prayerCacheKey(location) {
+  const today = new Date().toISOString().slice(0, 10);
+  return `${PRAYER_CACHE_PREFIX}${today}:${Number(location.latitude).toFixed(3)}:${Number(location.longitude).toFixed(3)}`;
+}
+
+function readCachedPrayerTimes(location) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(prayerCacheKey(location)) || 'null');
+    if (Array.isArray(cached?.times)) return cached.times;
+  } catch (error) {
+    console.warn('Prayer cache read failed', error);
+  }
+  return null;
+}
+
+function writeCachedPrayerTimes(location, times) {
+  try {
+    localStorage.setItem(prayerCacheKey(location), JSON.stringify({ cachedAt: new Date().toISOString(), times }));
+  } catch (error) {
+    console.warn('Prayer cache write failed', error);
+  }
+}
+
+function hijriDateLabel(date = new Date()) {
+  try {
+    return new Intl.DateTimeFormat('en-u-ca-islamic', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(date);
+  } catch {
+    return '';
+  }
+}
 
 function pathForTab(key, id) {
   const paths = {
@@ -229,7 +280,42 @@ function LandingPage() {
         <div><strong>Community DMs</strong><span>Connect with Muslims nearby and across your network.</span></div>
         <div><strong>Profiles</strong><span>Search by skills, roles, organizations, and headlines.</span></div>
       </section>
+      <IosInstallPrompt />
     </main>
+  );
+}
+
+function IosInstallPrompt() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (!isIosSafariBrowser()) return;
+    if (localStorage.getItem(IOS_INSTALL_DISMISS_KEY) === '1') return;
+    const timer = window.setTimeout(() => setVisible(true), 1000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!visible) return null;
+
+  function dismiss() {
+    localStorage.setItem(IOS_INSTALL_DISMISS_KEY, '1');
+    setVisible(false);
+  }
+
+  return (
+    <aside className="ios-install-prompt" role="dialog" aria-label="Install Mujtama on iPhone">
+      <button className="icon-button ios-install-close" type="button" onClick={dismiss} aria-label="Dismiss install prompt"><X size={18} /></button>
+      <div className="ios-install-icon"><img src="/icons/mujtama-icon-192.png" alt="" /></div>
+      <div>
+        <strong>Install Mujtama</strong>
+        <p>For iPhone notifications, open Safari sharing, then choose Add to Home Screen.</p>
+        <ol>
+          <li><Share2 size={15} /> Tap Share</li>
+          <li><Plus size={15} /> Add to Home Screen</li>
+          <li><Bell size={15} /> Enable alerts in the installed app</li>
+        </ol>
+      </div>
+    </aside>
   );
 }
 
@@ -556,13 +642,22 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
   const [translations, setTranslations] = useState({});
   const [translatingKey, setTranslatingKey] = useState('');
   const commentInputRefs = useRef({});
+  const viewedPostIds = useRef(new Set());
+  useEffect(() => {
+    posts.forEach((post) => {
+      if (!post?.id || viewedPostIds.current.has(post.id)) return;
+      viewedPostIds.current.add(post.id);
+      api(`/api/posts/${post.id}/view`, { method: 'POST' }).catch(() => {});
+    });
+  }, [posts]);
   function sharePost(post) {
     const text = `${post.title} - ${post.organization?.name || 'Mujtama'}`;
+    const url = `${window.location.origin}${post.organization?.id ? `/masjids/${post.organization.id}` : '/app'}`;
     if (navigator.share) {
-      navigator.share({ title: post.title, text }).catch(() => {});
+      navigator.share({ title: post.title, text, url }).catch(() => {});
     } else {
-      navigator.clipboard?.writeText(text).catch(() => {});
-      alert('Post title copied.');
+      navigator.clipboard?.writeText(`${text}\n${url}`).catch(() => {});
+      alert('Post link copied.');
     }
   }
   async function submitComment(event, post) {
@@ -862,6 +957,11 @@ function PrayerSettingsCard({ user, locationStatus, prayerPreferences, updatePra
 
 function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = [], locationStatus, requestLocation, notificationState, enablePushNotifications, prayerPreferences, updatePrayerPreferences, saveManualLocation, openOrganization, setTab, refreshPrayerTimes }) {
   const [refreshingPrayer, setRefreshingPrayer] = useState(false);
+  const today = new Date();
+  const isFriday = today.getDay() === 5;
+  const favoriteJumuah = favoriteMasjids
+    .map((masjid) => ({ masjid, time: dashboardIqamahTimes(masjid).Jumuah || dashboardIqamahTimes(masjid).jumuah }))
+    .find((item) => item.time);
   async function refreshPrayer() {
     setRefreshingPrayer(true);
     try {
@@ -888,6 +988,19 @@ function PrayerScreen({ user, prayerTimes, favoriteMasjids, myOrganizations = []
   }
   return (
     <Page title="Prayer" subtitle="Location-based prayer times, saved location, and device reminders.">
+      <section className="panel prayer-date-card">
+        <div>
+          <p className="eyebrow">Today</p>
+          <h2>{hijriDateLabel(today) || today.toLocaleDateString()}</h2>
+          <span>{today.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
+        </div>
+        {isFriday && favoriteJumuah && (
+          <button className="primary-button" type="button" onClick={() => openOrganization(favoriteJumuah.masjid.id)}>
+            <ShieldCheck size={17} />
+            Jumuah {favoriteJumuah.time}
+          </button>
+        )}
+      </section>
       <div className="refresh-strip">
         <button type="button" onClick={refreshPrayer} disabled={refreshingPrayer}><RefreshCw size={17} className={refreshingPrayer ? 'spin-icon' : ''} />Refresh times</button>
         <span>{locationStatus}</span>
@@ -1143,9 +1256,38 @@ function PostEventScreen({ setTab, createEvent, myOrganizations }) {
 }
 
 function OrganizationsScreen({ masjids, locationStatus, requestLocation, openOrganization }) {
+  const [view, setView] = useState('map');
+  const mappableMasjids = masjids.filter(hasMappableLocation);
+  const featuredMapMasjid = mappableMasjids[0];
+
   return (
     <Page title="Masjid Discovery" subtitle="SQL-backed masjid profiles sorted by your location.">
-      <NearbyMasjids masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
+      <section className="panel discovery-toolbar">
+        <div>
+          <strong>{masjids.length} masjids nearby</strong>
+          <span>{locationStatus}</span>
+        </div>
+        <div className="segmented-control" role="tablist" aria-label="Masjid discovery view">
+          <button type="button" className={view === 'map' ? 'active' : ''} onClick={() => setView('map')}><MapPin size={16} />Map</button>
+          <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}><Inbox size={16} />List</button>
+        </div>
+      </section>
+      {view === 'map' ? (
+        <section className="masjid-map-view">
+          <LocationMapCard item={featuredMapMasjid} title={featuredMapMasjid ? `${featuredMapMasjid.name} area` : 'Nearby masjid map'} locationStatus={locationStatus} requestLocation={requestLocation} />
+          <div className="map-result-list">
+            {masjids.map((masjid) => (
+              <button key={masjid.id} type="button" onClick={() => openOrganization(masjid.id)}>
+                <span>{distanceText(masjid) || masjid.city || 'Nearby'}</span>
+                <strong>{masjid.name}</strong>
+                <small>{masjid.address || masjid.city || 'Address not added'}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <NearbyMasjids masjids={masjids} locationStatus={locationStatus} requestLocation={requestLocation} openOrganization={openOrganization} />
+      )}
     </Page>
   );
 }
@@ -2012,7 +2154,7 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
           {!canFollowMasjid && <span className="status-pill">Organization profile</span>}
           <ExternalLinkButton url={directionsUrl(organization)}>Directions</ExternalLinkButton>
           {organization.website && <ExternalLinkButton url={organization.website}>Website</ExternalLinkButton>}
-          {organization.donationUrl && <ExternalLinkButton url={organization.donationUrl}>Donate</ExternalLinkButton>}
+          {organization.donationUrl && <DonationButton organization={organization} />}
         </div>
       </section>
 
@@ -2850,11 +2992,15 @@ function MasjidReadinessPanel({ organization, metrics = {}, openSection, openUse
   );
 }
 
-function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrganizations, myOrganizations = [], dashboardOrganizationsState = {}, createOrganization, onboardOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
+function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrganizations, myOrganizations = [], dashboardOrganizationsState = {}, createOrganization, onboardOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, sendOrganizationNotification, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
-  const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '' });
+  const [postForm, setPostForm] = useState({ organizationId: '', type: 'ANNOUNCEMENT', title: '', content: '', imageUrl: '', location: '', eventTime: '', publishAt: '' });
   const [announcementForm, setAnnouncementForm] = useState({ organizationId: '', category: 'GENERAL', title: '', content: '', imageUrl: '' });
+  const [pushForm, setPushForm] = useState({ organizationId: '', title: '', body: '', type: 'ANNOUNCEMENT', url: '' });
+  const [donationDashboard, setDonationDashboard] = useState({ summary: {}, campaigns: [], donations: [] });
+  const [campaignForm, setCampaignForm] = useState({ organizationId: '', title: '', category: 'GENERAL', goal: '', description: '' });
+  const [donationForm, setDonationForm] = useState({ organizationId: '', campaignId: '', donorName: '', donorEmail: '', amount: '', category: 'GENERAL', recurring: false, frequency: 'MONTHLY', anonymous: false });
   const [eventForm, setEventForm] = useState({ organizationId: '', title: '', description: '', location: '', imageUrl: '', startTime: '', capacity: '', requiresApproval: false });
   const [oppForm, setOppForm] = useState({ organizationId: '', type: 'VOLUNTEER', title: '', description: '', requirements: '', location: '', skills: '', hours: '', workType: 'volunteer', deadline: '', applicationQuestions: '' });
   const emptyClassForm = { organizationId: '', title: '', teacher: '', description: '', dayTime: '', location: '', imageUrl: '', notes: '', registrationLink: '' };
@@ -2989,6 +3135,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     { key: 'volunteers', label: 'Volunteers', count: metrics.volunteers, detail: 'Service posts', icon: HeartHandshake },
     { key: 'volunteerApplications', label: 'Volunteer Applications', count: allApplications.filter(({ opportunity }) => opportunity.type !== 'JOB').length, detail: 'Service requests', icon: Users },
     { key: 'attention', label: 'Notifications', count: pendingApplications.length + pendingRegistrations.length + unreadMessages + messageRequests, detail: `${unreadMessages} unread DMs · ${messageRequests} requests`, icon: Bell },
+    { key: 'donations', label: 'Donations', count: '$', detail: 'Campaigns and receipts', icon: HeartHandshake },
     { key: 'prayerTimes', label: 'Prayer Times', count: 'Jamaat', detail: selectedOrg?.prayerNotes || 'Iqamah schedule', icon: ShieldCheck },
     { key: 'applications', label: 'Application Portal', count: metrics.applications, detail: 'All applicants', icon: Building2 },
     { key: 'committee', label: 'Jamaat / Committee', count: scopedOrganizations.reduce((sum, org) => sum + (org.people || []).length, 0), detail: 'Leadership', icon: Users },
@@ -3011,7 +3158,8 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     { key: 'posts', label: 'Posts / Announcements', detail: 'Home feed updates only', icon: MessageCircle },
     { key: 'events', label: 'Events', detail: 'Scheduled events and registration', icon: CalendarDays },
     { key: 'programs', label: 'Events / Programs', detail: 'Classes, halaqas, and recurring programs', icon: Library },
-    { key: 'jobs', label: 'Opportunities', detail: 'Jobs/volunteer pages + user alerts', icon: Briefcase }
+    { key: 'jobs', label: 'Opportunities', detail: 'Jobs/volunteer pages + user alerts', icon: Briefcase },
+    { key: 'donations', label: 'Donations', detail: 'Campaigns, recurring gifts, receipts', icon: HeartHandshake }
   ];
   const attentionItems = [
     { key: 'messages', label: 'Messages', count: unreadMessages, icon: Mail, action: () => setTab?.('messages') },
@@ -3028,6 +3176,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     { key: 'announcements', label: 'Announcements', icon: MessageCircle },
     { key: 'posts', label: 'Posts', icon: MessageCircle },
     { key: 'prayerTimes', label: 'Prayer Times', icon: ShieldCheck },
+    { key: 'donations', label: 'Donations', icon: HeartHandshake },
     { key: 'team', label: 'Team', icon: UserCheck },
     { key: 'volunteers', label: 'Volunteers', icon: HeartHandshake },
     { key: 'jobs', label: 'Jobs', icon: Briefcase }
@@ -3039,9 +3188,12 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     { key: 'posts', label: 'Engagement', value: metrics.posts, icon: Bell }
   ];
   const activeDashboardFeature = hubItems.find((item) => item.key === activeSection);
-  const orgPanelSections = new Set(['followers', 'announcements', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs']);
+  const orgPanelSections = new Set(['followers', 'announcements', 'posts', 'events', 'eventApprovals', 'programs', 'team', 'committee', 'prayerTimes', 'applications', 'jobApplications', 'volunteerApplications', 'volunteers', 'jobs', 'donations']);
   const showOrgPanels = orgPanelSections.has(activeSection);
   const showProfileTools = activeSection === 'prayerTimes';
+  useEffect(() => {
+    if (activeSection === 'donations' && selectedOrg?.id) loadDonationDashboard(selectedOrg.id).catch(console.error);
+  }, [activeSection, selectedOrg?.id]);
   function openUserView() {
     if (!selectedOrg?.id) return alert('Create or select a masjid profile first.');
     openOrganization(selectedOrg.id).catch(console.error);
@@ -3199,7 +3351,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     setOppForm({ organizationId, type: 'VOLUNTEER', title: '', description: '', requirements: '', location: '', skills: '', hours: '', workType: 'volunteer', deadline: '', applicationQuestions: '' });
   }
   function resetPostComposer(organizationId, type = postForm.type) {
-    setPostForm({ organizationId, type, title: '', content: '', imageUrl: '', location: '', eventTime: '' });
+    setPostForm({ organizationId, type, title: '', content: '', imageUrl: '', location: '', eventTime: '', publishAt: '' });
   }
   function postDestination(type = postForm.type) {
     const upperType = String(type || '').toUpperCase();
@@ -3234,6 +3386,85 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     });
     setAnnouncementForm({ organizationId, category: 'GENERAL', title: '', content: '', imageUrl: '' });
     openDashboardSection('announcements');
+  }
+  async function submitPushNotification(event) {
+    event.preventDefault();
+    const organizationId = pushForm.organizationId || selectedOrg?.id || myOrganizations[0]?.id;
+    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!pushForm.title.trim() || !pushForm.body.trim()) return alert('Notification title and body are required.');
+    const result = await sendOrganizationNotification(organizationId, pushForm);
+    const sent = result?.delivery?.push?.sent ?? 0;
+    const skipped = result?.delivery?.push?.skipped ?? 0;
+    alert(`Notification queued. Sent: ${sent}. Skipped: ${skipped}.`);
+    setPushForm({ organizationId, title: '', body: '', type: 'ANNOUNCEMENT', url: '' });
+    await loadMyOrganizations(user, { preserveCurrent: true });
+  }
+  async function loadDonationDashboard(organizationId = selectedOrg?.id) {
+    if (!organizationId) return;
+    const data = await api(`/api/organizations/${organizationId}/donations`).catch(() => ({ summary: {}, campaigns: [], donations: [] }));
+    setDonationDashboard(data);
+  }
+  async function submitCampaign(event) {
+    event.preventDefault();
+    const organizationId = campaignForm.organizationId || selectedOrg?.id || myOrganizations[0]?.id;
+    if (!organizationId || !campaignForm.title.trim()) return alert('Select a masjid and add a campaign title.');
+    await api(`/api/organizations/${organizationId}/donation-campaigns`, { method: 'POST', body: JSON.stringify(campaignForm) });
+    setCampaignForm({ organizationId, title: '', category: 'GENERAL', goal: '', description: '' });
+    await loadDonationDashboard(organizationId);
+  }
+  async function submitManualDonation(event) {
+    event.preventDefault();
+    const organizationId = donationForm.organizationId || selectedOrg?.id || myOrganizations[0]?.id;
+    if (!organizationId || !donationForm.amount) return alert('Select a masjid and add an amount.');
+    const result = await api(`/api/organizations/${organizationId}/donations`, { method: 'POST', body: JSON.stringify({ ...donationForm, provider: 'MANUAL_ADMIN' }) });
+    alert(result.receiptSent ? 'Donation recorded and receipt sent.' : 'Donation recorded. Receipt email was not sent.');
+    setDonationForm({ organizationId, campaignId: '', donorName: '', donorEmail: '', amount: '', category: 'GENERAL', recurring: false, frequency: 'MONTHLY', anonymous: false });
+    await loadDonationDashboard(organizationId);
+  }
+  function duplicatePostToComposer(post, organizationId) {
+    setPostForm({ organizationId, type: post.type || 'ANNOUNCEMENT', title: `Copy of ${post.title || ''}`.trim(), content: post.content || '', imageUrl: post.imageUrl || '', location: post.location || '', eventTime: toDateTimeInput(post.eventTime), publishAt: '' });
+    openDashboardSection('posts');
+  }
+  function exportRegistrationsCsv(eventItem) {
+    const rows = [['Name', 'Email', 'Status', 'Registered At']];
+    (eventItem.registrations || []).forEach((registration) => rows.push([
+      registration.user?.name || '',
+      registration.user?.email || '',
+      registration.status || '',
+      registration.createdAt ? new Date(registration.createdAt).toISOString() : ''
+    ]));
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${eventItem.title || 'event'}-rsvps.csv`.replace(/[^a-z0-9._-]+/gi, '-');
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+  function importPrayerCsv(org, file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const rows = String(reader.result || '').split(/\r?\n/).map((line) => line.split(',').map((cell) => cell.trim())).filter((row) => row.length >= 2);
+      const header = rows[0].map((cell) => cell.toLowerCase());
+      const dataRows = header.includes('prayer') ? rows.slice(1) : rows;
+      const nextForm = buildPrayerEditForm(org);
+      dataRows.forEach((row) => {
+        const prayerIndex = header.includes('prayer') ? header.indexOf('prayer') : 0;
+        const adhanIndex = header.includes('adhan') ? header.indexOf('adhan') : 1;
+        const iqamahIndex = header.includes('iqamah') ? header.indexOf('iqamah') : header.includes('jamat') ? header.indexOf('jamat') : 2;
+        const key = standardPrayerKeys.find((name) => name.toLowerCase() === String(row[prayerIndex] || '').toLowerCase());
+        if (key) {
+          nextForm[key] = row[adhanIndex] || '';
+          nextForm[`${key}Jamat`] = row[iqamahIndex] || '';
+        }
+      });
+      setEditingPrayerOrgId(org.id);
+      setEditPrayerForm(nextForm);
+      openDashboardSection('prayerTimes');
+    };
+    reader.readAsText(file);
   }
   async function submitPost(event) {
     event.preventDefault();
@@ -3403,7 +3634,9 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
       content: post.content || '',
       imageUrl: post.imageUrl || '',
       location: post.location || '',
-      eventTime: toDateTimeInput(post.eventTime)
+      eventTime: toDateTimeInput(post.eventTime),
+      publishAt: toDateTimeInput(post.publishAt),
+      status: post.status || 'PUBLISHED'
     });
   }
   async function submitEditPost(event, post) {
@@ -3782,6 +4015,28 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                 })}
               </div>
             </section>
+            <section className="operator-section admin-push-composer">
+              <div className="operator-section-title">
+                <div><p className="eyebrow">Push notification</p><h3>Send to followers</h3></div>
+                <span>{selectedOrg?.followerCount || 0} followers</span>
+              </div>
+              <form className="post-form compact-admin-form" onSubmit={submitPushNotification}>
+                <select value={pushForm.organizationId || selectedOrg?.id || ''} onChange={(event) => setPushForm({ ...pushForm, organizationId: event.target.value })}>
+                  {myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                </select>
+                <select value={pushForm.type} onChange={(event) => setPushForm({ ...pushForm, type: event.target.value })}>
+                  <option value="ANNOUNCEMENT">Announcement</option>
+                  <option value="URGENT">Urgent</option>
+                  <option value="EVENT">Event</option>
+                  <option value="PRAYER_UPDATE">Prayer update</option>
+                  <option value="FUNDRAISER">Fundraiser</option>
+                </select>
+                <input required maxLength={180} placeholder="Notification title" value={pushForm.title} onChange={(event) => setPushForm({ ...pushForm, title: event.target.value })} />
+                <textarea required maxLength={500} placeholder="Short message" value={pushForm.body} onChange={(event) => setPushForm({ ...pushForm, body: event.target.value })} />
+                <input placeholder="/masjids/... or /events/..." value={pushForm.url} onChange={(event) => setPushForm({ ...pushForm, url: event.target.value })} />
+                <button className="primary-button"><Bell size={17} />Send notification</button>
+              </form>
+            </section>
             <section className="operator-section masjid-inbox-preview">
               <div className="operator-section-title"><h3>Inbox</h3><button type="button" onClick={() => setTab?.('messages')}>Open all</button></div>
               <div className="inbox-preview-list">
@@ -3886,6 +4141,56 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
             </section>
           )}
 
+          {activeSection === 'donations' && (
+            <section className="panel donation-dashboard-panel">
+              <div className="section-title">
+                <div><p className="eyebrow">Donations</p><h2>Campaigns, receipts, recurring gifts</h2></div>
+                <button type="button" onClick={() => loadDonationDashboard(selectedOrg?.id)}>Refresh</button>
+              </div>
+              <div className="metric-grid compact">
+                <article className="metric-card"><span>Total</span><strong>${((donationDashboard.summary?.totalCents || 0) / 100).toFixed(0)}</strong><em>{donationDashboard.summary?.donationCount || 0} gifts</em></article>
+                <article className="metric-card"><span>Recurring</span><strong>${((donationDashboard.summary?.recurringCents || 0) / 100).toFixed(0)}</strong><em>Active commitments</em></article>
+                <article className="metric-card"><span>Anonymous</span><strong>{donationDashboard.summary?.anonymousCount || 0}</strong><em>Private donors</em></article>
+              </div>
+              <div className="admin-grid">
+                <form className="profile-form" onSubmit={submitCampaign}>
+                  <div className="section-title compact-title"><h3>New campaign</h3><span>Goal</span></div>
+                  <select value={campaignForm.organizationId || selectedOrg?.id || ''} onChange={(event) => setCampaignForm({ ...campaignForm, organizationId: event.target.value })}>{myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}</select>
+                  <select value={campaignForm.category} onChange={(event) => setCampaignForm({ ...campaignForm, category: event.target.value })}>{['GENERAL', 'ZAKAT', 'SADAQAH', 'BUILDING_FUND', 'RAMADAN', 'CAMPAIGN'].map((item) => <option key={item} value={item}>{item.replaceAll('_', ' ')}</option>)}</select>
+                  <input required placeholder="Campaign title" value={campaignForm.title} onChange={(event) => setCampaignForm({ ...campaignForm, title: event.target.value })} />
+                  <input inputMode="decimal" placeholder="Goal amount" value={campaignForm.goal} onChange={(event) => setCampaignForm({ ...campaignForm, goal: event.target.value })} />
+                  <textarea placeholder="Description" value={campaignForm.description} onChange={(event) => setCampaignForm({ ...campaignForm, description: event.target.value })} />
+                  <button className="primary-button">Create campaign</button>
+                </form>
+                <form className="profile-form" onSubmit={submitManualDonation}>
+                  <div className="section-title compact-title"><h3>Record donation</h3><span>Receipt</span></div>
+                  <select value={donationForm.organizationId || selectedOrg?.id || ''} onChange={(event) => setDonationForm({ ...donationForm, organizationId: event.target.value })}>{myOrganizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}</select>
+                  <select value={donationForm.campaignId} onChange={(event) => setDonationForm({ ...donationForm, campaignId: event.target.value })}>
+                    <option value="">No campaign</option>
+                    {donationDashboard.campaigns?.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.title}</option>)}
+                  </select>
+                  <input required inputMode="decimal" placeholder="Amount" value={donationForm.amount} onChange={(event) => setDonationForm({ ...donationForm, amount: event.target.value })} />
+                  <select value={donationForm.category} onChange={(event) => setDonationForm({ ...donationForm, category: event.target.value })}>{['GENERAL', 'ZAKAT', 'SADAQAH', 'BUILDING_FUND', 'RAMADAN'].map((item) => <option key={item} value={item}>{item.replaceAll('_', ' ')}</option>)}</select>
+                  <input placeholder="Donor name" value={donationForm.donorName} onChange={(event) => setDonationForm({ ...donationForm, donorName: event.target.value })} />
+                  <input type="email" placeholder="Receipt email" value={donationForm.donorEmail} onChange={(event) => setDonationForm({ ...donationForm, donorEmail: event.target.value })} />
+                  <label className="check-toggle"><input type="checkbox" checked={donationForm.recurring} onChange={(event) => setDonationForm({ ...donationForm, recurring: event.target.checked })} />Recurring</label>
+                  {donationForm.recurring && <select value={donationForm.frequency} onChange={(event) => setDonationForm({ ...donationForm, frequency: event.target.value })}><option value="WEEKLY">Weekly</option><option value="MONTHLY">Monthly</option></select>}
+                  <label className="check-toggle"><input type="checkbox" checked={donationForm.anonymous} onChange={(event) => setDonationForm({ ...donationForm, anonymous: event.target.checked })} />Anonymous</label>
+                  <button className="primary-button">Record and send receipt</button>
+                </form>
+              </div>
+              <div className="stack-list">
+                {(donationDashboard.campaigns || []).map((campaign) => {
+                  const raised = campaign.raisedCents || 0;
+                  const goal = campaign.goalCents || 0;
+                  const pct = goal ? Math.min(100, Math.round((raised / goal) * 100)) : 0;
+                  return <article className="mini-row campaign-row" key={campaign.id}><strong>{campaign.title}</strong><span>{campaign.category} - ${(raised / 100).toFixed(0)}{goal ? ` / $${(goal / 100).toFixed(0)}` : ''}</span>{goal > 0 && <div className="campaign-progress"><span style={{ width: `${pct}%` }} /></div>}<p>{campaign.description || `${campaign.donationCount || 0} donations recorded.`}</p></article>;
+                })}
+                {(donationDashboard.donations || []).slice(0, 8).map((donation) => <article className="mini-row" key={donation.id}><strong>{donation.anonymous ? 'Anonymous donor' : donation.donorName || donation.user?.name || 'Donor'}</strong><span>${(donation.amountCents / 100).toFixed(2)} {donation.currency} - {donation.category}{donation.recurring ? ` - ${donation.frequency}` : ''}</span><p>{donation.receiptEmailSentAt ? 'Receipt sent' : 'Receipt pending or no email provided'}</p></article>)}
+              </div>
+            </section>
+          )}
+
           {user.accountType === 'ADMIN' && activeSection === 'applications' && (
             <section className="panel">
             <div className="section-title"><h2>Create Masjid Profile</h2></div>
@@ -3958,8 +4263,22 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                 <input placeholder="Image URL" value={postForm.imageUrl} onChange={(event) => setPostForm({ ...postForm, imageUrl: event.target.value })} />
                 <input placeholder="Location" value={postForm.location} onChange={(event) => setPostForm({ ...postForm, location: event.target.value })} />
                 <input required={postForm.type === 'EVENT'} type="datetime-local" value={postForm.eventTime} onChange={(event) => setPostForm({ ...postForm, eventTime: event.target.value })} />
+                <input type="datetime-local" value={postForm.publishAt} onChange={(event) => setPostForm({ ...postForm, publishAt: event.target.value })} aria-label="Schedule publish time" />
               </div>
               <textarea required placeholder={postForm.type === 'CLASS' ? 'Program description' : postForm.type === 'JOB' ? 'Job description' : postForm.type === 'VOLUNTEER' ? 'Volunteer role description' : postForm.type === 'EVENT' ? 'Event description' : 'What should followers know?'} value={postForm.content} onChange={(event) => setPostForm({ ...postForm, content: event.target.value })} />
+              <article className="post-preview-card">
+                <div className="thread-head">
+                  <div className="org-logo">{initials(myOrganizations.find((item) => item.id === (postForm.organizationId || myOrganizations[0]?.id))?.name || 'MC')}</div>
+                  <div>
+                    <strong>{myOrganizations.find((item) => item.id === (postForm.organizationId || myOrganizations[0]?.id))?.name || 'Selected masjid'}</strong>
+                    <p>{postForm.publishAt ? `Scheduled for ${new Date(postForm.publishAt).toLocaleString()}` : 'Publishes immediately'}</p>
+                  </div>
+                </div>
+                {postForm.imageUrl && <ResilientImage className="post-image" src={postForm.imageUrl} alt="" fallback={<div className="post-image-fallback">Image preview unavailable</div>} />}
+                <strong>{postForm.title || `${postDestination(postForm.type)} title`}</strong>
+                <p>{postForm.content || 'Post preview appears here before publishing.'}</p>
+                <div className="tag-row"><span>{postForm.type}</span>{postForm.location && <span>{postForm.location}</span>}{postForm.eventTime && <span>{new Date(postForm.eventTime).toLocaleString()}</span>}</div>
+              </article>
               <button className="primary-button">{postSubmitLabel(postForm.type)}</button>
             </form>
           </section>}
@@ -4141,6 +4460,10 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                   {org.prayerNotes && <p className="helper-text">{org.prayerNotes}</p>}
                   <div className="manager-row">
                     <span>Update standard prayers, add new prayers, add temporary prayers, and save prayer notes.</span>
+                    <label className="secondary-button file-action">
+                      Import CSV
+                      <input type="file" accept=".csv,text/csv" onChange={(event) => importPrayerCsv(org, event.target.files?.[0])} />
+                    </label>
                     <button onClick={() => startEditPrayers(org)}>Edit prayers</button>
                   </div>
                   {editingPrayerOrgId === org.id && (
@@ -4326,6 +4649,8 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                         <p>{post.content}</p>
                         {post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}
                         <div className="manager-row">
+                          <span>{post.viewCount || 0} reads, {post.likeCount || 0} likes</span>
+                          <button onClick={() => duplicatePostToComposer(post, org.id)}>Duplicate</button>
                           <button onClick={() => startEditPost(post)}>Edit post</button>
                           <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
                         </div>
@@ -4355,6 +4680,12 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                               <input placeholder="Image URL" value={editPostForm.imageUrl || ''} onChange={(event) => setEditPostForm({ ...editPostForm, imageUrl: event.target.value })} />
                               <input placeholder="Location" value={editPostForm.location || ''} onChange={(event) => setEditPostForm({ ...editPostForm, location: event.target.value })} />
                               <input type="datetime-local" value={editPostForm.eventTime || ''} onChange={(event) => setEditPostForm({ ...editPostForm, eventTime: event.target.value })} />
+                              <input type="datetime-local" value={editPostForm.publishAt || ''} onChange={(event) => setEditPostForm({ ...editPostForm, publishAt: event.target.value })} aria-label="Schedule publish time" />
+                              <select value={editPostForm.status || 'PUBLISHED'} onChange={(event) => setEditPostForm({ ...editPostForm, status: event.target.value })}>
+                                <option value="PUBLISHED">Published</option>
+                                <option value="SCHEDULED">Scheduled</option>
+                                <option value="DRAFT">Draft</option>
+                              </select>
                             </div>
                             <textarea required placeholder="Post content" value={editPostForm.content || ''} onChange={(event) => setEditPostForm({ ...editPostForm, content: event.target.value })} />
                             <div className="manager-row">
@@ -4364,6 +4695,8 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                           </form>
                         ) : (
                           <div className="manager-row">
+                            <span>{post.viewCount || 0} reads, {post.likeCount || 0} likes{post.publishAt ? `, scheduled ${new Date(post.publishAt).toLocaleString()}` : ''}</span>
+                            <button onClick={() => duplicatePostToComposer(post, org.id)}>Duplicate</button>
                             <button onClick={() => startEditPost(post)}>Edit post</button>
                             <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
                           </div>
@@ -4414,6 +4747,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                             <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
                             <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'ATTENDED', fromStatus: 'APPROVED' })}>Check in approved</button>
                             <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'NO_SHOW', fromStatus: 'APPROVED' })}>No-show approved</button>
+                            <button onClick={() => exportRegistrationsCsv(event)}>Export CSV</button>
                             <button onClick={() => startEditEvent(event)}>Edit event</button>
                             <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
                           </div>
@@ -4637,6 +4971,39 @@ function ExternalLinkButton({ url, children, className = 'secondary-button', onC
       }}
     >
       {children}
+    </button>
+  );
+}
+
+function DonationButton({ organization }) {
+  const [applePayReady, setApplePayReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (!window.ApplePaySession?.canMakePayments) return undefined;
+    Promise.resolve(window.ApplePaySession.canMakePayments()).then((ready) => {
+      if (active) setApplePayReady(Boolean(ready));
+    }).catch(() => {
+      if (active) setApplePayReady(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function donate(event) {
+    event.stopPropagation();
+    if (!organization?.donationUrl) return;
+    if (applePayReady) {
+      alert('Apple Pay is available on this device. Complete the donation through the masjid payment page. Connect a payment processor to enable in-app Apple Pay checkout.');
+    }
+    await openExternalUrl(organization.donationUrl).catch(() => window.location.assign(organization.donationUrl));
+  }
+
+  return (
+    <button type="button" className={applePayReady ? 'primary-button apple-pay-donate' : 'secondary-button'} onClick={donate}>
+      <HeartHandshake size={17} />
+      {applePayReady ? 'Donate with Apple Pay' : 'Donate'}
     </button>
   );
 }
@@ -5061,6 +5428,12 @@ function AuthenticatedApp() {
     await Promise.all([loadEvents(), loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
+  async function sendOrganizationNotification(organizationId, form) {
+    const result = await api(`/api/organizations/${organizationId}/notifications`, { method: 'POST', body: JSON.stringify(form) });
+    await loadNotificationHistory();
+    return result;
+  }
+
   async function deletePost(id) {
     if (!confirm('Delete this post?')) return;
     await api(`/api/posts/${id}`, { method: 'DELETE' });
@@ -5183,9 +5556,13 @@ function AuthenticatedApp() {
     }
     if (prayerResult.status === 'fulfilled') {
       const timings = prayerResult.value.timings || {};
-      setPrayerTimes(prayers.map((item) => ({ ...item, adhan: (timings[item.name] || item.adhan).slice(0, 5) })));
+      const nextPrayerTimes = prayers.map((item) => ({ ...item, adhan: (timings[item.name] || item.adhan).slice(0, 5) }));
+      setPrayerTimes(nextPrayerTimes);
+      writeCachedPrayerTimes(nextLocation, nextPrayerTimes);
     } else {
-      setPrayerTimes(prayers);
+      const cachedTimes = readCachedPrayerTimes(nextLocation);
+      setPrayerTimes(cachedTimes || prayers);
+      if (cachedTimes) setLocationStatus((current) => `${current} Showing cached prayer times for offline use.`);
     }
   }
 
@@ -5527,6 +5904,19 @@ function AuthenticatedApp() {
     setTimeout(() => bootstrap().catch(console.error), 0);
   }
 
+  function enterGuestMode() {
+    setUser(guestUser);
+    setUsers([]);
+    setPosts([]);
+    setEvents(seedEvents);
+    setMasjids(withLocalDistance(seedOrganizationsWithoutPrograms, defaultLocation));
+    setProfileSocial({ followers: [], following: [], followRequests: [], connections: [], followingMasjids: [], favoriteMasjids: [], savedEvents: [], affiliatedMasjids: [] });
+    setLocation(defaultLocation);
+    setLocationStatus('Guest mode uses Milton fallback data. Enable location for nearby masjids and local prayer times.');
+    navigate('/masjids', { replace: true });
+    setTimeout(() => loadLocationData(defaultLocation).catch(console.error), 0);
+  }
+
   function openProfile(person) {
     setViewedUser(person);
     loadProfileSocial(person.id).catch(console.error);
@@ -5580,7 +5970,7 @@ function AuthenticatedApp() {
     return index.filter((item) => `${item.kind} ${item.title} ${item.subtitle}`.toLowerCase().includes(query)).slice(0, 8);
   }, [searchQuery, users, prioritizedPosts, prioritizedMasjids, prioritizedEvents, prioritizedOpportunities]);
 
-  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
+  if (!user) return <div className="app auth-only"><AuthScreen onLogin={afterLogin} onExplore={enterGuestMode} initialMode={locationRoute.pathname === '/register' ? 'register' : 'login'} /></div>;
 
   const screens = {
     home: <HomeScreen user={user} posts={prioritizedPosts} masjids={prioritizedMasjids} favoriteMasjids={favoriteMasjids} locationStatus={locationStatus} requestLocation={requestLocation} prayerTimes={prayerTimes} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} notificationState={notificationState} enablePushNotifications={enablePushNotifications} prayerPreferences={prayerPreferences} aiRecommendations={aiRecommendations} aiRecommendationsLoading={aiRecommendationsLoading} />,
@@ -5597,7 +5987,7 @@ function AuthenticatedApp() {
     messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} setMessages={setMessages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setMessagesThreadActive(false); setTab('messages'); }} onThreadActiveChange={setMessagesThreadActive} onRefresh={() => loadNetwork()} />,
     profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); loadProfileSocial(user.id); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} onRefreshSocial={() => loadProfileSocial(viewedUser?.id || user.id)} onMessage={startMessage} />,
     settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} theme={theme} setTheme={setTheme} />,
-    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
+    dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} sendOrganizationNotification={sendOrganizationNotification} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };
 
   return (
@@ -5658,6 +6048,7 @@ function AuthenticatedApp() {
     </div>
   </div>
 )}
+      <IosInstallPrompt />
       <div className="app-glow" />
     </>
   );
