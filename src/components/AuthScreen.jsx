@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarDays, Check, KeyRound, Mail, MapPin, Sparkles, User2 } from 'lucide-react';
+import { CalendarDays, Check, KeyRound, Mail, MapPin, Search, Sparkles, User2 } from 'lucide-react';
 import { API_BASE as API, persistAuth } from '../lib/authStorage.js';
 const requiredInterests = ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile'];
 const optionalInterests = ['Events', 'Library', 'Volunteer', 'Jobs', 'Business'];
 
-export default function AuthScreen({ onLogin, initialMode = 'login' }) {
+export default function AuthScreen({ onLogin, onExplore, initialMode = 'login' }) {
   const params = new URLSearchParams(window.location.search);
   const resetToken = params.get('resetToken') || '';
   const [mode, setMode] = useState(resetToken ? 'reset' : initialMode);
   const [message, setMessage] = useState('');
+  const [socialLoading, setSocialLoading] = useState('');
   const [form, setForm] = useState({
     name: '',
     email: params.get('email') || '',
@@ -90,6 +91,59 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
     } catch (err) {
       console.error(err);
       alert('Cannot reach Mujtama right now. Check your connection and try again.');
+    }
+  }
+
+  async function completeProviderLogin(provider, identityToken, profile = {}) {
+    setSocialLoading(provider);
+    setMessage('');
+    try {
+      const res = await fetch(`${API}/api/auth/oauth/${provider}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identityToken, profile })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || `${provider} sign-in failed`);
+      persistAuth(data.user, data.token);
+      onLogin(data.user);
+    } catch (err) {
+      console.error(err);
+      alert('Cannot complete social sign-in right now. Check your connection and try again.');
+    } finally {
+      setSocialLoading('');
+    }
+  }
+
+  async function socialSignIn(provider) {
+    if (provider === 'google') {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      if (!clientId || !window.google?.accounts?.id) {
+        setMessage('Google Sign-In needs VITE_GOOGLE_CLIENT_ID and the Google Identity script configured.');
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (response) => completeProviderLogin('google', response.credential)
+      });
+      window.google.accounts.id.prompt();
+      return;
+    }
+    if (provider === 'apple') {
+      const clientId = import.meta.env.VITE_APPLE_CLIENT_ID;
+      const redirectURI = import.meta.env.VITE_APPLE_REDIRECT_URI || window.location.origin;
+      if (!clientId || !window.AppleID?.auth) {
+        setMessage('Sign in with Apple needs VITE_APPLE_CLIENT_ID and AppleID JS configured.');
+        return;
+      }
+      try {
+        window.AppleID.auth.init({ clientId, scope: 'name email', redirectURI, usePopup: true });
+        const response = await window.AppleID.auth.signIn();
+        await completeProviderLogin('apple', response?.authorization?.id_token, response?.user?.name ? { name: [response.user.name.firstName, response.user.name.lastName].filter(Boolean).join(' ') } : {});
+      } catch (error) {
+        console.error(error);
+        setMessage('Apple sign-in was cancelled or could not be completed.');
+      }
     }
   }
 
@@ -183,7 +237,24 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
         {mode === 'reset' && <input required placeholder="Confirm new password" type="password" value={form.confirmPassword} onChange={e => setForm({ ...form, confirmPassword: e.target.value })} />}
         <button className="primary-button">{mode === 'login' ? 'Login' : mode === 'register' ? 'Create account' : mode === 'verify' ? <><Mail size={18} />Verify and log in</> : mode === 'forgot' ? <><Mail size={18} />Send reset code</> : <><KeyRound size={18} />Save password</>}</button>
       </form>
+      {['login', 'register'].includes(mode) && (
+        <div className="social-auth-row">
+          <button type="button" className="secondary-button" onClick={() => socialSignIn('apple')} disabled={Boolean(socialLoading)}>
+            {socialLoading === 'apple' ? 'Connecting...' : 'Sign in with Apple'}
+          </button>
+          <button type="button" className="secondary-button" onClick={() => socialSignIn('google')} disabled={Boolean(socialLoading)}>
+            {socialLoading === 'google' ? 'Connecting...' : 'Sign in with Google'}
+          </button>
+        </div>
+      )}
       {message && <p className="helper-text reset-message">{message}</p>}
+
+      {onExplore && mode === 'login' && (
+        <button type="button" className="secondary-button auth-explore-button" onClick={onExplore}>
+          <Search size={18} />
+          Explore masjids first
+        </button>
+      )}
 
       <div className="auth-links">
         <button className="text-btn" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setMessage(''); }}>

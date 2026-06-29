@@ -1,0 +1,26 @@
+{
+  "name": "Mujtama Connect",
+  "short_name": "Mujtama",
+  "description": "Masjid discovery, prayer times, announcements, events, and Muslim community connections.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef2f5",
+  "theme_color": "#0f766e",
+  "categories": ["social", "lifestyle", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/mujtama-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/mujtama-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

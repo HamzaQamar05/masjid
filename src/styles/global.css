@@ -1229,6 +1229,48 @@ a {
   border: 1px solid #dce6e3;
 }
 
+.post-preview-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.post-preview-card .post-image {
+  min-height: 180px;
+  max-height: 320px;
+}
+
+.campaign-progress {
+  width: 100%;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dce6e3;
+}
+
+.campaign-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #16a34a);
+}
+
+.file-action {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.file-action input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .status-pill {
   width: fit-content;
   display: inline-flex;
@@ -9837,4 +9879,223 @@ select:focus {
 .mobile-settings-link {
   margin-top: 10px;
   margin-bottom: 0;
+}
+
+.auth-explore-button {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.social-auth-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.social-auth-row button,
+.apple-pay-donate,
+.admin-push-composer button {
+  min-height: 44px;
+}
+
+.admin-push-composer .compact-admin-form {
+  margin-top: 0;
+}
+
+.prayer-date-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prayer-date-card h2,
+.prayer-date-card p {
+  margin: 0;
+}
+
+.prayer-date-card span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.ios-install-prompt {
+  position: fixed;
+  z-index: 90;
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: min(520px, calc(100% - 32px));
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 48px 14px 14px;
+  border: 1px solid var(--line, var(--border));
+  border-radius: 8px;
+  background: var(--surface-raised, var(--panel-bg));
+  color: var(--ink, var(--text));
+  box-shadow: var(--shadow);
+}
+
+.ios-install-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.ios-install-icon {
+  width: 54px;
+  height: 54px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--brand);
+}
+
+.ios-install-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ios-install-prompt strong,
+.ios-install-prompt p {
+  margin: 0;
+}
+
+.ios-install-prompt p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.ios-install-prompt ol {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ios-install-prompt li {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink, var(--text));
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.discovery-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.discovery-toolbar > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.discovery-toolbar strong,
+.discovery-toolbar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discovery-toolbar span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.masjid-map-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 14px;
+}
+
+.map-result-list {
+  min-height: 0;
+  max-height: min(620px, calc(100dvh - 210px));
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.map-result-list button {
+  min-width: 0;
+  min-height: 72px;
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid var(--line, var(--border));
+  border-radius: 8px;
+  background: var(--surface, var(--panel-bg));
+  color: var(--ink, var(--text));
+  text-align: left;
+}
+
+.map-result-list span,
+.map-result-list small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-result-list span {
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.map-result-list strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 880px) {
+  .social-auth-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ios-install-prompt {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    width: auto;
+  }
+
+  .prayer-date-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .discovery-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .discovery-toolbar strong,
+  .discovery-toolbar span {
+    white-space: normal;
+  }
+
+  .masjid-map-view {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-result-list {
+    max-height: none;
+  }
 }

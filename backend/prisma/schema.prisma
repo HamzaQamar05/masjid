@@ -52,6 +52,7 @@ model User {
 
   eventsCreated            Event[]                @relation("EventCreator")
   postsCreated             Post[]                 @relation("PostCreator")
+  donations                Donation[]
   registrations            EventRegistration[]
   messagesSent             Message[]              @relation("SentMessages")
   messagesReceived         Message[]              @relation("ReceivedMessages")
@@ -191,6 +192,8 @@ model Organization {
   aiUsageLogs   AiUsageLog[]
   aiCaches      AiCache[]
   aiNewsletterDrafts AiNewsletterDraft[]
+  donationCampaigns DonationCampaign[]
+  donations         Donation[]
 
   @@index([type, city])
 }
@@ -265,6 +268,10 @@ model Post {
   imageUrl       String?
   location       String?
   eventTime      DateTime?
+  status         String    @default("PUBLISHED")
+  publishAt      DateTime?
+  publishedAt    DateTime? @default(now())
+  viewCount      Int       @default(0)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -275,7 +282,53 @@ model Post {
   comments     PostComment[]
 
   @@index([organizationId, createdAt])
+  @@index([organizationId, status, publishAt])
   @@index([type, createdAt])
+}
+
+model DonationCampaign {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  description    String?
+  category       String   @default("GENERAL")
+  goalCents      Int?
+  raisedCents    Int      @default(0)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  donations    Donation[]
+
+  @@index([organizationId, active, createdAt])
+}
+
+model Donation {
+  id             String   @id @default(cuid())
+  organizationId String
+  campaignId     String?
+  userId         String?
+  donorName      String?
+  donorEmail     String?
+  amountCents    Int
+  currency       String   @default("CAD")
+  category       String   @default("GENERAL")
+  recurring      Boolean  @default(false)
+  frequency      String?
+  anonymous      Boolean  @default(false)
+  receiptEmailSentAt DateTime?
+  provider       String?
+  providerRef    String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     DonationCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  user         User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([campaignId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model SavedPost {
