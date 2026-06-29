@@ -1258,6 +1258,26 @@ a {
   background: linear-gradient(90deg, #0f766e, #16a34a);
 }
 
+.empty-marketplace-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.empty-marketplace-state svg {
+  flex: 0 0 auto;
+  color: var(--brand);
+}
+
+.empty-marketplace-state strong,
+.empty-marketplace-state p {
+  margin: 0;
+}
+
+.empty-marketplace-state p {
+  margin-top: 4px;
+}
+
 .file-action {
   position: relative;
   overflow: hidden;

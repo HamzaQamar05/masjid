@@ -453,7 +453,7 @@ function publicOrganization(org, viewerId, options = {}) {
   });
   const now = new Date();
   const posts = (org.posts || [])
-    .filter((post) => viewerCanManage || (post.status !== 'SCHEDULED' && (!post.publishAt || post.publishAt <= now)))
+    .filter((post) => viewerCanManage || isPublicPost(post, now))
     .filter((post) => hasMatchingEvent(post, events))
     .map(publicPost);
   const opportunities = (org.opportunities || []).map((opportunity) => {
@@ -657,6 +657,13 @@ function publicPost(post) {
     likeCount: _count?.likedBy ?? post.likedBy?.length ?? 0,
     saveCount: _count?.savedBy ?? post.savedBy?.length ?? 0
   };
+}
+
+function isPublicPost(post, now = new Date()) {
+  const status = String(post?.status || 'PUBLISHED').toUpperCase();
+  if (status === 'DRAFT') return false;
+  if (status === 'SCHEDULED') return Boolean(post.publishAt && post.publishAt <= now);
+  return !post.publishAt || post.publishAt <= now;
 }
 
 function sameDateTime(left, right) {
@@ -3006,6 +3013,7 @@ app.put('/api/ai/newsletters/:draftId', auth, aiLimiter, async (req, res) => {
 });
 
 app.get('/api/posts', auth, async (req, res) => {
+  const now = new Date();
   const follows = await prisma.organizationFollow.findMany({ where: { userId: req.user.id }, select: { organizationId: true, notifyPrayers: true } });
   const followedIds = new Set(follows.map((follow) => follow.organizationId));
   const favorites = await prisma.favoriteMasjid.findMany({ where: { userId: req.user.id }, select: { organizationId: true } });
@@ -3019,9 +3027,8 @@ app.get('/api/posts', auth, async (req, res) => {
     AND: [
       {
         OR: [
-          { status: { not: 'SCHEDULED' } },
-          { publishAt: null },
-          { publishAt: { lte: new Date() } }
+          { status: 'PUBLISHED', OR: [{ publishAt: null }, { publishAt: { lte: now } }] },
+          { status: 'SCHEDULED', publishAt: { lte: now } }
         ]
       }
     ],
@@ -3198,8 +3205,24 @@ app.put('/api/posts/:id', auth, async (req, res) => {
   if (req.body.publishAt !== undefined) {
     data.publishAt = req.body.publishAt ? normalizeRequiredDate(req.body.publishAt) : null;
     if (req.body.publishAt && !data.publishAt) return res.status(400).json({ error: 'Publish time must be a valid date' });
+  }
+  if (req.body.status !== undefined) {
+    const status = String(req.body.status || '').toUpperCase();
+    if (!['DRAFT', 'PUBLISHED', 'SCHEDULED'].includes(status)) return res.status(400).json({ error: 'Post status must be draft, published, or scheduled' });
+    data.status = status;
+  } else if (req.body.publishAt !== undefined) {
     data.status = data.publishAt && data.publishAt > new Date() ? 'SCHEDULED' : 'PUBLISHED';
-    data.publishedAt = data.status === 'PUBLISHED' ? (post.publishedAt || new Date()) : null;
+  }
+  if (data.status === 'PUBLISHED') {
+    data.publishAt = null;
+    data.publishedAt = post.publishedAt || new Date();
+  }
+  if (data.status === 'DRAFT') data.publishedAt = null;
+  if (data.status === 'SCHEDULED') {
+    const nextPublishAt = data.publishAt !== undefined ? data.publishAt : post.publishAt;
+    if (!nextPublishAt || nextPublishAt <= new Date()) return res.status(400).json({ error: 'Scheduled posts require a future publish time' });
+    data.publishAt = nextPublishAt;
+    data.publishedAt = null;
   }
   const updated = await prisma.post.update({ where: { id: post.id }, data, include: { author: true, organization: true } });
   res.json(publicPost(updated));

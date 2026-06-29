@@ -217,6 +217,8 @@ function tabForPath(pathname) {
   if (pathname.startsWith('/events')) return 'events';
   if (pathname.startsWith('/masjids/') && pathname !== '/masjids') return 'masjidProfile';
   if (pathname.startsWith('/masjids')) return 'organizations';
+  if (pathname.startsWith('/jobs')) return 'jobs';
+  if (pathname.startsWith('/volunteers')) return 'volunteers';
   if (pathname.startsWith('/network/jobs')) return 'jobs';
   if (pathname.startsWith('/network/volunteers')) return 'volunteers';
   if (pathname.startsWith('/network')) return 'network';
@@ -2299,6 +2301,7 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
   const activeQuestions = activeOpportunity ? normalizeList(activeOpportunity.applicationQuestions || activeOpportunity.questions) : [];
   const preferenceKey = type === 'JOB' ? 'jobOpportunities' : 'volunteerOpportunities';
   const sourceKey = type === 'JOB' ? 'jobOpportunitySource' : 'volunteerOpportunitySource';
+  const listingLabel = type === 'JOB' ? 'jobs' : 'volunteer roles';
   const preferences = { ...defaultNotificationPreferences, ...notificationPreferences };
   function updateApplicationForm(id, field, value) {
     setApplicationForms((current) => ({ ...current, [id]: { ...(current[id] || {}), [field]: value } }));
@@ -2336,7 +2339,7 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
         </section>
       )}
       <section className="filter-panel opportunity-filters">
-        <label><Search size={15} /><input placeholder={`Search ${type === 'JOB' ? 'jobs' : 'volunteer roles'}`} value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} /></label>
+        <label><Search size={15} /><input placeholder={`Search ${listingLabel}`} value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} /></label>
         <select value={workTypeFilter} onChange={(event) => setWorkTypeFilter(event.target.value)}>{workTypeOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All types' : item}</option>)}</select>
         <select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}>{locationOptions.map((item) => <option key={item} value={item}>{item === 'all' ? 'All locations' : item}</option>)}</select>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
@@ -2373,7 +2376,15 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
             </div>
           </article>
         );})}
-        {!visible.length && <section className="panel"><p className="helper-text">No listings match those filters yet.</p></section>}
+        {!visible.length && (
+          <section className="panel empty-marketplace-state">
+            <Briefcase size={22} />
+            <div>
+              <strong>{baseVisible.length ? 'No matching listings' : `No ${listingLabel} posted yet`}</strong>
+              <p className="helper-text">{baseVisible.length ? 'Try a broader search or clear one of the filters.' : 'New masjid and community listings will appear here as they are published.'}</p>
+            </div>
+          </section>
+        )}
       </div>
       {activeOpportunity && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Apply to ${activeOpportunity.title}`}>
@@ -6023,7 +6034,7 @@ function AuthenticatedApp() {
     <div className="bottom-sheet" onClick={(event) => event.stopPropagation()}>
       <div className="sheet-header">
         <h2>Notifications</h2>
-        <button onClick={() => setShowNotifications(false)}>×</button>
+        <button className="icon-button" onClick={() => setShowNotifications(false)} aria-label="Close notifications"><X size={18} /></button>
       </div>
 
       <div className="people-list">
