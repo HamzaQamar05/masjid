@@ -81,6 +81,10 @@ export default function AuthScreen({ onLogin, initialMode = 'login' }) {
       });
       const data = await res.json();
       if (!res.ok) return alert(data.error || 'Something went wrong');
+      if (!data.resetCodeSent) {
+        setMessage(data.message || 'No reset code was sent.');
+        return;
+      }
       setMessage(data.devResetCode ? `${data.message} Dev code: ${data.devResetCode}` : 'Check your email for the reset code.');
       setMode('reset');
     } catch (err) {

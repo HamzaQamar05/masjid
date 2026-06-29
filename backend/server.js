@@ -917,6 +917,9 @@ async function sendAppEmail({ to, subject, text, html }) {
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT || 587),
       secure: process.env.SMTP_SECURE === 'true',
+      connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 10000),
+      greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 10000),
+      socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 15000),
       auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
     });
     await transporter.sendMail({
@@ -1667,15 +1670,21 @@ app.post('/api/auth/verify-email', authLimiter, async (req, res) => {
 app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+  if (!user) return res.status(404).json({ error: 'No account exists for that email.', resetCodeSent: false });
   if (user) {
     const code = createEmailCode();
     const passwordResetTokenHash = await bcrypt.hash(code, 10);
     const passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
     await prisma.user.update({ where: { id: user.id }, data: { passwordResetTokenHash, passwordResetExpiresAt } });
-    await sendPasswordResetEmail(user, code);
-    return res.json({ message: 'Password reset code sent if the account exists.', devResetCode: process.env.NODE_ENV === 'production' ? undefined : code });
+    try {
+      await sendPasswordResetEmail(user, code);
+      return res.json({ message: 'Password reset code sent.', resetCodeSent: true, devResetCode: process.env.NODE_ENV === 'production' ? undefined : code });
+    } catch (err) {
+      console.error('[password-reset-email]', err);
+      await prisma.user.update({ where: { id: user.id }, data: { passwordResetTokenHash: null, passwordResetExpiresAt: null } });
+      return res.status(502).json({ error: 'Email service is not configured correctly. Please try again later.', resetCodeSent: false });
+    }
   }
-  res.json({ message: 'Password reset code sent if the account exists.' });
 });
 
 app.post('/api/auth/reset-password', passwordResetLimiter, async (req, res) => {
