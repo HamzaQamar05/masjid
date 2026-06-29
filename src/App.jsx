@@ -3179,6 +3179,45 @@ function MasjidReadinessPanel({ organization, metrics = {}, openSection, openUse
   );
 }
 
+function AdminActionModal({ dialog, values, setValues, onCancel, onSubmit }) {
+  if (!dialog) return null;
+  const isFields = dialog.type === 'fields';
+  const isConfirm = dialog.type === 'confirm';
+  const submitLabel = dialog.confirmLabel || (isConfirm ? 'Confirm' : 'Done');
+  return (
+    <div className="modal-backdrop admin-action-backdrop" role="dialog" aria-modal="true" aria-label={dialog.title || 'Admin action'} onClick={onCancel}>
+      <form className="admin-action-modal" onSubmit={onSubmit} onClick={(event) => event.stopPropagation()}>
+        <div className="sheet-header">
+          <div>
+            <p className="eyebrow">{dialog.eyebrow || 'Dashboard'}</p>
+            <h2>{dialog.title || 'Confirm action'}</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onCancel} aria-label="Close dialog"><X size={18} /></button>
+        </div>
+        {dialog.message && <p className="admin-action-message">{dialog.message}</p>}
+        {isFields && (
+          <div className="admin-action-fields">
+            {(dialog.fields || []).map((field) => (
+              <label key={field.name}>
+                <span>{field.label}</span>
+                {field.type === 'textarea' ? (
+                  <textarea rows={field.rows || 4} value={values[field.name] || ''} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} placeholder={field.placeholder || ''} required={field.required} />
+                ) : (
+                  <input type={field.type || 'text'} min={field.min} step={field.step} value={values[field.name] || ''} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} placeholder={field.placeholder || ''} required={field.required} />
+                )}
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="admin-action-footer">
+          {(isConfirm || isFields) && <button className="secondary-button" type="button" onClick={onCancel}>Cancel</button>}
+          <button className={dialog.tone === 'danger' ? 'secondary-button danger' : 'primary-button'} type="submit">{submitLabel}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrganizations, myOrganizations = [], dashboardOrganizationsState = {}, createOrganization, onboardOrganization, updateOrganization, createOpportunity, updateOpportunity, createPost, updatePost, createEvent, updateEvent, sendOrganizationNotification, deletePost, deleteEvent, updateApplication, bulkUpdateApplications, updateRegistration, bulkUpdateRegistrations, deleteOpportunity, addOrganizationPerson, inviteOrganizationPerson, removeOrganizationPerson, removeOrganizationFollower, openProfile, openOrganization, startMessage, setTab }) {
   const emptyOrgForm = { name: '', type: 'MASJID', city: '', address: '', website: '', email: '', phone: '', ownerEmail: '', description: '', facilities: '', imageUrl: '', heroImageUrl: '', donationUrl: '', instagramUrl: '', facebookUrl: '', latitude: '', longitude: '' };
   const [orgForm, setOrgForm] = useState(emptyOrgForm);
@@ -3215,6 +3254,9 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   const [selectedAdminUserId, setSelectedAdminUserId] = useState('');
   const [adminWarnings, setAdminWarnings] = useState([]);
   const [onboardForm, setOnboardForm] = useState({ organizationId: '', ownerName: '', ownerEmail: '' });
+  const [adminDialog, setAdminDialog] = useState(null);
+  const [adminDialogValues, setAdminDialogValues] = useState({});
+  const adminDialogResolveRef = useRef(null);
   const query = dashboardQuery.trim().toLowerCase();
   const accountQuery = adminUserQuery.trim().toLowerCase();
   const peopleSearch = peopleQuery.trim().toLowerCase();
@@ -3290,6 +3332,38 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   }).length;
   const unreadMessages = (threads || []).reduce((sum, thread) => sum + (thread.unread || 0), 0);
   const messageRequests = (threads || []).filter((thread) => thread.folder === 'REQUEST').length;
+  function openAdminDialog(dialog) {
+    return new Promise((resolve) => {
+      adminDialogResolveRef.current = resolve;
+      setAdminDialogValues(Object.fromEntries((dialog.fields || []).map((field) => [field.name, field.defaultValue ?? ''])));
+      setAdminDialog(dialog);
+    });
+  }
+  function resolveAdminDialog(value) {
+    const resolve = adminDialogResolveRef.current;
+    adminDialogResolveRef.current = null;
+    setAdminDialog(null);
+    setAdminDialogValues({});
+    resolve?.(value);
+  }
+  function showNotice(message, title = 'Done') {
+    return openAdminDialog({ type: 'notice', title, message, confirmLabel: 'OK' });
+  }
+  function confirmAction(title, message, options = {}) {
+    return openAdminDialog({ type: 'confirm', title, message, confirmLabel: options.confirmLabel || 'Confirm', tone: options.tone });
+  }
+  function requestFields(title, fields, options = {}) {
+    return openAdminDialog({ type: 'fields', title, message: options.message, fields, confirmLabel: options.confirmLabel || 'Save', tone: options.tone });
+  }
+  function cancelAdminDialog() {
+    resolveAdminDialog(null);
+  }
+  function submitAdminDialog(event) {
+    event.preventDefault();
+    if (adminDialog?.type === 'fields') return resolveAdminDialog(adminDialogValues);
+    if (adminDialog?.type === 'confirm') return resolveAdminDialog(true);
+    return resolveAdminDialog(true);
+  }
   function openDashboardSection(section) {
     setEditingOrgId('');
     setEditOrgForm({});
@@ -3382,7 +3456,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     if (activeSection === 'donations' && selectedOrg?.id) loadDonationDashboard(selectedOrg.id).catch(console.error);
   }, [activeSection, selectedOrg?.id]);
   function openUserView() {
-    if (!selectedOrg?.id) return alert('Create or select a masjid profile first.');
+    if (!selectedOrg?.id) return showNotice('Create or select a masjid profile first.', 'Profile needed');
     openOrganization(selectedOrg.id).catch(console.error);
   }
   function activeAiOrganizationId(preferred = postForm.organizationId || eventForm.organizationId || classForm.organizationId) {
@@ -3398,9 +3472,9 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   }
   async function generateAiCopy(mode = 'announcement', target = 'post') {
     const organizationId = activeAiOrganizationId(target === 'event' ? eventForm.organizationId : postForm.organizationId);
-    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
     const notes = aiNotes.trim() || (target === 'event' ? `${eventForm.title}\n${eventForm.description}` : `${postForm.title}\n${postForm.content}`).trim();
-    if (!notes) return alert('Add rough notes or draft text first.');
+    if (!notes) return showNotice('Add rough notes or draft text first.', 'Draft notes needed');
     setAiLoading(`${target}:${mode}`);
     setAiMessage('');
     try {
@@ -3434,7 +3508,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   }
   async function extractPosterDetails(file) {
     const organizationId = activeAiOrganizationId(eventForm.organizationId);
-    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
     if (!file) return;
     setAiLoading('poster');
     setAiMessage('');
@@ -3461,7 +3535,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   }
   async function generateNewsletter() {
     const organizationId = activeAiOrganizationId();
-    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
     setAiLoading('newsletter');
     setAiMessage('');
     try {
@@ -3481,7 +3555,8 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     openDashboardSection('posts');
   }
   async function deleteUser(id) {
-    if (!confirm('Delete this user and their messages/events?')) return;
+    const confirmed = await confirmAction('Delete account?', 'This removes the user account and related messages/events. This cannot be undone.', { confirmLabel: 'Delete account', tone: 'danger' });
+    if (!confirmed) return;
     await api(`/api/users/${id}`, { method: 'DELETE' });
     await loadNetwork();
   }
@@ -3491,20 +3566,25 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   }
   async function resetUserPassword(person) {
     if (!person?.id) return;
-    if (!confirm(`Generate a password reset link for ${person.email}?`)) return;
+    const confirmed = await confirmAction('Generate password reset?', `Create a reset link for ${person.email}?`, { confirmLabel: 'Generate link' });
+    if (!confirmed) return;
     const result = await api(`/api/users/${person.id}/password-reset`, { method: 'POST' });
     if (result.resetLink) {
       await navigator.clipboard?.writeText(result.resetLink).catch(() => {});
-      alert(`Password reset link generated${navigator.clipboard ? ' and copied to clipboard' : ''}:\n${result.resetLink}`);
+      await showNotice(`Password reset link generated${navigator.clipboard ? ' and copied to clipboard' : ''}:\n${result.resetLink}`, 'Password reset ready');
     } else {
-      alert(result.message || 'Password reset generated.');
+      await showNotice(result.message || 'Password reset generated.', 'Password reset ready');
     }
   }
   async function warnUser(person) {
     if (!person?.id) return;
-    const reason = prompt(`Warning reason for ${person.name}?`, 'Community guideline warning');
-    if (!reason) return;
-    const note = prompt('Optional internal note', '') || '';
+    const values = await requestFields(`Warn ${person.name}`, [
+      { name: 'reason', label: 'Warning reason', defaultValue: 'Community guideline warning', required: true },
+      { name: 'note', label: 'Internal note', type: 'textarea', defaultValue: '' }
+    ], { confirmLabel: 'Send warning' });
+    if (!values?.reason?.trim()) return;
+    const reason = values.reason.trim();
+    const note = values.note?.trim() || '';
     await api(`/api/users/${person.id}/warnings`, { method: 'POST', body: JSON.stringify({ reason, note }) });
     await Promise.all([loadNetwork(), loadWarnings(person.id)]);
   }
@@ -3517,23 +3597,23 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitOrg(event) {
     event.preventDefault();
     const created = await createOrganization(orgForm);
-    if (created?.temporaryPassword) alert(`Masjid login created for ${orgForm.ownerEmail}. Temporary password: ${created.temporaryPassword}`);
+    if (created?.temporaryPassword) await showNotice(`Masjid login created for ${orgForm.ownerEmail}. Temporary password: ${created.temporaryPassword}`, 'Masjid login created');
     setOrgForm(emptyOrgForm);
   }
   async function submitOnboard(event) {
     event.preventDefault();
     const organizationId = onboardForm.organizationId || onboardingOrg?.id;
-    if (!organizationId) return alert('Create or select a masjid first.');
-    if (!onboardForm.ownerEmail.trim()) return alert('Masjid admin login email is required.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
+    if (!onboardForm.ownerEmail.trim()) return showNotice('Masjid admin login email is required.', 'Email needed');
     const result = await onboardOrganization(organizationId, onboardForm);
-    if (result?.temporaryPassword) alert(`Masjid account created for ${onboardForm.ownerEmail}. Temporary password: ${result.temporaryPassword}`);
-    else alert(`Masjid account connected for ${onboardForm.ownerEmail}.`);
+    if (result?.temporaryPassword) await showNotice(`Masjid account created for ${onboardForm.ownerEmail}. Temporary password: ${result.temporaryPassword}`, 'Masjid account created');
+    else await showNotice(`Masjid account connected for ${onboardForm.ownerEmail}.`, 'Masjid account connected');
     setOnboardForm({ organizationId: '', ownerName: '', ownerEmail: '' });
   }
   async function submitOpp(event) {
     event.preventDefault();
     const organizationId = oppForm.organizationId || myOrganizations[0]?.id;
-    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
     await createOpportunity(organizationId, oppForm);
     setOppForm({ organizationId, type: 'VOLUNTEER', title: '', description: '', requirements: '', location: '', skills: '', hours: '', workType: 'volunteer', deadline: '', applicationQuestions: '' });
   }
@@ -3560,8 +3640,8 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitAnnouncement(event) {
     event.preventDefault();
     const organizationId = announcementForm.organizationId || myOrganizations[0]?.id;
-    if (!organizationId) return alert('Create or select a masjid first.');
-    if (!announcementForm.title.trim() || !announcementForm.content.trim()) return alert('Title and announcement content are required.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
+    if (!announcementForm.title.trim() || !announcementForm.content.trim()) return showNotice('Title and announcement content are required.', 'Announcement incomplete');
     const category = masjidAnnouncementTypes.find((item) => item.value === announcementForm.category) || masjidAnnouncementTypes[0];
     await createPost(organizationId, {
       type: category.postType,
@@ -3577,12 +3657,12 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitPushNotification(event) {
     event.preventDefault();
     const organizationId = pushForm.organizationId || selectedOrg?.id || myOrganizations[0]?.id;
-    if (!organizationId) return alert('Create or select a masjid first.');
-    if (!pushForm.title.trim() || !pushForm.body.trim()) return alert('Notification title and body are required.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
+    if (!pushForm.title.trim() || !pushForm.body.trim()) return showNotice('Notification title and body are required.', 'Notification incomplete');
     const result = await sendOrganizationNotification(organizationId, pushForm);
     const sent = result?.delivery?.push?.sent ?? 0;
     const skipped = result?.delivery?.push?.skipped ?? 0;
-    alert(`Notification queued. Sent: ${sent}. Skipped: ${skipped}.`);
+    await showNotice(`Notification queued. Sent: ${sent}. Skipped: ${skipped}.`, 'Notification queued');
     setPushForm({ organizationId, title: '', body: '', type: 'ANNOUNCEMENT', url: '' });
     await loadMyOrganizations(user, { preserveCurrent: true });
   }
@@ -3594,7 +3674,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitCampaign(event) {
     event.preventDefault();
     const organizationId = campaignForm.organizationId || selectedOrg?.id || myOrganizations[0]?.id;
-    if (!organizationId || !campaignForm.title.trim()) return alert('Select a masjid and add a campaign title.');
+    if (!organizationId || !campaignForm.title.trim()) return showNotice('Select a masjid and add a campaign title.', 'Campaign incomplete');
     await api(`/api/organizations/${organizationId}/donation-campaigns`, { method: 'POST', body: JSON.stringify(campaignForm) });
     setCampaignForm({ organizationId, title: '', category: 'GENERAL', goal: '', description: '' });
     await loadDonationDashboard(organizationId);
@@ -3602,9 +3682,9 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitManualDonation(event) {
     event.preventDefault();
     const organizationId = donationForm.organizationId || selectedOrg?.id || myOrganizations[0]?.id;
-    if (!organizationId || !donationForm.amount) return alert('Select a masjid and add an amount.');
+    if (!organizationId || !donationForm.amount) return showNotice('Select a masjid and add an amount.', 'Donation incomplete');
     const result = await api(`/api/organizations/${organizationId}/donations`, { method: 'POST', body: JSON.stringify({ ...donationForm, provider: 'MANUAL_ADMIN' }) });
-    alert(result.receiptSent ? 'Donation recorded and receipt sent.' : 'Donation recorded. Receipt email was not sent.');
+    await showNotice(result.receiptSent ? 'Donation recorded and receipt sent.' : 'Donation recorded. Receipt email was not sent.', 'Donation recorded');
     setDonationForm({ organizationId, campaignId: '', donorName: '', donorEmail: '', amount: '', category: 'GENERAL', recurring: false, frequency: 'MONTHLY', anonymous: false });
     await loadDonationDashboard(organizationId);
   }
@@ -3656,10 +3736,10 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitPost(event) {
     event.preventDefault();
     const organizationId = postForm.organizationId || myOrganizations[0]?.id;
-    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
     const type = String(postForm.type || 'ANNOUNCEMENT').toUpperCase();
     if (type === 'EVENT') {
-      if (!postForm.eventTime) return alert('Event date and time are required.');
+      if (!postForm.eventTime) return showNotice('Event date and time are required.', 'Event incomplete');
       await createEvent({
         organizationId,
         title: postForm.title,
@@ -3675,7 +3755,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
       return;
     }
     if (type === 'CLASS') {
-      if (!postForm.title.trim()) return alert('Program title is required.');
+      if (!postForm.title.trim()) return showNotice('Program title is required.', 'Program incomplete');
       const org = myOrganizations.find((item) => item.id === organizationId);
       const nextClass = {
         id: `class-${Date.now()}`,
@@ -3716,7 +3796,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitEvent(event) {
     event.preventDefault();
     const organizationId = eventForm.organizationId || myOrganizations[0]?.id;
-    if (!organizationId) return alert('Create or select a masjid first.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
     await createEvent({ ...eventForm, organizationId });
     setEventForm({ organizationId, title: '', description: '', location: '', imageUrl: '', startTime: '', capacity: '', requiresApproval: false });
     openDashboardSection('events');
@@ -3724,8 +3804,8 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitClass(event) {
     event.preventDefault();
     const organizationId = classForm.organizationId || myOrganizations[0]?.id;
-    if (!organizationId) return alert('Create or select a masjid first.');
-    if (!classForm.title.trim()) return alert('Class title is required.');
+    if (!organizationId) return showNotice('Create or select a masjid first.', 'Masjid needed');
+    if (!classForm.title.trim()) return showNotice('Class title is required.', 'Class incomplete');
     const org = myOrganizations.find((item) => item.id === organizationId);
     const nextClass = {
       id: `class-${Date.now()}`,
@@ -3745,32 +3825,42 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   async function submitPerson(event) {
     event.preventDefault();
     const organizationId = peopleForm.organizationId || myOrganizations[0]?.id;
-    if (!organizationId || !peopleForm.userId) return alert('Select a masjid and person first.');
+    if (!organizationId || !peopleForm.userId) return showNotice('Select a masjid and person first.', 'Team member needed');
     await addOrganizationPerson(organizationId, { userId: peopleForm.userId, roleLabel: peopleForm.roleLabel });
     setPeopleForm({ organizationId, userId: '', roleLabel: 'Imam' });
   }
   async function submitInvite(event) {
     event.preventDefault();
     const organizationId = inviteForm.organizationId || myOrganizations[0]?.id;
-    if (!organizationId || !inviteForm.email.trim()) return alert('Select a masjid and enter an email first.');
+    if (!organizationId || !inviteForm.email.trim()) return showNotice('Select a masjid and enter an email first.', 'Invite incomplete');
     const invited = await inviteOrganizationPerson(organizationId, inviteForm);
-    if (invited?.temporaryPassword) alert(`Login created for ${inviteForm.email}. Temporary password: ${invited.temporaryPassword}`);
+    if (invited?.temporaryPassword) await showNotice(`Login created for ${inviteForm.email}. Temporary password: ${invited.temporaryPassword}`, 'Login created');
     setInviteForm({ organizationId, name: '', email: '', accountType: 'IMAM', roleLabel: 'Imam' });
     openDashboardSection('team');
   }
   async function quickAddTeam(organizationId, person, roleLabel = 'Team member') {
     if (!person?.id) return;
-    const nextRole = prompt('Team role?', roleLabel);
-    if (!nextRole) return;
-    await addOrganizationPerson(organizationId, { userId: person.id, roleLabel: nextRole });
+    const values = await requestFields('Add to team', [
+      { name: 'roleLabel', label: 'Team role', defaultValue: roleLabel, required: true }
+    ], { message: `Add ${person.name} to this masjid team.`, confirmLabel: 'Add member' });
+    if (!values?.roleLabel?.trim()) return;
+    await addOrganizationPerson(organizationId, { userId: person.id, roleLabel: values.roleLabel.trim() });
     openDashboardSection('team');
   }
   async function approveApplication(opportunityId, applicationId) {
-    const approvedHours = Number(prompt('Approved volunteer hours?', '0') || 0);
+    const values = await requestFields('Approve volunteer hours', [
+      { name: 'approvedHours', label: 'Approved volunteer hours', type: 'number', min: 0, step: 0.25, defaultValue: '0', required: true }
+    ], { confirmLabel: 'Approve' });
+    if (!values) return;
+    const approvedHours = Number(values.approvedHours || 0);
     await updateApplication(opportunityId, applicationId, { status: 'APPROVED', approvedHours });
   }
   async function approvePendingApplications(opportunityId) {
-    const approvedHours = Number(prompt('Approved hours for each pending applicant?', '0') || 0);
+    const values = await requestFields('Approve pending applicants', [
+      { name: 'approvedHours', label: 'Approved hours for each pending applicant', type: 'number', min: 0, step: 0.25, defaultValue: '0', required: true }
+    ], { confirmLabel: 'Approve all' });
+    if (!values) return;
+    const approvedHours = Number(values.approvedHours || 0);
     await bulkUpdateApplications(opportunityId, { status: 'APPROVED', fromStatus: 'PENDING', approvedHours });
   }
   async function moveApplication(opportunityId, applicationId, status) {
@@ -3852,16 +3942,15 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     setEditEventForm({});
   }
   async function editOpportunity(opportunity) {
-    const title = prompt('Title', opportunity.title || '');
-    if (title === null) return;
-    const description = prompt('Description', opportunity.description || '');
-    if (description === null) return;
-    const location = prompt('Location', opportunity.location || '');
-    if (location === null) return;
-    const skills = prompt('Skills, comma separated', (opportunity.skills || []).join(', '));
-    if (skills === null) return;
-    const hours = prompt('Hours', opportunity.hours || '');
-    if (hours === null) return;
+    const values = await requestFields(`Edit ${opportunity.type === 'JOB' ? 'job' : 'opportunity'}`, [
+      { name: 'title', label: 'Title', defaultValue: opportunity.title || '', required: true },
+      { name: 'description', label: 'Description', type: 'textarea', defaultValue: opportunity.description || '' },
+      { name: 'location', label: 'Location', defaultValue: opportunity.location || '' },
+      { name: 'skills', label: 'Skills, comma separated', defaultValue: (opportunity.skills || []).join(', ') },
+      { name: 'hours', label: 'Hours', defaultValue: opportunity.hours || '' }
+    ], { confirmLabel: 'Save changes' });
+    if (!values) return;
+    const { title, description, location, skills, hours } = values;
     await updateOpportunity(opportunity.id, { title, description, location, skills, hours });
   }
   function startEditClass(org, classItem, classIndex) {
@@ -3879,7 +3968,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
   }
   async function submitEditClass(event, org, classItem, classIndex) {
     event.preventDefault();
-    if (!editClassForm.title?.trim()) return alert('Class title is required.');
+    if (!editClassForm.title?.trim()) return showNotice('Class title is required.', 'Class incomplete');
     const classes = (org.classes || []).map((item, index) => (classItem.id ? item.id === classItem.id : index === classIndex) ? {
       ...item,
       title: editClassForm.title.trim(),
@@ -3896,8 +3985,25 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     setEditClassForm({});
   }
   async function deleteClass(org, classItem, classIndex) {
-    if (!confirm('Delete this class or program?')) return;
+    const confirmed = await confirmAction('Delete class or program?', 'This removes it from the public masjid profile.', { confirmLabel: 'Delete', tone: 'danger' });
+    if (!confirmed) return;
     await updateOrganization(org.id, { classes: (org.classes || []).filter((item, index) => classItem.id ? item.id !== classItem.id : index !== classIndex) });
+  }
+  async function confirmDeletePost(id) {
+    const confirmed = await confirmAction('Delete post?', 'This removes the post from the feed and masjid dashboard.', { confirmLabel: 'Delete post', tone: 'danger' });
+    if (confirmed) await deletePost(id, { skipConfirm: true });
+  }
+  async function confirmDeleteEvent(id) {
+    const confirmed = await confirmAction('Delete event?', 'This removes the event and its registration surface.', { confirmLabel: 'Delete event', tone: 'danger' });
+    if (confirmed) await deleteEvent(id, { skipConfirm: true });
+  }
+  async function confirmDeleteOpportunity(id, type = 'opportunity') {
+    const confirmed = await confirmAction(`Delete ${type === 'JOB' ? 'job' : 'opportunity'}?`, 'This removes the public listing and application pipeline.', { confirmLabel: 'Delete', tone: 'danger' });
+    if (confirmed) await deleteOpportunity(id, { skipConfirm: true });
+  }
+  async function confirmRemoveFollower(organizationId, userId) {
+    const confirmed = await confirmAction('Remove follower?', 'This removes the person from the masjid follower list.', { confirmLabel: 'Remove follower', tone: 'danger' });
+    if (confirmed) await removeOrganizationFollower(organizationId, userId, { skipConfirm: true });
   }
   function startEditOrg(org) {
     setEditingOrgId(org.id);
@@ -3945,7 +4051,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     }));
   }
   function addAdditionalPrayer() {
-    if (!newPrayerDraft.name.trim()) return alert('Prayer name is required.');
+    if (!newPrayerDraft.name.trim()) return showNotice('Prayer name is required.', 'Prayer incomplete');
     setEditPrayerForm((current) => ({
       ...current,
       additionalPrayers: [...(current.additionalPrayers || []), { ...newPrayerDraft, id: `custom-${Date.now()}` }]
@@ -3953,7 +4059,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
     setNewPrayerDraft(emptyAdditionalPrayer);
   }
   function addTemporaryPrayer() {
-    if (!temporaryPrayerDraft.name.trim()) return alert('Temporary prayer name is required.');
+    if (!temporaryPrayerDraft.name.trim()) return showNotice('Temporary prayer name is required.', 'Prayer incomplete');
     setEditPrayerForm((current) => ({
       ...current,
       temporaryPrayers: [...(current.temporaryPrayers || []), { ...temporaryPrayerDraft, id: `temp-${Date.now()}` }]
@@ -4839,7 +4945,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                           <span>{post.viewCount || 0} reads, {post.likeCount || 0} likes</span>
                           <button onClick={() => duplicatePostToComposer(post, org.id)}>Duplicate</button>
                           <button onClick={() => startEditPost(post)}>Edit post</button>
-                          <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
+                          <button className="secondary-button danger" onClick={() => confirmDeletePost(post.id)}>Delete post</button>
                         </div>
                       </article>
                     )) : <p className="helper-text">No announcements posted yet.</p>}
@@ -4885,7 +4991,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                             <span>{post.viewCount || 0} reads, {post.likeCount || 0} likes{post.publishAt ? `, scheduled ${new Date(post.publishAt).toLocaleString()}` : ''}</span>
                             <button onClick={() => duplicatePostToComposer(post, org.id)}>Duplicate</button>
                             <button onClick={() => startEditPost(post)}>Edit post</button>
-                            <button className="secondary-button danger" onClick={() => deletePost(post.id)}>Delete post</button>
+                            <button className="secondary-button danger" onClick={() => confirmDeletePost(post.id)}>Delete post</button>
                           </div>
                         )}
                       </article>
@@ -4936,7 +5042,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                             <button onClick={() => bulkUpdateRegistrations(event.id, { status: 'NO_SHOW', fromStatus: 'APPROVED' })}>No-show approved</button>
                             <button onClick={() => exportRegistrationsCsv(event)}>Export CSV</button>
                             <button onClick={() => startEditEvent(event)}>Edit event</button>
-                            <button className="secondary-button danger" onClick={() => deleteEvent(event.id)}>Delete event</button>
+                            <button className="secondary-button danger" onClick={() => confirmDeleteEvent(event.id)}>Delete event</button>
                           </div>
                         )}
                         {(event.registrations || []).map((registration) => (
@@ -4970,7 +5076,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                           <button onClick={() => approvePendingApplications(opportunity.id)}>Approve pending</button>
                           <button onClick={() => bulkUpdateApplications(opportunity.id, { status: 'COMPLETED', fromStatus: 'APPROVED', checkedOutAt: true })}>Complete approved</button>
                           <button onClick={() => editOpportunity(opportunity)}>Edit post</button>
-                          <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete post</button>
+                          <button className="secondary-button danger" onClick={() => confirmDeleteOpportunity(opportunity.id, opportunity.type)}>Delete post</button>
                         </div>
                         {(opportunity.applications || []).map((application) => (
                           <div className="manager-row" key={application.id}>
@@ -5005,7 +5111,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                           <span>{(opportunity.applications || []).filter((application) => application.status === 'PENDING').length} pending, {(opportunity.applications || []).filter((application) => application.status === 'APPROVED').length} approved</span>
                           <button onClick={() => bulkUpdateApplications(opportunity.id, { status: 'APPROVED', fromStatus: 'PENDING' })}>Approve pending</button>
                           <button onClick={() => editOpportunity(opportunity)}>Edit job</button>
-                          <button className="secondary-button danger" onClick={() => deleteOpportunity(opportunity.id)}>Delete job</button>
+                          <button className="secondary-button danger" onClick={() => confirmDeleteOpportunity(opportunity.id, opportunity.type)}>Delete job</button>
                         </div>
                         {(opportunity.applications || []).map((application) => (
                           <div className="manager-row" key={application.id}>
@@ -5037,7 +5143,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                           {follow.user && <button onClick={() => startMessage(follow.user)}>Message</button>}
                           {follow.user && <button onClick={() => openProfile(follow.user)}>Profile</button>}
                           {follow.user && <button onClick={() => quickAddTeam(org.id, follow.user, 'Community Liaison')}>Add to team</button>}
-                          <button className="secondary-button danger" onClick={() => removeOrganizationFollower(org.id, follow.userId)}>Remove follower</button>
+                          <button className="secondary-button danger" onClick={() => confirmRemoveFollower(org.id, follow.userId)}>Remove follower</button>
                         </div>
                       </article>
                     )) : <p className="helper-text">No followers match this dashboard filter yet.</p>}
@@ -5064,7 +5170,7 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
                     {follow.user && <button onClick={() => startMessage(follow.user)}>Message</button>}
                     {follow.user && <button onClick={() => openProfile(follow.user)}>Profile</button>}
                     {follow.user && <button onClick={() => quickAddTeam(org.id, follow.user, 'Community Liaison')}>Add to team</button>}
-                    <button className="secondary-button danger" onClick={() => removeOrganizationFollower(org.id, follow.userId)}>Remove</button>
+                    <button className="secondary-button danger" onClick={() => confirmRemoveFollower(org.id, follow.userId)}>Remove</button>
                   </div>
                 </article>
               ))}
@@ -5122,6 +5228,13 @@ function AdminScreen({ user, users = [], threads = [], loadNetwork, loadMyOrgani
         </aside>
       </div>
       )}
+      <AdminActionModal
+        dialog={adminDialog}
+        values={adminDialogValues}
+        setValues={setAdminDialogValues}
+        onCancel={cancelAdminDialog}
+        onSubmit={submitAdminDialog}
+      />
     </Page>
   );
 }
@@ -5710,20 +5823,20 @@ function AuthenticatedApp() {
     return result;
   }
 
-  async function deletePost(id) {
-    if (!confirm('Delete this post?')) return;
+  async function deletePost(id, options = {}) {
+    if (!options.skipConfirm && !confirm('Delete this post?')) return;
     await api(`/api/posts/${id}`, { method: 'DELETE' });
     await Promise.all([loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
-  async function deleteEvent(id) {
-    if (!confirm('Delete this event?')) return;
+  async function deleteEvent(id, options = {}) {
+    if (!options.skipConfirm && !confirm('Delete this event?')) return;
     await api(`/api/events/${id}`, { method: 'DELETE' });
     await Promise.all([loadEvents(), loadPosts(), loadMyOrganizations(), loadLocationData(location)]);
   }
 
-  async function deleteOpportunity(id) {
-    if (!confirm('Delete this job or opportunity?')) return;
+  async function deleteOpportunity(id, options = {}) {
+    if (!options.skipConfirm && !confirm('Delete this job or opportunity?')) return;
     await api(`/api/opportunities/${id}`, { method: 'DELETE' });
     await Promise.all([loadMyOrganizations(), loadOpportunities(), loadLocationData(location)]);
   }
@@ -5769,8 +5882,8 @@ function AuthenticatedApp() {
     if (selectedOrganization?.id === id && refreshed) setSelectedOrganization(refreshed);
   }
 
-  async function removeOrganizationFollower(id, userId) {
-    if (!confirm('Remove this follower from the masjid?')) return;
+  async function removeOrganizationFollower(id, userId, options = {}) {
+    if (!options.skipConfirm && !confirm('Remove this follower from the masjid?')) return;
     await api(`/api/organizations/${id}/followers/${userId}`, { method: 'DELETE' });
     const refreshed = await api(`/api/organizations/${id}`).catch(() => null);
     await Promise.all([loadMyOrganizations(), loadLocationData(location), loadPosts()]);

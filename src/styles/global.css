@@ -10393,6 +10393,68 @@ select:focus {
   border-left-color: #dc2626;
 }
 
+.admin-action-backdrop {
+  z-index: 145;
+}
+
+.admin-action-modal {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 44px);
+  overflow: auto;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line, var(--border));
+  border-radius: 8px;
+  background: var(--surface-raised, var(--panel-bg));
+  color: var(--ink, var(--text));
+  box-shadow: var(--shadow);
+}
+
+.admin-action-modal .sheet-header {
+  padding: 0;
+  border-bottom: 0;
+}
+
+.admin-action-modal h2,
+.admin-action-message {
+  margin: 0;
+}
+
+.admin-action-message {
+  color: var(--muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.admin-action-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-action-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.admin-action-fields input,
+.admin-action-fields textarea {
+  width: 100%;
+  border: 1px solid var(--line, var(--border));
+  border-radius: 8px;
+  background: var(--surface, var(--panel-bg));
+  color: var(--ink, var(--text));
+}
+
+.admin-action-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 @media (max-width: 880px) {
   .social-auth-row {
     grid-template-columns: minmax(0, 1fr);
@@ -10461,5 +10523,10 @@ select:focus {
     left: max(14px, env(safe-area-inset-left));
     right: max(14px, env(safe-area-inset-right));
     width: auto;
+  }
+
+  .admin-action-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
