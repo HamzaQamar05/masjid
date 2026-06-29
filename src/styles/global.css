@@ -8,6 +8,55 @@
   border-left: 4px solid var(--brand);
 }
 
+.empty-feed-state,
+.empty-discovery-state,
+.masjid-follow-nudge {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line, var(--border));
+  border-radius: 8px;
+  background: var(--surface, var(--panel-bg));
+}
+
+.empty-feed-state svg,
+.empty-discovery-state svg,
+.masjid-follow-nudge svg {
+  flex: 0 0 auto;
+  color: var(--brand);
+}
+
+.empty-feed-state strong,
+.empty-feed-state p,
+.empty-discovery-state strong,
+.empty-discovery-state p,
+.masjid-follow-nudge strong,
+.masjid-follow-nudge p {
+  margin: 0;
+}
+
+.empty-feed-state p,
+.empty-discovery-state p,
+.masjid-follow-nudge p {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.empty-feed-state .manager-row {
+  margin-top: 12px;
+}
+
+.empty-discovery-state {
+  min-height: 180px;
+  align-content: center;
+  flex-direction: column;
+}
+
+.masjid-follow-nudge {
+  margin-top: 14px;
+}
+
 .person-card {
   position: relative;
   overflow: hidden;

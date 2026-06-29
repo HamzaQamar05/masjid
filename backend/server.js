@@ -3588,7 +3588,7 @@ app.delete('/api/events/:eventId/register', auth, async (req, res) => {
   res.json({ message: 'Registration removed' });
 });
 
-app.get('/api/opportunities', auth, async (req, res) => {
+app.get('/api/opportunities', authOptional, async (req, res) => {
   const q = searchTerm(req);
   const where = {
     isActive: true,
@@ -3606,7 +3606,10 @@ app.get('/api/opportunities', auth, async (req, res) => {
   };
   const opportunities = await prisma.opportunity.findMany({
     where,
-    include: { organization: true, applications: { where: { applicantId: req.user.id } } },
+    include: {
+      organization: true,
+      applications: req.user ? { where: { applicantId: req.user.id } } : false
+    },
     orderBy: { createdAt: 'desc' },
     ...parsePagination(req, 100, 100)
   });

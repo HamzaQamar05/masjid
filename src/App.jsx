@@ -63,10 +63,11 @@ const guestUser = {
   id: 'guest',
   name: 'Guest Explorer',
   accountType: 'USER',
+  dateOfBirth: '1990-01-01',
   city: defaultLocation.label,
   location: defaultLocation.label,
   headline: 'Exploring Mujtama',
-  interests: ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile', 'Events', 'Library']
+  interests: ['Home', 'Prayer', 'Messages', 'Masjids', 'Network', 'Profile', 'Events', 'Library', 'Volunteer', 'Jobs', 'Business']
 };
 
 const defaultNotificationPreferences = {
@@ -233,8 +234,6 @@ function tabForPath(pathname) {
 }
 
 function LandingPage() {
-  const appStoreHref = '#app-store-link-coming-soon';
-  const playStoreHref = '#play-store-link-coming-soon';
   return (
     <main className="landing-page">
       <header className="landing-nav">
@@ -244,7 +243,7 @@ function LandingPage() {
         </a>
         <nav>
           <a href="/app">Open app</a>
-          <a href="#download">Download</a>
+          <a href="#install">Install</a>
         </nav>
       </header>
 
@@ -253,17 +252,17 @@ function LandingPage() {
           <p className="eyebrow">Muslim community, connected</p>
           <h1>Mujtama Connect</h1>
           <p>Find masjids, follow local updates, message community members, discover events, and stay close to prayer times in one focused app.</p>
-          <div className="landing-actions" id="download">
-            <a className="store-button" href={appStoreHref} aria-label="Download Mujtama Connect from the App Store">
+          <div className="landing-actions" id="install">
+            <a className="store-button" href="/app" aria-label="Open Mujtama Connect web app">
               <Download size={20} />
-              <span><small>Download on the</small><strong>App Store</strong></span>
+              <span><small>Install from</small><strong>Your Browser</strong></span>
             </a>
-            <a className="store-button" href={playStoreHref} aria-label="Get Mujtama Connect on Google Play">
+            <a className="store-button" href="/masjids" aria-label="Explore masjids on Mujtama Connect">
               <Smartphone size={20} />
-              <span><small>Get it on</small><strong>Google Play</strong></span>
+              <span><small>Start with</small><strong>Masjids Nearby</strong></span>
             </a>
           </div>
-          <a className="landing-web-link" href="/app">Continue to the web app for now</a>
+          <a className="landing-web-link" href="/register">Create a community profile</a>
         </div>
 
         <div className="landing-phone" aria-hidden="true">
@@ -278,9 +277,9 @@ function LandingPage() {
       </section>
 
       <section className="landing-band">
-        <div><strong>Masjid updates</strong><span>Announcements, classes, events, and prayer schedules.</span></div>
-        <div><strong>Community DMs</strong><span>Connect with Muslims nearby and across your network.</span></div>
-        <div><strong>Profiles</strong><span>Search by skills, roles, organizations, and headlines.</span></div>
+        <div><strong>For masjids</strong><span>Publish prayer times, announcements, classes, donations, and volunteer needs.</span></div>
+        <div><strong>For community</strong><span>Follow local masjids, save events, and get the updates that matter.</span></div>
+        <div><strong>For growth</strong><span>Share a living profile that shows activity before someone visits.</span></div>
       </section>
       <IosInstallPrompt />
     </main>
@@ -600,7 +599,7 @@ function HomeScreen({ user, posts, masjids, favoriteMasjids, locationStatus, req
             <button onClick={() => setTab('messages')}><Mail size={18} />Messages</button>
           </div>
         </section>
-        <PostFeed user={user} posts={posts} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />
+        <PostFeed user={user} posts={posts} setTab={setTab} openOrganization={openOrganization} toggleLikePost={toggleLikePost} toggleSavePost={toggleSavePost} addPostComment={addPostComment} deletePostComment={deletePostComment} />
       </section>
       <aside className="right-rail">
         {orgAccount ? <MasjidPrayerManagerNotice setTab={setTab} /> : <PrayerWidget prayerTimes={prayerTimes} favoriteMasjids={favoriteMasjids} openOrganization={openOrganization} notificationState={notificationState} enablePushNotifications={enablePushNotifications} />}
@@ -638,7 +637,7 @@ function FavoritePrograms({ programs, openOrganization }) {
   );
 }
 
-function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment }) {
+function PostFeed({ user, posts, setTab, openOrganization, toggleLikePost, toggleSavePost, addPostComment, deletePostComment }) {
   const [commentForms, setCommentForms] = useState({});
   const [commentingPostId, setCommentingPostId] = useState('');
   const [translations, setTranslations] = useState({});
@@ -775,7 +774,20 @@ function PostFeed({ user, posts, openOrganization, toggleLikePost, toggleSavePos
             <div className="tag-row">{post.isLiked && <span>Liked</span>}{post.isSaved && <span>Saved</span>}{post.isFromFavoriteMasjid && <span>Favorite masjid</span>}{post.isFromFollowedMasjid && <span>Following</span>}{post.followerCount ? <span>{post.followerCount} followers</span> : null}</div>
           </article>
         ))}
-        {!posts.length && <p className="helper-text">Follow masjids or ask an admin to create posts to populate your feed.</p>}
+        {!posts.length && (
+          <section className="empty-feed-state">
+            <Sparkles size={24} />
+            <div>
+              <strong>{isOrganizationAccount(user) ? 'Your community feed starts with your first post' : 'Build your community feed'}</strong>
+              <p>{isOrganizationAccount(user) ? 'Create a short announcement, class, or event from the dashboard so visitors see an active masjid.' : 'Follow masjids, save events, and add interests so Mujtama can surface relevant announcements and programs.'}</p>
+              <div className="manager-row">
+                <button className="primary-button" type="button" onClick={() => setTab(isOrganizationAccount(user) ? 'dashboard' : 'organizations')}>{isOrganizationAccount(user) ? 'Create a post' : 'Find masjids'}</button>
+                {!isOrganizationAccount(user) && <button className="secondary-button" type="button" onClick={() => setTab('events')}>Browse events</button>}
+                {!isOrganizationAccount(user) && <button className="secondary-button" type="button" onClick={() => setTab('profile')}>Complete profile</button>}
+              </div>
+            </div>
+          </section>
+        )}
       </div>
     </section>
   );
@@ -1285,6 +1297,14 @@ function OrganizationsScreen({ masjids, locationStatus, requestLocation, openOrg
                 <small>{masjid.address || masjid.city || 'Address not added'}</small>
               </button>
             ))}
+            {!masjids.length && (
+              <section className="empty-discovery-state">
+                <Building2 size={24} />
+                <strong>No masjids loaded yet</strong>
+                <p>Enable location or check back after the first local masjid profiles are onboarded.</p>
+                {requestLocation && <button className="primary-button" type="button" onClick={requestLocation}>Use my location</button>}
+              </section>
+            )}
           </div>
         </section>
       ) : (
@@ -2126,6 +2146,16 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
     ...(organization.tags || [])
   ].filter(Boolean);
   const canFollowMasjid = isUserAccount(user);
+  function shareMasjid() {
+    const url = `${window.location.origin}/masjids/${organization.id}`;
+    const text = `${organization.name} on Mujtama`;
+    if (navigator.share) {
+      navigator.share({ title: organization.name, text, url }).catch(() => {});
+    } else {
+      navigator.clipboard?.writeText(`${text}\n${url}`).catch(() => {});
+      alert('Masjid profile link copied.');
+    }
+  }
   return (
     <Page title={organization.name} subtitle={organization.description || 'Masjid profile with events, opportunities, jobs, prayer times, location, and links.'}>
       <BackHeader title={organization.name} subtitle={organization.city || organization.address || 'Masjid'} onBack={onBack} />
@@ -2153,11 +2183,21 @@ function MasjidProfileScreen({ organization, user, onFollow, onUnfollow, onFavor
           {canFollowMasjid && <button className={organization.isFavorited ? 'primary-button' : 'secondary-button'} onClick={() => onFavorite(organization.id, organization.isFavorited)}>{organization.isFavorited ? 'Favorited' : 'Favorite'}</button>}
           {canFollowMasjid && messageContact && <button className="secondary-button" onClick={() => onMessage(messageContact)}><MessageCircle size={17} />Message</button>}
           {canFollowMasjid && <button className={organization.notifyPrayers ? 'primary-button' : 'secondary-button'} onClick={() => onFollow(organization.id, true)}>{organization.notifyPrayers ? 'Notifications on' : 'Notify Me'}</button>}
+          <button className="secondary-button" type="button" onClick={shareMasjid}><Share2 size={17} />Share</button>
           {!canFollowMasjid && <span className="status-pill">Organization profile</span>}
           <ExternalLinkButton url={directionsUrl(organization)}>Directions</ExternalLinkButton>
           {organization.website && <ExternalLinkButton url={organization.website}>Website</ExternalLinkButton>}
           {organization.donationUrl && <DonationButton organization={organization} />}
         </div>
+        {canFollowMasjid && !organization.isFollowing && (
+          <div className="masjid-follow-nudge">
+            <Bell size={18} />
+            <div>
+              <strong>Follow this masjid to make Mujtama useful</strong>
+              <p>Following brings announcements and events into your feed. Favoriting pins this masjid for prayer times, programs, and faster discovery.</p>
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="content-grid">
