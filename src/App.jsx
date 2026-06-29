@@ -56,6 +56,81 @@ import { isNativeApp, openExternalUrl, requestNativeLocation, requestNativeNotif
 const EVENT_AUTO_REFRESH_MS = 15000;
 const PRAYER_CACHE_PREFIX = 'mujtama:prayer-times:';
 const IOS_INSTALL_DISMISS_KEY = 'mujtama:ios-install-dismissed';
+const SEO_ORIGIN = 'https://mujtamaconnect.com';
+const defaultSeo = {
+  title: 'Mujtama Connect | Muslim Community App for Masjids and Prayer Times',
+  description: 'Mujtama Connect is a Muslim community app for finding masjids, prayer times, announcements, events, classes, donations, volunteers, jobs, and local connections.',
+  path: '/',
+  index: true
+};
+const seoByTab = {
+  home: defaultSeo,
+  prayer: {
+    title: 'Prayer Times on Mujtama Connect',
+    description: 'Use Mujtama Connect to follow local prayer times, jamaat schedules, Jumuah notes, and masjid prayer updates.',
+    path: '/prayer',
+    index: true
+  },
+  organizations: {
+    title: 'Find Masjids Near You | Mujtama Connect',
+    description: 'Discover masjid profiles, prayer schedules, announcements, classes, events, donations, and community opportunities on Mujtama Connect.',
+    path: '/masjids',
+    index: true
+  },
+  masjidProfile: {
+    title: 'Masjid Profiles | Mujtama Connect',
+    description: 'View masjid announcements, prayer times, classes, events, volunteer opportunities, donations, and contact details on Mujtama Connect.',
+    path: '/masjids',
+    index: true
+  },
+  events: {
+    title: 'Muslim Community Events | Mujtama Connect',
+    description: 'Browse masjid events, classes, programs, registration details, and community gatherings on Mujtama Connect.',
+    path: '/events',
+    index: true
+  },
+  volunteers: {
+    title: 'Muslim Volunteer Opportunities | Mujtama Connect',
+    description: 'Find masjid-approved volunteer roles and community service opportunities on Mujtama Connect.',
+    path: '/volunteers',
+    index: true
+  },
+  jobs: {
+    title: 'Muslim Community Jobs | Mujtama Connect',
+    description: 'Browse Muslim community job postings and masjid-approved opportunities on Mujtama Connect.',
+    path: '/jobs',
+    index: true
+  },
+  library: {
+    title: 'Islamic Lecture Library | Mujtama Connect',
+    description: 'Save and browse community lectures, notes, videos, and audio from Muslim communities on Mujtama Connect.',
+    path: '/library',
+    index: true
+  },
+  businesses: {
+    title: 'Muslim Business Directory | Mujtama Connect',
+    description: 'Browse Muslim-owned businesses and community sponsors on Mujtama Connect.',
+    path: '/businesses',
+    index: true
+  },
+  network: {
+    title: 'Muslim Community Network | Mujtama Connect',
+    description: 'Connect with Muslim community members, imams, students, volunteers, and professionals on Mujtama Connect.',
+    path: '/network',
+    index: true
+  },
+  post: {
+    title: 'Post an Event | Mujtama Connect',
+    description: 'Create Muslim community events and masjid programs on Mujtama Connect.',
+    path: '/events/new',
+    index: false
+  },
+  messages: { title: 'Messages | Mujtama Connect', description: defaultSeo.description, path: '/messages', index: false },
+  profile: { title: 'Community Profile | Mujtama Connect', description: defaultSeo.description, path: '/profile/me', index: false },
+  settings: { title: 'Settings | Mujtama Connect', description: defaultSeo.description, path: '/settings', index: false },
+  dashboard: { title: 'Masjid Dashboard | Mujtama Connect', description: defaultSeo.description, path: '/dashboard', index: false },
+  auth: { title: 'Login to Mujtama Connect', description: defaultSeo.description, path: '/login', index: false }
+};
 const notificationTimers = new Map();
 const notifiedMessageIds = new Set();
 const seedOrganizationsWithoutPrograms = seedOrganizations.map((org) => ({ ...org, classes: [], programs: [] }));
@@ -231,6 +306,41 @@ function tabForPath(pathname) {
   if (pathname.startsWith('/dashboard')) return 'dashboard';
   if (pathname.startsWith('/settings')) return 'settings';
   return 'home';
+}
+
+function setMeta(selector, attrs) {
+  let element = document.head.querySelector(selector);
+  if (!element) {
+    element = document.createElement('meta');
+    Object.entries(attrs).forEach(([key, value]) => {
+      if (key !== 'content') element.setAttribute(key, value);
+    });
+    document.head.appendChild(element);
+  }
+  if (attrs.content !== undefined) element.setAttribute('content', attrs.content);
+}
+
+function setCanonical(url) {
+  let element = document.head.querySelector('link[rel="canonical"]');
+  if (!element) {
+    element = document.createElement('link');
+    element.setAttribute('rel', 'canonical');
+    document.head.appendChild(element);
+  }
+  element.setAttribute('href', url);
+}
+
+function applySeoMeta({ title, description, path, index = true }) {
+  const url = `${SEO_ORIGIN}${path || '/'}`;
+  document.title = title;
+  setMeta('meta[name="description"]', { name: 'description', content: description });
+  setMeta('meta[name="robots"]', { name: 'robots', content: index ? 'index, follow, max-image-preview:large' : 'noindex, nofollow' });
+  setMeta('meta[property="og:title"]', { property: 'og:title', content: title });
+  setMeta('meta[property="og:description"]', { property: 'og:description', content: description });
+  setMeta('meta[property="og:url"]', { property: 'og:url', content: url });
+  setMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: title });
+  setMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: description });
+  setCanonical(url);
 }
 
 function LandingPage() {
@@ -5811,6 +5921,18 @@ function AuthenticatedApp() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('theme', theme);
   }, [theme]);
+  useEffect(() => {
+    const base = seoByTab[tab] || defaultSeo;
+    const routeSeo = tab === 'masjidProfile' && selectedOrganization
+      ? {
+          title: `${selectedOrganization.name} | Masjid Profile on Mujtama Connect`,
+          description: `${selectedOrganization.name} on Mujtama Connect: prayer times, announcements, classes, events, donations, volunteer opportunities, and community details.`,
+          path: `/masjids/${selectedOrganization.id}`,
+          index: true
+        }
+      : base;
+    applySeoMeta(routeSeo);
+  }, [tab, selectedOrganization?.id, selectedOrganization?.name]);
   useEffect(() => {
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' });

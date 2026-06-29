@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /messages
+Disallow: /settings
+Disallow: /profile/edit
+Disallow: /api/
+
+Sitemap: https://mujtamaconnect.com/sitemap.xml
