@@ -1271,8 +1271,21 @@ function PostEventScreen({ setTab, createEvent, myOrganizations }) {
 
 function OrganizationsScreen({ masjids, locationStatus, requestLocation, openOrganization }) {
   const [view, setView] = useState('map');
+  const [selectedMapMasjidId, setSelectedMapMasjidId] = useState('');
   const mappableMasjids = masjids.filter(hasMappableLocation);
-  const featuredMapMasjid = mappableMasjids[0];
+  const firstMapCandidateId = (mappableMasjids[0] || masjids[0])?.id || '';
+  const selectedMapMasjid = masjids.find((masjid) => masjid.id === selectedMapMasjidId);
+  const featuredMapMasjid = selectedMapMasjid || mappableMasjids[0] || masjids[0];
+
+  useEffect(() => {
+    if (!masjids.length) {
+      setSelectedMapMasjidId('');
+      return;
+    }
+    if (!selectedMapMasjidId || !masjids.some((masjid) => masjid.id === selectedMapMasjidId)) {
+      setSelectedMapMasjidId(firstMapCandidateId);
+    }
+  }, [masjids, selectedMapMasjidId, firstMapCandidateId]);
 
   return (
     <Page title="Masjid Discovery" subtitle="SQL-backed masjid profiles sorted by your location.">
@@ -1291,11 +1304,14 @@ function OrganizationsScreen({ masjids, locationStatus, requestLocation, openOrg
           <LocationMapCard item={featuredMapMasjid} title={featuredMapMasjid ? `${featuredMapMasjid.name} area` : 'Nearby masjid map'} locationStatus={locationStatus} requestLocation={requestLocation} />
           <div className="map-result-list">
             {masjids.map((masjid) => (
-              <button key={masjid.id} type="button" onClick={() => openOrganization(masjid.id)}>
-                <span>{distanceText(masjid) || masjid.city || 'Nearby'}</span>
-                <strong>{masjid.name}</strong>
-                <small>{masjid.address || masjid.city || 'Address not added'}</small>
-              </button>
+              <article className={featuredMapMasjid?.id === masjid.id ? 'map-result-item active' : 'map-result-item'} key={masjid.id}>
+                <button type="button" onClick={() => setSelectedMapMasjidId(masjid.id)}>
+                  <span>{distanceText(masjid) || masjid.city || 'Nearby'}</span>
+                  <strong>{masjid.name}</strong>
+                  <small>{masjid.address || masjid.city || 'Address not added'}</small>
+                </button>
+                <button className="secondary-button compact-button" type="button" onClick={() => openOrganization(masjid.id)}>Profile</button>
+              </article>
             ))}
             {!masjids.length && (
               <section className="empty-discovery-state">
@@ -1997,6 +2013,15 @@ function MessagesScreen({
 }
 
 function LibraryScreen() {
+  const [savedLectureIds, setSavedLectureIds] = useState(() => new Set(lectures.filter((lecture) => lecture.saved).map((lecture) => lecture.id)));
+  function toggleLectureSave(id) {
+    setSavedLectureIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   return (
     <Page title="Lecture Library" subtitle="Save and browse community lectures, notes, videos, and audio.">
       <div className="card-grid three">
@@ -2006,7 +2031,7 @@ function LibraryScreen() {
             <span>{lecture.category}</span>
             <h3>{lecture.title}</h3>
             <p>{lecture.speaker}</p>
-            <div className="card-footer"><span>{lecture.format}</span><button className="secondary-button">{lecture.saved ? 'Saved' : 'Save'}</button></div>
+            <div className="card-footer"><span>{lecture.format}</span><button className={savedLectureIds.has(lecture.id) ? 'primary-button' : 'secondary-button'} onClick={() => toggleLectureSave(lecture.id)}>{savedLectureIds.has(lecture.id) ? 'Saved' : 'Save'}</button></div>
           </article>
         ))}
       </div>
@@ -2458,7 +2483,7 @@ function OpportunitiesScreen({ user, opportunities, type = 'VOLUNTEER', applyToO
   );
 }
 
-function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavorite, openOrganization, openEvent, onRefreshSocial, onMessage }) {
+function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavorite, openOrganization, openEvent, openProfile, onRefreshSocial, onMessage }) {
   const editingSelf = !viewedUser || viewedUser.id === user.id;
   const profile = viewedUser ? { ...viewedUser, ...(social.user?.id === viewedUser.id ? social.user : {}) } : user;
   const [editMode, setEditMode] = useState(false);
@@ -2715,7 +2740,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
           <div className="bottom-sheet" onClick={(event) => event.stopPropagation()}>
             <div className="sheet-header">
               <h2>{activeList.title}</h2>
-              <button onClick={() => setActiveList(null)}>×</button>
+              <button className="icon-button" onClick={() => setActiveList(null)} aria-label="Close list"><X size={18} /></button>
             </div>
 
             <div className="people-list">
@@ -2728,7 +2753,7 @@ function ProfileScreen({ user, viewedUser, onCloseViewed, onSave, social, onFavo
                     <strong>{person.name}</strong>
                     <span>{displayRoleLabel(person.accountType)}</span>
                   </div>
-                  <button className="secondary-button">View</button>
+                  <button className="secondary-button" onClick={() => { setActiveList(null); openProfile?.(person); }}>View</button>
                 </article>
               ))}
             </div>
@@ -5787,6 +5812,12 @@ function AuthenticatedApp() {
     localStorage.setItem('theme', theme);
   }, [theme]);
   useEffect(() => {
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.querySelector('.main-panel')?.scrollTo?.({ top: 0, left: 0, behavior: 'auto' });
+    });
+  }, [locationRoute.pathname]);
+  useEffect(() => {
     if (!user || locationDataLoadedRef.current) return;
     locationDataLoadedRef.current = true;
     setLocationStatus('Showing Milton fallback data. Enable location to find nearby masjids and accurate prayer times.');
@@ -6036,7 +6067,7 @@ function AuthenticatedApp() {
     library: <LibraryScreen />,
     businesses: <BusinessDirectoryScreen />,
     messages: <MessagesScreen currentUser={user} users={otherUsers} selectedUser={selectedUser} setSelectedUser={setSelectedUser} messages={messages} setMessages={setMessages} threads={threads} loadMessages={loadMessages} loadOlderMessages={loadOlderMessages} loadThreads={loadThreads} messagePage={messagePage} sendTyping={sendTyping} onlineUserIds={onlineUserIds} typingUserIds={typingUserIds} reactToMessage={reactToMessage} unsendMessage={unsendMessage} detailMode={Boolean(routeMessageUserId)} onThreadOpen={(person) => setTab('messages', person.id)} onBackToInbox={() => { setSelectedUser(null); setMessages([]); setMessagesThreadActive(false); setTab('messages'); }} onThreadActiveChange={setMessagesThreadActive} onRefresh={() => loadNetwork()} />,
-    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); loadProfileSocial(user.id); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} onRefreshSocial={() => loadProfileSocial(viewedUser?.id || user.id)} onMessage={startMessage} />,
+    profile: <ProfileScreen user={user} viewedUser={viewedUser} onCloseViewed={() => { setViewedUser(null); loadProfileSocial(user.id); navigate('/profile/me'); }} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); loadProfileSocial(user.id); }} social={profileSocial} onFavorite={toggleFavoriteOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} openProfile={openProfile} onRefreshSocial={() => loadProfileSocial(viewedUser?.id || user.id)} onMessage={startMessage} />,
     settings: <SettingsScreen user={user} social={profileSocial} notificationPreferences={notificationPreferences} updateNotificationPreferences={updateNotificationPreferences} onSave={(updated) => { setUser(updated); persistAuth(updated); loadNetwork(); }} onFavorite={toggleFavoriteOrganization} onUnfollow={unfollowOrganization} openOrganization={openOrganization} openEvent={(id) => setTab('events', id)} logout={logout} theme={theme} setTheme={setTheme} />,
     dashboard: isImamAccount(user) ? <ImamDashboard user={user} social={profileSocial} setTab={setTab} /> : <AdminScreen user={user} users={users} threads={threads} loadNetwork={loadNetwork} loadMyOrganizations={loadMyOrganizations} myOrganizations={myOrganizations} dashboardOrganizationsState={dashboardOrganizationsState} createOrganization={createOrganization} onboardOrganization={onboardOrganization} updateOrganization={updateOrganization} createOpportunity={createOpportunity} updateOpportunity={updateOpportunity} createPost={createPost} updatePost={updatePost} createEvent={createEvent} updateEvent={updateEvent} sendOrganizationNotification={sendOrganizationNotification} deletePost={deletePost} deleteEvent={deleteEvent} updateApplication={updateApplication} bulkUpdateApplications={bulkUpdateApplications} updateRegistration={updateRegistration} bulkUpdateRegistrations={bulkUpdateRegistrations} deleteOpportunity={deleteOpportunity} addOrganizationPerson={addOrganizationPerson} inviteOrganizationPerson={inviteOrganizationPerson} removeOrganizationPerson={removeOrganizationPerson} removeOrganizationFollower={removeOrganizationFollower} openProfile={openProfile} openOrganization={openOrganization} startMessage={startMessage} setTab={setTab} />
   };

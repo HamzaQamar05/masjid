@@ -5737,6 +5737,22 @@ button.mini-org-avatar {
   color: inherit;
 }
 
+:root[data-theme="dark"] .manager-row .primary-button,
+:root[data-theme="dark"] .profile-actions .primary-button,
+:root[data-theme="dark"] .card-footer .primary-button,
+:root[data-theme="dark"] .map-result-list .primary-button {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #06201d;
+}
+
+:root[data-theme="dark"] .manager-row .primary-button *,
+:root[data-theme="dark"] .profile-actions .primary-button *,
+:root[data-theme="dark"] .card-footer .primary-button *,
+:root[data-theme="dark"] .map-result-list .primary-button * {
+  color: #06201d;
+}
+
 :root[data-theme="dark"] .dm-top-button span {
   background: #f43f5e;
   color: #ffffff;
@@ -10101,7 +10117,14 @@ select:focus {
   gap: 8px;
 }
 
-.map-result-list button {
+.map-result-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.map-result-item > button:first-child {
   min-width: 0;
   min-height: 72px;
   display: grid;
@@ -10112,6 +10135,16 @@ select:focus {
   background: var(--surface, var(--panel-bg));
   color: var(--ink, var(--text));
   text-align: left;
+}
+
+.map-result-item.active > button:first-child {
+  border-color: var(--brand);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.map-result-item .compact-button {
+  min-height: 72px;
+  align-self: stretch;
 }
 
 .map-result-list span,
@@ -10166,5 +10199,13 @@ select:focus {
 
   .map-result-list {
     max-height: none;
+  }
+
+  .map-result-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-result-item .compact-button {
+    min-height: 42px;
   }
 }
